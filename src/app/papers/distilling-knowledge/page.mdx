@@ -1,0 +1,174 @@
+import { paperMetadata } from "@/lib/papers";
+
+export const metadata = paperMetadata("distilling-knowledge");
+
+<PaperHeader slug="distilling-knowledge" />
+
+# Distilling the Knowledge：把集成模型压进一个学生网络
+
+2015 年这篇 workshop 论文把“知识蒸馏”这个词带进深度学习主流语境：训练时可以用一个很笨重的模型或模型集成去抽取结构，部署时再把它学到的输入到输出的映射压进一个更轻的学生模型。<Cite n={1} />它真正重要的不是“模型变小”这件事本身，而是重新定义了模型里的知识：知识不只在参数里，也在老师对所有类别给出的概率关系里。<Cite n={1} />
+
+> 📌 前置：建议先读 [知识蒸馏总览](/tutorials/knowledge-distillation-overview) 与 [前向 / 反向 KL](/tutorials/forward-reverse-kl)。本文是现代 KD、offline distillation、[OPD](/papers/opd-agarwal)、[MiniLLM](/papers/minillm-gu) 的起点之一，但它关注的是分类 / 语音识别模型，而不是自回归 LLM。
+
+## 一、动机：训练和部署本来就不是同一个问题
+
+论文开头用了一个很形象的类比：昆虫的幼虫形态负责吃和积累能量，成虫形态负责迁移和繁殖；机器学习里，训练阶段和部署阶段也有完全不同的约束。训练可以慢，可以用很大的模型、很强的正则化、很多模型做集成；部署却要低延迟、低算力、面向大量用户。<Cite n={1} />
+
+所以问题不是“能不能直接部署最强模型”，而是：
+
+| 阶段 | 真正需求 | 合适模型 |
+|---|---|---|
+| 训练 | 从大规模冗余数据中抽取结构 | cumbersome model：大模型、dropout 强正则模型、模型集成 |
+| 部署 | 低延迟、低成本服务大量请求 | distilled model：单个较小或更易部署的模型 |
+
+这也是本文比“压缩参数”更深的一层观点：**如果老师模型泛化得好，学生就应该学习老师“如何泛化”，而不是只学习训练集上的硬标签。**<Cite n={1} />
+
+## 二、暗知识：错误类别之间也有信息
+
+普通监督学习只告诉学生：“这张图是 2。”但老师 softmax 会告诉学生更多细节：它也许认为这张 2 有 $10^{-6}$ 的概率像 3，$10^{-9}$ 的概率像 7；另一张 2 则反过来。<Cite n={1} />这类“错误答案之间的相对概率”就是后人常说的 **dark knowledge（暗知识）**：它编码了类别之间的相似结构。
+
+硬标签只能表达一个点：
+
+$$
+y = \operatorname{one\text{-}hot}(\text{cat})
+$$
+
+软标签表达的是一整条分布：
+
+$$
+p_T(y\mid x) = [0.91, 0.06, 0.02, 0.01, \ldots]
+$$
+
+它告诉学生：“这更像猫，但也有一点像狗，几乎不像飞机。”这就是为什么高熵 soft targets 每个样本能携带更多信息，梯度方差也更小；学生常常可以用更少数据、更大学习率训练。<Cite n={1} />
+
+## 三、温度：把太尖的分布软化
+
+老师在 MNIST 这类任务上通常非常自信，错误类别概率接近 0，暗知识会被普通 cross-entropy 忽略。Hinton 等人的解决方式是给 softmax 加温度：<Cite n={1} />
+
+$$
+q_i=\frac{\exp(z_i/T)}{\sum_j\exp(z_j/T)}
+$$
+
+$T=1$ 是普通 softmax；$T$ 越大，分布越软，非最大类别被“点亮”。蒸馏时，老师用高温 $T$ 产生 soft targets，学生也用同样高温去匹配；训练完部署时，学生再回到 $T=1$。<Cite n={1} />
+
+<DistillTemperature />
+
+如果转移集有真实标签，论文建议把两个目标加权相加：<Cite n={1} />
+
+$$
+\mathcal{L}
+= \alpha T^2\,\mathrm{CE}\left(p_T^{(T)},p_S^{(T)}\right)
++ (1-\alpha)\,\mathrm{CE}\left(y,p_S^{(1)}\right)
+$$
+
+这里 $T^2$ 不是装饰。论文指出 soft-target 梯度的量级会按 $1/T^2$ 缩小，因此在同时使用硬标签和软标签时要乘回 $T^2$，否则调温度会无意间改变两项损失的相对权重。<Cite n={1} />
+
+## 四、为什么“匹配 logits”是蒸馏的特例？
+
+Caruana 等人的 model compression 用老师 logits 做回归目标。Hinton 等人把它放进温度蒸馏框架里解释：当温度 $T$ 足够高，并且每个样本的 logits 已经分别零均值化，cross-entropy 对学生 logit $z_i$ 的梯度近似为：<Cite n={[1,4]} />
+
+$$
+\frac{\partial C}{\partial z_i}
+\approx \frac{1}{NT^2}(z_i-v_i)
+$$
+
+其中 $v_i$ 是老师 logit，$N$ 是类别数。于是高温蒸馏近似等价于最小化：
+
+$$
+\frac{1}{2}(z_i-v_i)^2
+$$
+
+这说明 logits matching 不是另一套无关方法，而是温度蒸馏在高温极限下的特例。中等温度的好处是：它不会过度要求学生匹配那些极端负、可能很噪的 logits；当学生容量太小时，这反而可能更合适。<Cite n={1} />
+
+## 五、MNIST：学生没见过 3，也能识别 3
+
+论文的 MNIST 实验很适合用来理解“暗知识”到底有多强。老师是一个两层、每层 1200 个 ReLU 单元的大网络，使用 dropout、weight constraints 和最多 2 像素平移增强；它在测试集上有 67 个错误。一个较小的两层 800 ReLU 网络，不加正则直接训练有 146 个错误；但如果只用匹配大网络在 $T=20$ 下产生的 soft targets 做正则，它降到 74 个错误。<Cite n={1} />
+
+更反直觉的是“mythical digit 3”实验：从学生的 transfer set 中删掉所有数字 3。学生从未见过 3 的训练样本，却仍然能通过老师在其他数字上给出的概率结构学到 3 的位置。论文报告：不调偏置时，学生有 206 个测试错误，其中 133 个来自 1010 个数字 3；如果把 3 类 bias 增加 3.5，整体错误降到 109，其中只有 14 个是 3。也就是说，在没见过 3 的情况下，调好偏置后学生仍能识别 98.6% 的测试 3。<Cite n={1} />
+
+| 设置 | 论文报告结果 | 说明 |
+|---|---:|---|
+| 大老师：2×1200 ReLU + dropout + 平移增强 | 67 个测试错误 | cumbersome model 学到较好泛化 |
+| 小学生：2×800 ReLU，无正则 | 146 个测试错误 | 单独训练明显更差 |
+| 小学生 + $T=20$ soft targets | 74 个测试错误 | 接近老师，说明 soft targets 传递了泛化方式 |
+| transfer set 删除所有 3，调 3 类 bias 后 | 109 个错误，3 类仅 14 个错误 | 暗知识能跨样本传递类别结构 |
+
+这组实验不该被理解成“学生真的凭空学会没见过的类”。它更准确的含义是：其他数字样本上的 soft probabilities 已经包含了“什么像 3、什么不像 3”的几何信息；学生借这些概率比学到了 3 在表示空间中的位置。
+
+## 六、语音识别：10 个模型的集成几乎被单模型继承
+
+论文还在一个接近 Android Voice Search 的 DNN-HMM 声学模型上做实验。模型输入是 26 帧、每帧 40 维 Mel filterbank 特征；网络有 8 个隐藏层，每层 2560 个 ReLU，最终 softmax 约 14,000 个 HMM 状态标签，总参数约 8500 万；训练数据约 2000 小时英语语音，约 7 亿训练样本。<Cite n={1} />
+
+Table 1 的核心结果如下：
+
+| 系统 | Test Frame Accuracy | WER |
+|---|---:|---:|
+| Baseline | 58.9% | 10.9% |
+| 10× Ensemble | 61.1% | 10.7% |
+| Distilled Single model | 60.8% | 10.7% |
+
+这个结果很关键：10 个同架构模型平均预测带来的 frame accuracy 提升是 $61.1-58.9=2.2$ 个百分点，蒸馏后的单模型拿到 $60.8-58.9=1.9$ 个百分点，约等于继承了 86% 的 frame accuracy 增益；WER 上，集成从 10.9% 降到 10.7%，蒸馏单模型也达到 10.7%。<Cite n={1} />
+
+换句话说，部署侧不一定要跑 10 个模型；可以把它们的平均预测当老师，用一个单模型学到大部分收益。
+
+## 七、soft targets 也是强正则器
+
+论文第 6 节把 soft targets 的正则化作用讲得更直接：只用 3% 语音数据重新训练同样 8500 万参数声学模型。硬标签训练会严重过拟合；soft targets 却几乎恢复了全量训练的信息。<Cite n={1} />
+
+| 系统与训练集 | Train Frame Accuracy | Test Frame Accuracy |
+|---|---:|---:|
+| Baseline（100% 数据） | 63.4% | 58.9% |
+| Baseline（3% 数据） | 67.3% | 44.5% |
+| Soft Targets（3% 数据） | 65.4% | 57.0% |
+
+同样只有 3% 数据，硬标签模型训练准确率更高、测试准确率却崩到 44.5%；soft targets 模型训练准确率没那么极端，测试准确率达到 57.0%。这说明老师分布不是简单标签，而是把全量数据中发现的规律压进了每个样本的概率向量里。<Cite n={1} />
+
+## 八、specialists：大类别空间里的专科医生
+
+这篇论文还有一条常被忽略的线：在非常大的类别空间中，完整集成太贵，于是可以训练一个 generalist 加很多 specialists。JFT 实验用的是 Google 内部 1 亿图像、1.5 万标签数据集；论文称当时基线大卷积网络已经训练约 6 个月，等一个完整集成并不现实。<Cite n={1} />
+
+specialist 的思路是：
+
+1. 先训练一个覆盖全部类别的 generalist；
+2. 根据 generalist 预测的协方差，把经常混淆的类别聚成簇；
+3. 每个 specialist 只精细区分一个混淆簇，其余类别合并成 dustbin；
+4. 推理时先由 generalist 选 top 类，再只调用相关 specialists；
+5. 把 generalist 和 active specialists 的分布合成最终预测。<Cite n={1} />
+
+Table 3 报告：baseline top-1 accuracy 为 25.0%，加 61 个 specialist models 后为 26.1%，即整体相对提升 4.4%；在 specialist classes 上的 conditional accuracy 从 43.1% 提升到 45.9%。<Cite n={1} />Table 4 还显示，被更多 specialists 覆盖的类别，相对准确率提升大体更高，例如覆盖 9 个 specialist 的类别相对提升 16.6%。<Cite n={1} />
+
+specialists 和 mixture of experts 很像，但训练耦合方式不同：MoE 需要 gating network 在训练中动态分配样本，专家之间相互影响；specialists 可以先由 generalist 的混淆结构定义，再独立并行训练。<Cite n={1} />
+
+## 九、和现代 LLM 蒸馏的关系
+
+如果把本文放到 2024—2026 年的 LLM 后训练语境里，它提供的是三个基础概念：
+
+| 2015 蒸馏论文 | 现代 LLM 对应物 |
+|---|---|
+| 老师 soft targets | teacher logits / logprobs / top-k distribution |
+| 温度 $T$ | 蒸馏温度、logit softening、KL loss 温度缩放 |
+| hard + soft 目标混合 | SFT loss + KD loss、off-policy KD、hybrid distillation |
+| cumbersome model | 强老师、模型集成、RL checkpoint、多领域 expert teachers |
+| single distilled model | 部署模型、小模型、学生策略 |
+
+但也要注意边界：本文主要是 supervised classification / acoustic model setting，transfer set 通常来自原训练数据或无标签数据；而 [OPD](/papers/opd-agarwal) 和 [MiniLLM](/papers/minillm-gu) 把采样状态换成学生自己生成的序列，问题从“压缩分类器”变成“纠正生成策略的状态分布”。<Cite n={[2,3]} />
+
+所以，读现代蒸馏论文时可以用这篇作为基准：
+
+- 如果论文说 **logits / probabilities / top-k**，它在继承 soft targets；
+- 如果论文说 **temperature / $T^2$ scaling**，它在继承温度蒸馏；
+- 如果论文说 **teacher on student rollouts**，那是把本文的老师信号搬到了 on-policy 状态上；
+- 如果论文说 **multi-teacher / specialist teachers**，可以把它看成 specialists 思路在大模型时代的变体。
+
+## 小结
+
+《Distilling the Knowledge in a Neural Network》的核心贡献不是发明一个复杂算法，而是给出了一个极耐用的视角：强模型的知识可以通过输出分布迁移，而不必绑定在原模型参数、结构或集成形式上。温度让暗知识显形，soft targets 让学生学到老师的泛化方式，实验则说明单模型能继承集成模型的大部分收益。今天的大模型蒸馏、logit matching、KL 后训练、OPD 和多教师蒸馏，基本都还在沿用这套语言。
+
+## 参考资料
+
+<References>
+1. Geoffrey Hinton, Oriol Vinyals, Jeff Dean (2015). *Distilling the Knowledge in a Neural Network*. NIPS 2014 Deep Learning Workshop, arXiv: [1503.02531](https://arxiv.org/abs/1503.02531). —— 本文主论文，提出以高温 soft targets 把 cumbersome model / ensemble 的知识迁移到单个部署模型，并给出 MNIST、语音识别和 JFT specialists 实验。
+2. Rishabh Agarwal, Nino Vieillard, Yongchao Zhou, Piotr Stanczyk, Sabela Ramos, Matthieu Geist, Olivier Bachem (2024). *On-policy Distillation of Language Models: Learning from Self-Generated Mistakes*. ICLR 2024, arXiv: [2306.13649](https://arxiv.org/abs/2306.13649). —— 后续把蒸馏扩展到学生自生成状态的 GKD / OPD 框架。
+3. Yuxian Gu, Li Dong, Furu Wei, Minlie Huang (2024). *MiniLLM: On-Policy Distillation of Large Language Models*. ICLR 2024, arXiv: [2306.08543](https://arxiv.org/abs/2306.08543). —— 生成式 LLM 中 reverse-KL on-policy distillation 的代表工作。
+4. Cristian Buciluă, Rich Caruana, Alexandru Niculescu-Mizil (2006). *Model Compression*. KDD 2006. —— 早期把大型集成模型压缩到单模型的工作，Hinton 等人在本文中明确以它为基础继续发展。
+</References>

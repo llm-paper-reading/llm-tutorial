@@ -1,0 +1,63 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="980" height="500" viewBox="0 0 980 500" role="img" aria-labelledby="title desc">
+  <title id="title">知识蒸馏路线图</title>
+  <desc id="desc">知识蒸馏从离线蒸馏、在线蒸馏到混合蒸馏，并延伸到学生超越老师。</desc>
+  <defs>
+    <marker id="arrow" markerWidth="10" markerHeight="10" refX="8" refY="5" orient="auto" markerUnits="strokeWidth">
+      <path d="M 0 0 L 10 5 L 0 10 z" fill="#52525b" />
+    </marker>
+    <style>
+      .bg { fill: #fcfcfb; }
+      .title { font: 700 24px -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif; fill: #18181b; }
+      .subtitle { font: 14px -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif; fill: #52525b; }
+      .label { font: 700 15px -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif; fill: #18181b; }
+      .small { font: 12px -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif; fill: #52525b; }
+      .teacher { fill: #eff6ff; stroke: #0072B2; stroke-width: 2; }
+      .student { fill: #f0fdf4; stroke: #009E73; stroke-width: 2; }
+      .offline { fill: #fdf2f8; stroke: #CC79A7; stroke-width: 2; }
+      .online { fill: #fff7ed; stroke: #E69F00; stroke-width: 2; }
+      .mixed { fill: #f0f9ff; stroke: #56B4E9; stroke-width: 2; }
+      .connector { fill: none; stroke: #52525b; stroke-width: 2; marker-end: url(#arrow); }
+      .soft { fill: none; stroke: #a1a1aa; stroke-width: 1.5; stroke-dasharray: 5 5; marker-end: url(#arrow); }
+      .box { fill: #ffffff; stroke: #d4d4d8; stroke-width: 1.5; }
+    </style>
+  </defs>
+  <rect class="bg" width="980" height="500" rx="20" />
+  <text class="title" x="36" y="46">知识蒸馏路线图</text>
+  <text class="subtitle" x="36" y="72">关键不是“老师大、学生小”，而是学生在谁的轨迹上学、学哪一种 teacher 信号。</text>
+
+  <rect class="teacher" x="70" y="118" width="180" height="70" rx="14" />
+  <text class="label" x="116" y="146">Teacher</text>
+  <text class="small" x="103" y="168">答案 · logits · 特征</text>
+
+  <rect class="student" x="730" y="118" width="180" height="70" rx="14" />
+  <text class="label" x="778" y="146">Student</text>
+  <text class="small" x="762" y="168">更小 · 更快 · 更便宜</text>
+
+  <rect class="offline" x="310" y="100" width="180" height="106" rx="16" />
+  <text class="label" x="348" y="130">离线蒸馏</text>
+  <text class="small" x="334" y="154">teacher 先生成</text>
+  <text class="small" x="334" y="176">缓存文本 / logits</text>
+  <text class="small" x="334" y="196">便宜但覆盖不足</text>
+
+  <rect class="online" x="500" y="100" width="180" height="106" rx="16" />
+  <text class="label" x="538" y="130">在线蒸馏</text>
+  <text class="small" x="524" y="154">student 自采样</text>
+  <text class="small" x="524" y="176">teacher 实时打分</text>
+  <text class="small" x="524" y="196">覆盖好但昂贵</text>
+
+  <path class="connector" d="M250 153 H300" />
+  <path class="connector" d="M490 153 H500" />
+  <path class="connector" d="M680 153 H720" />
+
+  <rect class="mixed" x="300" y="260" width="380" height="96" rx="16" />
+  <text class="label" x="418" y="290">混合蒸馏</text>
+  <text class="small" x="338" y="316">teacher 样本 + student 样本按比例混合</text>
+  <text class="small" x="338" y="340">用离线成本买一部分 on-policy 覆盖</text>
+  <path class="soft" d="M400 206 V250" />
+  <path class="soft" d="M590 206 V250" />
+  <path class="connector" d="M680 308 C740 308 760 240 800 196" />
+
+  <rect class="box" x="72" y="388" width="838" height="54" rx="14" />
+  <text class="label" x="96" y="420">学生超越老师？</text>
+  <text class="small" x="222" y="420">常见来源不是“知识凭空增加”，而是正则化、数据再训练、搜索 / RL 或 teacher 未吃满训练预算带来的红利。</text>
+</svg>

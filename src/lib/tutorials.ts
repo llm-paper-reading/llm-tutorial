@@ -54,6 +54,15 @@ export const tutorials: Tutorial[] = [
     icon: "🔢",
   },
   {
+    slug: "information-theory-overview",
+    title: "信息论总览：熵、交叉熵与 KL",
+    navTitle: "信息论总览",
+    desc: "一张路线图串起自信息、熵、交叉熵、KL 散度、NLL、KL 方向与语言模型损失，先建立地图再进入细节。",
+    category: "基础理论",
+    topic: "信息论",
+    icon: "🧭",
+  },
+  {
     slug: "information-theory",
     title: "熵与信息",
     desc: "香农如何量化「信息」?自信息、熵、联合熵、条件熵、互信息——机器学习不确定性的度量基础。拖动滑块看钟形熵曲线。",
@@ -94,6 +103,14 @@ export const tutorials: Tutorial[] = [
     category: "基础理论",
     topic: "信息论",
     icon: "🎯",
+  },
+  {
+    slug: "supervised-learning-overview",
+    title: "监督学习总览：从线性模型到集成学习",
+    navTitle: "监督学习总览",
+    desc: "从线性回归、梯度下降、逻辑回归出发，比较 KNN、SVM、朴素贝叶斯、决策树与集成学习，并接上评估、正则化和交叉验证。",
+    category: "监督学习",
+    icon: "🧭",
   },
   {
     slug: "linear-regression",
@@ -201,6 +218,14 @@ export const tutorials: Tutorial[] = [
     desc: "把逻辑回归堆成层,就成了神经网络。点击输入,看激活值逐层传播解出 XOR。",
     category: "深度学习",
     icon: "🧠",
+  },
+  {
+    slug: "reinforcement-learning-overview",
+    title: "强化学习总览：从试错到对齐",
+    navTitle: "强化学习总览",
+    desc: "一张地图串起探索利用、MDP、动态规划、蒙特卡洛、TD、DQN、策略梯度、RLHF、GRPO 以及离线、模仿、基于模型、分层和多智能体 RL。",
+    category: "强化学习",
+    icon: "🧭",
   },
   {
     slug: "multi-armed-bandit",
@@ -338,6 +363,15 @@ export const tutorials: Tutorial[] = [
     desc: "预训练之后，如何把 Base Model 变成可用助手？一张路线图串起 SFT、偏好优化、RLHF/PPO、DPO 家族、RLVR/GRPO、拒绝采样、蒸馏、安全、工具与评测闭环。",
     category: "大模型后训练",
     icon: "🧰",
+  },
+  {
+    slug: "knowledge-distillation-overview",
+    title: "知识蒸馏总览：把能力从老师搬到学生",
+    navTitle: "知识蒸馏总览",
+    desc: "一张地图区分序列级、logit 级、在线、混合与自蒸馏：学生到底学什么、训练序列来自谁、teacher 是否需要在线参与。",
+    category: "前沿与对齐",
+    topic: "知识蒸馏",
+    icon: "🧭",
   },
   {
     slug: "knowledge-distillation",

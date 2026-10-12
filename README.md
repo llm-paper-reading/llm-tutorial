@@ -2,7 +2,7 @@
 
 一个中文交互式教程站,覆盖机器学习基础、深度学习、强化学习、大模型对齐与论文精读。教程以直觉解释、公式推导、交互可视化和可运行代码结合的方式组织,适合循序渐进学习,也适合按专题查阅。
 
-站点地址:https://xu-song.github.io/llm-tutorial/
+站点地址：https://llm-paper-reading.github.io/llm-tutorial/
 
 ## 内容结构
 

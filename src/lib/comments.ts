@@ -30,7 +30,7 @@ export interface GiscusConfig {
 export const GISCUS: GiscusConfig = {
   /** 总开关:repo/id 配好后置 true */
   enabled: true,
-  repo: "xu-song/llm-tutorial",
+  repo: "llm-paper-reading/llm-tutorial",
   repoId: "R_kgDOUlngTA",
   category: "Comments",
   categoryId: "DIC_kwDOUlngTM4DGKlX",

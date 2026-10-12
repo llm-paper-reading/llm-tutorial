@@ -2,6 +2,7 @@ import type { Metadata } from "next";
 import "./globals.css";
 import "katex/dist/katex.min.css";
 import NavBar from "@/components/NavBar";
+import Footer from "@/components/Footer";
 import { SITE_URL } from "@/lib/tutorials";
 
 export const metadata: Metadata = {
@@ -41,6 +42,7 @@ export default function RootLayout({
       <body className="min-h-full flex flex-col bg-white text-zinc-900 dark:bg-zinc-950 dark:text-zinc-100">
         <NavBar />
         {children}
+        <Footer />
       </body>
     </html>
   );

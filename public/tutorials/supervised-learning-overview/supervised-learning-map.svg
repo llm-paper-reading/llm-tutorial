@@ -1,0 +1,62 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="980" height="500" viewBox="0 0 980 500" role="img" aria-labelledby="title desc">
+  <title id="title">监督学习学习路径图</title>
+  <desc id="desc">从线性模型到经典分类器、树与集成，并连接评估、正则化和交叉验证。</desc>
+  <defs>
+    <marker id="arrow" markerWidth="10" markerHeight="10" refX="8" refY="5" orient="auto" markerUnits="strokeWidth">
+      <path d="M 0 0 L 10 5 L 0 10 z" fill="#52525b" />
+    </marker>
+    <style>
+      .bg { fill: #fcfcfb; }
+      .title { font: 700 24px -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif; fill: #18181b; }
+      .subtitle { font: 14px -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif; fill: #52525b; }
+      .label { font: 700 15px -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif; fill: #18181b; }
+      .small { font: 12px -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif; fill: #52525b; }
+      .linear { fill: #eff6ff; stroke: #0072B2; stroke-width: 2; }
+      .classic { fill: #f0fdf4; stroke: #009E73; stroke-width: 2; }
+      .tree { fill: #fdf2f8; stroke: #CC79A7; stroke-width: 2; }
+      .eval { fill: #fff7ed; stroke: #E69F00; stroke-width: 2; }
+      .connector { fill: none; stroke: #52525b; stroke-width: 2; marker-end: url(#arrow); }
+      .soft { fill: none; stroke: #a1a1aa; stroke-width: 1.5; stroke-dasharray: 5 5; marker-end: url(#arrow); }
+      .pill { fill: #ffffff; stroke: #d4d4d8; stroke-width: 1.3; }
+    </style>
+  </defs>
+  <rect class="bg" width="980" height="500" rx="20" />
+  <text class="title" x="36" y="46">监督学习学习路径</text>
+  <text class="subtitle" x="36" y="72">模型、损失、优化与泛化是一条线，不是孤立算法清单。</text>
+
+  <rect class="linear" x="80" y="118" width="250" height="150" rx="16" />
+  <text class="label" x="108" y="150">线性模型：先学训练语法</text>
+  <text class="small" x="108" y="178">线性回归：连续值与 MSE</text>
+  <text class="small" x="108" y="204">梯度下降：参数如何更新</text>
+  <text class="small" x="108" y="230">逻辑回归：概率与交叉熵</text>
+
+  <rect class="classic" x="370" y="118" width="250" height="150" rx="16" />
+  <text class="label" x="398" y="150">经典分类器：比较归纳偏置</text>
+  <text class="small" x="398" y="178">KNN：邻居投票</text>
+  <text class="small" x="398" y="204">SVM：最大间隔</text>
+  <text class="small" x="398" y="230">朴素贝叶斯：证据累积</text>
+
+  <rect class="tree" x="660" y="118" width="240" height="150" rx="16" />
+  <text class="label" x="688" y="150">树与集成：从弱到强</text>
+  <text class="small" x="688" y="178">决策树：递归切分</text>
+  <text class="small" x="688" y="204">随机森林：平均降方差</text>
+  <text class="small" x="688" y="230">Boosting：逐轮修错</text>
+
+  <path class="connector" d="M330 193 H360" />
+  <path class="connector" d="M620 193 H650" />
+
+  <rect class="eval" x="185" y="346" width="610" height="88" rx="16" />
+  <text class="label" x="322" y="377">评估与调优：让训练分数变成泛化能力</text>
+  <text class="small" x="230" y="405">模型评估：指标与阈值 · 过拟合与正则化：复杂度控制 · 交叉验证：稳健调参与模型选择</text>
+
+  <path class="soft" d="M205 268 V338" />
+  <path class="soft" d="M495 268 V338" />
+  <path class="soft" d="M780 268 V338" />
+
+  <rect class="pill" x="104" y="302" width="164" height="28" rx="14" />
+  <text class="small" x="125" y="321">损失函数与优化</text>
+  <rect class="pill" x="414" y="302" width="164" height="28" rx="14" />
+  <text class="small" x="435" y="321">距离、间隔、概率</text>
+  <rect class="pill" x="704" y="302" width="150" height="28" rx="14" />
+  <text class="small" x="733" y="321">方差与偏差</text>
+</svg>

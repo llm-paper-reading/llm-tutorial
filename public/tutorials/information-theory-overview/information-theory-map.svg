@@ -1,0 +1,70 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="980" height="500" viewBox="0 0 980 500" role="img" aria-labelledby="title desc">
+  <title id="title">信息论学习路径图</title>
+  <desc id="desc">从自信息和熵到交叉熵、KL 散度、NLL、KL 方向和语言模型损失。</desc>
+  <defs>
+    <marker id="arrow" markerWidth="10" markerHeight="10" refX="8" refY="5" orient="auto" markerUnits="strokeWidth">
+      <path d="M 0 0 L 10 5 L 0 10 z" fill="#52525b" />
+    </marker>
+    <style>
+      .bg { fill: #fcfcfb; }
+      .title { font: 700 24px -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif; fill: #18181b; }
+      .subtitle { font: 14px -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif; fill: #52525b; }
+      .label { font: 700 15px -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif; fill: #18181b; }
+      .small { font: 12px -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif; fill: #52525b; }
+      .box { fill: #ffffff; stroke: #d4d4d8; stroke-width: 1.5; }
+      .a { fill: #eff6ff; stroke: #0072B2; stroke-width: 2; }
+      .b { fill: #f0fdf4; stroke: #009E73; stroke-width: 2; }
+      .c { fill: #fdf2f8; stroke: #CC79A7; stroke-width: 2; }
+      .d { fill: #fff7ed; stroke: #E69F00; stroke-width: 2; }
+      .e { fill: #f0f9ff; stroke: #56B4E9; stroke-width: 2; }
+      .connector { fill: none; stroke: #52525b; stroke-width: 2; marker-end: url(#arrow); }
+      .soft { fill: none; stroke: #a1a1aa; stroke-width: 1.5; stroke-dasharray: 5 5; marker-end: url(#arrow); }
+      .formula { font: 700 17px Georgia, serif; fill: #18181b; }
+    </style>
+  </defs>
+  <rect class="bg" width="980" height="500" rx="20" />
+  <text class="title" x="36" y="46">信息论学习路径</text>
+  <text class="subtitle" x="36" y="72">从“一个事件有多意外”一路走到分类损失、语言模型 NLL 和 KL 方向。</text>
+
+  <rect class="a" x="70" y="120" width="150" height="78" rx="14" />
+  <text class="label" x="112" y="150">自信息</text>
+  <text class="small" x="96" y="174">-log p(x)</text>
+
+  <rect class="b" x="260" y="120" width="150" height="78" rx="14" />
+  <text class="label" x="310" y="150">熵</text>
+  <text class="small" x="286" y="174">平均不确定性</text>
+
+  <rect class="c" x="450" y="120" width="150" height="78" rx="14" />
+  <text class="label" x="496" y="150">交叉熵</text>
+  <text class="small" x="476" y="174">错误信念的代价</text>
+
+  <rect class="d" x="640" y="120" width="150" height="78" rx="14" />
+  <text class="label" x="686" y="150">KL 散度</text>
+  <text class="small" x="666" y="174">两个分布的差</text>
+
+  <rect class="e" x="830" y="120" width="90" height="78" rx="14" />
+  <text class="label" x="856" y="150">NLL</text>
+  <text class="small" x="846" y="174">-log p(y)</text>
+
+  <path class="connector" d="M220 159 H250" />
+  <path class="connector" d="M410 159 H440" />
+  <path class="connector" d="M600 159 H630" />
+  <path class="connector" d="M790 159 H820" />
+
+  <rect class="box" x="145" y="255" width="690" height="70" rx="16" />
+  <text class="formula" x="330" y="286">H(P,Q) = H(P) + D<tspan baseline-shift="sub" font-size="12">KL</tspan>(P || Q)</text>
+  <text class="small" x="246" y="310">one-hot 标签下 H(P)=0，训练目标上交叉熵、KL 与 NLL 会塌缩为同一个量</text>
+  <path class="soft" d="M525 198 V248" />
+  <path class="soft" d="M715 198 C715 230 650 246 610 255" />
+  <path class="soft" d="M875 198 C875 235 760 250 690 255" />
+
+  <rect class="a" x="130" y="382" width="250" height="62" rx="14" />
+  <text class="label" x="174" y="407">前向 KL：覆盖模式</text>
+  <text class="small" x="174" y="429">知识蒸馏、mean-covering</text>
+
+  <rect class="d" x="600" y="382" width="250" height="62" rx="14" />
+  <text class="label" x="644" y="407">反向 KL：选择模式</text>
+  <text class="small" x="644" y="429">RLHF / DPO 约束直觉</text>
+  <path class="soft" d="M640 198 C560 256 390 335 310 376" />
+  <path class="soft" d="M740 198 C790 260 790 326 755 376" />
+</svg>

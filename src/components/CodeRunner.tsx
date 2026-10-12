@@ -1,9 +1,8 @@
 "use client";
 
-import { useState, useRef } from "react";
+import { useEffect, useState, useRef } from "react";
 import CodeMirror from "@uiw/react-codemirror";
 import { python } from "@codemirror/lang-python";
-import { oneDark } from "@codemirror/theme-one-dark";
 import { usePyodide } from "@/hooks/usePyodide";
 
 interface CodeRunnerProps {
@@ -35,6 +34,16 @@ export default function CodeRunner({
   const [copied, setCopied] = useState(false);
   const { status, load, run, cancel } = usePyodide();
   const editorRef = useRef<HTMLDivElement>(null);
+  const [theme, setTheme] = useState<"light" | "dark">("light");
+
+  useEffect(() => {
+    const root = document.documentElement;
+    const syncTheme = () => setTheme(root.classList.contains("dark") ? "dark" : "light");
+    syncTheme();
+    const observer = new MutationObserver(syncTheme);
+    observer.observe(root, { attributes: true, attributeFilter: ["class"] });
+    return () => observer.disconnect();
+  }, []);
 
   const handleRun = async () => {
     setRunning(true);
@@ -98,14 +107,14 @@ export default function CodeRunner({
   const busy = running || status === "loading";
 
   return (
-    <div className="my-6 overflow-hidden rounded-xl border border-zinc-700 bg-zinc-900 shadow-sm">
+    <div className="my-6 overflow-hidden rounded-xl border border-zinc-200 bg-white shadow-sm dark:border-zinc-700 dark:bg-zinc-900">
       <div
         ref={editorRef}
         onMouseEnter={() => status === "idle" && load()}
       >
         <CodeMirror
           value={code}
-          theme={oneDark}
+          theme={theme}
           extensions={[python()]}
           editable={editable}
           onChange={setCode}
@@ -114,7 +123,7 @@ export default function CodeRunner({
         />
       </div>
 
-      <div className="flex items-center gap-2 border-t border-zinc-700 bg-zinc-800 px-3 py-2">
+      <div className="flex items-center gap-2 border-t border-zinc-200 bg-zinc-50 px-3 py-2 dark:border-zinc-700 dark:bg-zinc-800">
         <button
           onClick={handleRun}
           disabled={busy || status === "error"}
@@ -135,14 +144,14 @@ export default function CodeRunner({
           <button
             onClick={handleReset}
             disabled={busy}
-            className="rounded-md px-3 py-1.5 text-sm text-zinc-300 transition hover:bg-zinc-700 disabled:opacity-50"
+            className="rounded-md px-3 py-1.5 text-sm text-zinc-600 transition hover:bg-zinc-200 disabled:opacity-50 dark:text-zinc-300 dark:hover:bg-zinc-700"
           >
             重置
           </button>
         )}
         <button
           onClick={handleCopy}
-          className="ml-auto flex items-center gap-1.5 rounded-md px-3 py-1.5 text-sm text-zinc-300 transition hover:bg-zinc-700"
+          className="ml-auto flex items-center gap-1.5 rounded-md px-3 py-1.5 text-sm text-zinc-600 transition hover:bg-zinc-200 dark:text-zinc-300 dark:hover:bg-zinc-700"
           title="复制代码"
         >
           {copied ? (
@@ -162,21 +171,21 @@ export default function CodeRunner({
             </>
           )}
         </button>
-        <span className="text-xs text-zinc-500">Python · Pyodide</span>
+        <span className="text-xs text-zinc-500 dark:text-zinc-500">Python · Pyodide</span>
       </div>
 
       {output && (
         <pre
-          className={`overflow-x-auto border-t border-zinc-700 px-4 py-3 text-sm ${
-            errored ? "text-red-400" : "text-zinc-200"
-          } bg-zinc-950`}
+          className={`overflow-x-auto border-t border-zinc-200 bg-zinc-50 px-4 py-3 text-sm dark:border-zinc-700 dark:bg-zinc-950 ${
+            errored ? "text-red-600 dark:text-red-400" : "text-zinc-800 dark:text-zinc-200"
+          }`}
         >
           {output}
         </pre>
       )}
 
       {images.length > 0 && (
-        <div className="flex flex-col items-center gap-3 border-t border-zinc-700 bg-zinc-950 px-4 py-3">
+        <div className="flex flex-col items-center gap-3 border-t border-zinc-200 bg-zinc-50 px-4 py-3 dark:border-zinc-700 dark:bg-zinc-950">
           {images.map((src, i) => (
             // eslint-disable-next-line @next/next/no-img-element
             <img

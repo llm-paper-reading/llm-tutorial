@@ -1,0 +1,90 @@
+import { tutorialMetadata } from "@/lib/tutorials";
+
+export const metadata = tutorialMetadata("supervised-learning-overview");
+
+# 🧭 监督学习总览：从线性模型到集成学习
+
+监督学习是最经典的机器学习入口：给模型一批输入 $x$ 和标签 $y$，让它学会从输入预测标签。看起来只是“拟合函数”，但真正要掌握的是三件事：**模型表达能力、损失函数、泛化能力**。这三件事决定了模型能不能学、怎么学、学完能不能用在没见过的数据上。
+
+这组教程覆盖线性模型、经典分类器、树模型与集成学习，适合作为进入深度学习、强化学习和大模型之前的基础路线。
+
+<figure className="my-6">
+  <img src="/tutorials/supervised-learning-overview/supervised-learning-map.svg" alt="监督学习学习路径图：从线性回归、梯度下降和逻辑回归开始，进入 K 近邻、支持向量机、朴素贝叶斯等经典分类器，再进入决策树和集成学习，并连接到模型评估、过拟合正则化与交叉验证" className="mx-auto h-auto max-w-full rounded-lg border border-zinc-200 shadow-sm dark:border-zinc-800" />
+  <figcaption>
+    <span className="figure-caption-main">监督学习学习路径：先学可解释的线性模型，再看不同归纳偏置的分类器，最后用树与集成把弱模型组合成强模型</span>
+    <span className="figure-caption-source">图源：本站根据 Bishop《Pattern Recognition and Machine Learning》、Hastie et al.《The Elements of Statistical Learning》与 Breiman 随机森林论文整理绘制</span>
+  </figcaption>
+</figure>
+
+## 监督学习在学什么
+
+监督学习的训练样本形如 $\{(x_i,y_i)\}_{i=1}^n$。模型 $f_\theta(x)$ 给出预测，损失函数衡量预测和标签的差距，优化算法调整参数 $\theta$ 让平均损失下降。Bishop 的机器学习教材把这条路线系统化为概率建模、损失最小化与泛化评估三部分。<Cite n={1} />
+
+| 问题 | 典型输出 | 常见损失 | 代表教程 |
+|---|---|---|---|
+| 回归 | 连续数值 | MSE / MAE | [线性回归](/tutorials/linear-regression) |
+| 二分类 | 正类概率 | BCE / log loss | [逻辑回归](/tutorials/logistic-regression) |
+| 多分类 | 类别概率分布 | 交叉熵 | [朴素贝叶斯](/tutorials/naive-bayes)、[SVM](/tutorials/svm) |
+| 非参数分类 | 邻域投票 | 距离度量 + 投票规则 | [K 近邻分类](/tutorials/knn-classification) |
+| 可解释规则 | if-then 切分 | 信息增益 / 基尼指数 | [决策树](/tutorials/decision-tree) |
+| 集成预测 | 多模型投票或加权和 | bagging / boosting 目标 | [集成学习](/tutorials/ensemble-learning) |
+
+## 第一组：线性模型
+
+线性模型是监督学习的“语法课”。它们简单，但几乎所有现代模型都保留着它们的核心部件：线性打分、损失函数、梯度下降、正则化。
+
+1. [线性回归](/tutorials/linear-regression)：预测连续值，理解最小二乘和残差。
+2. [梯度下降](/tutorials/gradient-descent)：理解参数如何沿损失下降方向更新。
+3. [逻辑回归](/tutorials/logistic-regression)：用 sigmoid 把线性打分变成概率，用交叉熵训练分类器。
+
+线性模型的重点不是“只能画直线”，而是理解：**模型假设越强，越容易优化和解释；模型假设越弱，越依赖数据、正则化和评估。**
+
+## 第二组：经典分类器
+
+经典分类器展示了不同的归纳偏置：KNN 相信“近朱者赤”，SVM 相信“最大间隔”，朴素贝叶斯相信“条件独立近似足够好”。
+
+| 方法 | 核心偏置 | 强项 | 典型短板 |
+|---|---|---|---|
+| [KNN](/tutorials/knn-classification) | 相近样本标签相似 | 直观、几乎不用训练 | 预测慢、怕维度高、依赖距离尺度 |
+| [SVM](/tutorials/svm) | 最大间隔分类面泛化更好 | 小中数据、边界清晰时强 | 大规模概率输出和多分类工程较重 |
+| [朴素贝叶斯](/tutorials/naive-bayes) | 特征条件独立 | 文本分类快、样本效率高 | 独立假设粗糙，表达能力有限 |
+
+这三类模型适合用来建立“模型为什么会这样预测”的直觉：KNN 看邻居，SVM 看支持向量，朴素贝叶斯看证据如何累积。
+
+## 第三组：树与集成
+
+决策树把预测拆成一串可解释的切分：每一步选择最能降低不确定性的特征和阈值。单棵树容易高方差，集成学习则把许多弱模型组合起来，得到更稳、更强的预测器。
+
+Breiman 的随机森林把多棵树用 bootstrap 和随机特征子集组合起来，降低方差；梯度提升则把新树用于修正前一轮残差，逐步降低损失。<Cite n={[2,3]} />
+
+| 方法 | 组合方式 | 直觉 | 代表教程 |
+|---|---|---|---|
+| 决策树 | 单棵树递归切分 | 像“20 个问题”一样缩小范围 | [决策树](/tutorials/decision-tree) |
+| 随机森林 | 多棵去相关树投票 / 平均 | 用平均降低高方差 | [集成学习](/tutorials/ensemble-learning) |
+| 提升方法 | 后一棵树修正前一轮错误 | 把弱学习器串成强学习器 | [集成学习](/tutorials/ensemble-learning) |
+
+## 和评估调优怎么接上
+
+监督学习不是训练集分数越高越好，而是要在新数据上表现好。因此这组内容天然接到三个评估与调优页面：
+
+- [模型评估](/tutorials/model-evaluation)：准确率、精确率、召回率、F1、ROC 等指标回答“怎么量化好坏”。
+- [过拟合与正则化](/tutorials/overfitting-regularization)：回答“为什么训练集很好、测试集很差”。
+- [交叉验证](/tutorials/cross-validation)：回答“如何更稳地估计泛化性能和调参”。
+
+如果你只看算法、不看评估，很容易把“拟合得更复杂”误认成“模型更好”。评估与正则化是监督学习真正可用的另一半。
+
+## 推荐阅读路径
+
+1. [线性回归](/tutorials/linear-regression) → [梯度下降](/tutorials/gradient-descent) → [逻辑回归](/tutorials/logistic-regression)。先把优化和概率输出学清楚。
+2. [K 近邻分类](/tutorials/knn-classification) → [SVM](/tutorials/svm) → [朴素贝叶斯](/tutorials/naive-bayes)。对比三种完全不同的分类直觉。
+3. [决策树](/tutorials/decision-tree) → [集成学习](/tutorials/ensemble-learning)。理解树为什么容易过拟合，以及随机森林 / boosting 如何补强。
+4. 穿插阅读 [模型评估](/tutorials/model-evaluation)、[过拟合与正则化](/tutorials/overfitting-regularization)、[交叉验证](/tutorials/cross-validation)。这些不是后置章节，而是每个监督学习模型都需要的安全带。
+
+## 参考资料
+
+<References>
+1. Bishop, C. M. (2006). *Pattern Recognition and Machine Learning*. Springer. —— 监督学习、概率建模、线性模型、分类器与泛化评估的系统教材来源。
+2. Breiman, L. (2001). *Random Forests*. Machine Learning, 45, 5–32. —— 随机森林的经典论文，说明 bootstrap 与随机特征如何降低树模型方差。
+3. Friedman, J. H. (2001). *Greedy Function Approximation: A Gradient Boosting Machine*. Annals of Statistics. —— 梯度提升机的经典来源，将 boosting 解释为函数空间里的梯度下降。
+4. Hastie, Tibshirani, Friedman (2009). *The Elements of Statistical Learning, 2nd edition*. Springer. —— 线性模型、SVM、树模型、集成学习、正则化和模型选择的经典综合教材。
+</References>

@@ -41,7 +41,7 @@ jobs:
         run: npm run build
         env:
           NEXT_PUBLIC_BASE_PATH: /llm-tutorial
-          NEXT_PUBLIC_SITE_URL: https://xu-song.github.io/llm-tutorial
+          NEXT_PUBLIC_SITE_URL: https://llm-paper-reading.github.io/llm-tutorial
           NODE_OPTIONS: --max-old-space-size=8192
 
       - name: Upload Pages artifact

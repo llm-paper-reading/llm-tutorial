@@ -278,6 +278,47 @@ SFT 可以教会函数调用格式（Schick et al., 2023），偏好优化可以
 
 站内的[模型评估](/tutorials/model-evaluation)和[交叉验证](/tutorials/cross-validation)讲的是更基础的评估思想；放到大模型后训练里，评测还要额外面对数据污染、benchmark 过拟合、上下文长度差异、judge 偏差和线上分布漂移。<Cite n={17} />
 
+## 算法全景：二十种方法一张表
+
+前面各节按信号类型分开讲了 SFT、偏好优化、RLVR、拒绝采样和蒸馏。再把前文没有细讲的 SeqKD、特征 / 自蒸馏、MOPD、STaR、Expert Iteration、RLOO、PRM、Online DPO 一起放进同一张表，用五个维度对齐：**题谁出**（题目谁出、被训练的回答谁写）、**反馈密度**（多久给一次信号）、**需要的陪练**（学生之外还要准备什么）、**在线采样**（要不要持续用当前模型 roll out）和**主要的坑**。<Cite n={[13,26,33,34,35,36]} />
+
+先交代两个共性，也是读「题谁出」这一列的钥匙：
+
+1. 除了 Expert Iteration 这类自博弈场景，表里所有方法的题目都来自人工整理的固定数据集——SFT 也不例外。
+2. **SFT 的答案不必是人写的**：狭义 SFT 学人写的示范（InstructGPT），但 Alpaca 的 52K 指令示范全部由 text-davinci-003 生成（仅 175 条 seed 人写），Instruction Tuning with GPT-4 是同一形态——按数据来源看，这类「模型写答案的 SFT」本质就是 SeqKD。所以这一列的区分度不在题目，而在**被训练的回答由谁写、监督信号是什么**：人写＋硬标签（狭义 SFT）、teacher 写＋硬标签（SeqKD）、现成序列＋teacher 软分布（离线 / 特征蒸馏）、学生自己写＋teacher 在线软分布（OPD）。
+
+| 算法 | 一句话理解 | 题谁出 | 反馈密度 | 需要的陪练 | 在线采样 | 主要的坑 |
+|---|---|---|---|---|---|---|
+| SFT | 抄数据集里的好答案 | 人出题、数据集答案（人写或模型生成） | 每 token（硬标签） | 无 | 否 | 示范偏差、模仿上限；答案作者决定上限 |
+| SeqKD | 把学霸的答卷整份当教材背 | 人出题、teacher 写答案 | 每 token（硬标签） | teacher（离线生成答案） | 否 | 只见硬答案不见老师分布；继承老师错误 |
+| 离线蒸馏 | 在现成序列上模仿老师每一步的倾向 | 人出题、现成序列（数据集答案或语料） | 每 token（teacher 软分布） | teacher（离线打分） | 否 | 训练分布不是学生自己的分布（暴露偏差） |
+| 特征蒸馏 | 连草稿纸一起抄 | 人出题、现成序列 | 每层 × 每 token（中间特征） | teacher（出中间层） | 否 | 师生结构需可对齐 |
+| 自蒸馏 | 自己（或上一代自己）当老师 | 人出题、软目标来自自己 | 每 token | 自己的快照（只推理） | 否 | 无新信息，增益来自正则化或隐式集成；多代训练成本高 |
+| [OPD](/papers/opd-agarwal) | 做题时老师逐字盯着改 | 人出题、学生写答案 | 每 token（teacher 在线软分布） | teacher（在线逐 token 打分） | 是 | teacher 在线推理成本、词表需对齐 |
+| [MOPD](/papers/opd-agarwal) | 各科专家会诊，压回一个学生 | 人出题、学生写答案，按领域路由 | 每 token | 多个专家 teacher + 路由 | 是 | 路由脏、老师间冲突、tokenizer 不一致 |
+| 拒绝采样 / BoN | 海选再择优 | 人出题、模型自采候选 | 每条候选（0/1 或打分） | judge / verifier | 是（迭代式，每轮重采样） | judge 失真、候选同质化 |
+| STaR | 做对的留下，做错的看着答案重做 | 人出题、学生写推理 | 每题 0/1 | 标准答案（给做错的当提示） | 是 | 依赖标准答案；带提示的推理可能只是事后合理化 |
+| Expert Iteration | 搜索先把解改好，模型再照着学 | 题库 / 自博弈出局面，解由搜索改进 | 每步模仿目标（游戏版）；每题 0/1 筛选（LLM 变体） | 树搜索 / verifier | 是 | 搜索成本高、回灌数据分布漂移 |
+| PPO-RLHF | 教练拿着打分表带训练 | 人出题、学生写答案，人标偏好 | 每条回答（连续分）+ 每 token KL 罚 | RM + 参考模型 + critic | 是 | reward hacking、栈最复杂 |
+| GRPO | 同题互相比着学，省掉 critic | 人出题、学生同题写一组 | 每条回答（组内相对）+ 每 token KL（原版，R1 起常移除） | RM 或 verifier（视奖励来源）+ 参考模型（KL） | 是 | 全对全错组零优势、长度 / 难度偏置 |
+| RLOO | 拿同组其余回答的平均分当基线 | 人出题、学生同题写一组 | 每条回答（留一相对；整段视为单动作） | RM 或 verifier（无 critic） | 是 | 每组需多候选，基线组小则方差大 |
+| RLVR | 判卷机自动判卷 | 人出题、学生写答案（对标准答案） | 每题 0/1 | 规则 verifier | 是 | verifier 漏洞、奖励稀疏 |
+| PRM（过程监督） | 每一步都打分 | 人出题、学生写答案，PRM 逐 step 打分 | 每个 step | PRM（靠人工 step 标注训练） | 是（当 RL 奖励）或仅采样（当 BoN 重排器） | step 级标注贵、步边界模糊 |
+| DPO | 直接学“哪份作业更好” | 人出题、模型写候选，人标优劣 | 每对一次 | 参考模型（只推理） | 否 | 离线覆盖不足、偏好噪声 |
+| KTO | 只有点赞点踩也学 | 人出题、模型写候选，人点赞点踩 | 每条一次 | 参考模型 | 否 | 好 / 坏样本配比敏感 |
+| SimPO | 不带参考模型的偏好学习 | 人出题、模型写候选，人标优劣 | 每对一次 | 无 | 否 | margin 等超参敏感 |
+| Online / 迭代 DPO | 边考试边收偏好 | 人出题、学生写答案，judge 判偏好 | 每对一次 | judge / RM + 参考模型 | 是 | judge 偏差随轮次累积、每轮采样判分成本高 |
+| RLAIF / CAI | AI 当阅卷员 | 人 / 红队出题、模型写答案，AI 评 | 每条一次 | AI judge + 偏好模型（按宪法评） | 是（CAI 的 RL 阶段） | judge 偏差、宪法设计难 |
+
+**怎么看这张表：**
+
+1. **反馈密度大致分三档**：逐 token / 逐步的模仿信号（SFT、蒸馏系、游戏版 Expert Iteration）→ 每条回答或每对一次（偏好、RL 系）→ 每题一次 0/1（RLVR、STaR）。三个细节值得注意：**特征蒸馏是全表最密的**——监督落在每个中间层的每个 token 位置上，比 logit 蒸馏还要密 L 倍；**离线蒸馏和 OPD 的反馈密度相同**（都是每 token 一次），差别全在**序列来自谁**——前者在固定序列上打分，学生推理时分布对不上（暴露偏差），后者在学生自己生成的序列上打分；**RL 系的两档是叠加不是二选一**——PPO 把每 token 的 KL 罚加在每条回答的 RM 打分上，GRPO 原版同样带逐 token KL（R1 起常移除），而 RLOO 原论文把整段回答视为单动作、奖励只在序列末尾。反馈越稀疏，越依赖算法把信号“提炼”成可用的梯度：组内相对（GRPO、RLOO）、多轮自举（STaR、Expert Iteration）都是这类提炼器。
+2. **“在线采样”是成本主开关**：标“是”的方法需要推理集群持续 roll out，训练吞吐由采样速度决定；标“否”的方法可以纯离线跑，代价是失去探索。
+3. **“需要的陪练”决定工程复杂度**：PPO-RLHF 要同时养 RM、参考模型和 critic 三个陪练；GRPO / RLOO 砍掉 critic；RLVR 连学习型 RM 都省掉，换成规则 verifier；DPO / KTO 只剩一个只做推理的参考模型；SimPO 一个不留。陪练越少，栈越简单，但对数据质量越敏感。
+4. **这张表是地图，不是菜单**：真实流水线几乎从不是“二十选一”——Tulu 3 是 SFT → DPO → RLVR 的串联，DeepSeek-R1 则在两轮 RL 之间插入拒绝采样回灌再 SFT。
+
+下一节的速查表换一个视角：不看算法本身，而看“你手里有什么信号”，从数据出发做选型。
+
 ## 方法选型速查表
 
 | 你手里有什么 | 优先考虑 | 为什么 | 小心什么 |
@@ -438,4 +479,8 @@ SFT 可以教会函数调用格式（Schick et al., 2023），偏好优化可以
 30. Saunders et al. (2022). *Self-critiquing models for assisting human evaluators*. arXiv: [2206.05802](https://arxiv.org/abs/2206.05802). —— 自我批判模型辅助人类评估，是 AI feedback、安全审查和过程评估的相关背景。
 31. Schulman et al. (2017). *Proximal Policy Optimization Algorithms*. arXiv: [1707.06347](https://arxiv.org/abs/1707.06347). —— PPO 是 RLHF 与早期 LLM 对齐中常用的策略优化算法背景。
 32. Guo et al. (2024). *Discovering Preference Optimization Algorithms with and for Large Language Models*. arXiv: [2406.08414](https://arxiv.org/abs/2406.08414). —— 系统探索偏好优化目标的自动发现，说明偏好优化本身也正在成为可搜索、可设计的算法空间。
+33. Zelikman et al. (2022). *STaR: Bootstrapping Reasoning With Reasoning*. arXiv: [2203.14465](https://arxiv.org/abs/2203.14465). —— STaR 用“做对留下、做错带答案重做”的自举循环生成推理数据，是自生成训练数据路线的代表。
+34. Anthony et al. (2017). *Thinking Fast and Slow with Deep Learning and Monte Carlo Tree Search*. arXiv: [1705.08439](https://arxiv.org/abs/1705.08439). —— Expert Iteration 的提出论文：树搜索负责规划改进策略，神经网络负责泛化，二者交替迭代，是搜索加自举路线的源头。
+35. Ahmadian et al. (2024). *Back to Basics: Revisiting REINFORCE-Style Optimization for Learning from Human Feedback in LLMs*. arXiv: [2402.14740](https://arxiv.org/abs/2402.14740). —— RLOO 用同题多候选的留一均值当基线替代 PPO 的 critic，验证 REINFORCE 式优化在 RLHF 中更简单且不输性能。
+36. Taori et al. (2023). *Stanford Alpaca: An Instruction-following LLaMA Model*. [crfm.stanford.edu/2023/03/13/alpaca.html](https://crfm.stanford.edu/2023/03/13/alpaca.html). —— Alpaca 的 52K 指令示范全部由 text-davinci-003 生成（仅 175 条 seed 人写），支撑“SFT 的答案不必是人写的”与算法全景表的 SFT 行。
 </References>

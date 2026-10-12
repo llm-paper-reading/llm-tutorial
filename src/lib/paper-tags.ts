@@ -83,9 +83,9 @@ export const KEYWORDS: PaperTag[] = [
     hint: "程序化生成训练环境与任务，突破人工标注的规模与多样性上限",
   },
   {
-    name: "蒸馏与数据",
+    name: "知识蒸馏",
     icon: "💧",
-    hint: "把强模型的能力（推理链、知识）迁移到目标模型",
+    hint: "把强模型的 logits、soft targets、推理链或策略迁移到学生模型",
   },
   {
     name: "在线蒸馏",

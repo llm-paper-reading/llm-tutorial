@@ -1,0 +1,92 @@
+import { tutorialMetadata } from "@/lib/tutorials";
+
+export const metadata = tutorialMetadata("information-theory-overview");
+
+# 🧭 信息论总览：熵、交叉熵与 KL
+
+信息论这组教程的目标不是把香农理论完整讲完，而是把机器学习里最常用的一条链路打通：**不确定性怎么量化、错误分布要付多少代价、为什么交叉熵就是训练分类器和语言模型的损失、KL 的方向为什么会改变模型行为。**
+
+香农把信息量和熵形式化为通信系统中的不确定性度量；Cover 与 Thomas 的教材则系统整理了熵、相对熵（KL 散度）、互信息等核心概念。<Cite n={[1,2]} /> 机器学习里，它们几乎无处不在：分类损失、语言模型 NLL、变分推断、RLHF 的 KL 约束、知识蒸馏的 teacher-student 匹配，背后都在操作概率分布。
+
+<figure className="my-6">
+  <img src="/tutorials/information-theory-overview/information-theory-map.svg" alt="信息论学习路径图：从自信息和熵开始，进入交叉熵与 KL 散度，再解释 one-hot 标签下交叉熵、KL 与 NLL 的恒等关系，最后比较前向 KL 与反向 KL，并落到分类和语言模型损失" className="mx-auto h-auto max-w-full rounded-lg border border-zinc-200 shadow-sm dark:border-zinc-800" />
+  <figcaption>
+    <span className="figure-caption-main">信息论学习路径：先理解“惊讶”和“不确定性”，再把它落到损失函数、KL 方向和语言模型训练</span>
+    <span className="figure-caption-source">图源：本站根据 Shannon 信息论、Cover & Thomas 信息论教材以及 Bishop《Pattern Recognition and Machine Learning》相关章节整理绘制</span>
+  </figcaption>
+</figure>
+
+## 五个概念串成一条线
+
+| 概念 | 问的问题 | 机器学习里的位置 | 本站入口 |
+|---|---|---|---|
+| 自信息 | 一个事件有多意外？ | 低概率事件损失大 | [熵与信息](/tutorials/information-theory) |
+| 熵 | 一个分布平均有多不确定？ | 数据、标签、策略的不确定性 | [熵与信息](/tutorials/information-theory) |
+| 交叉熵 | 用错误分布编码真实分布要多贵？ | 分类与语言模型训练损失 | [交叉熵与 KL 散度](/tutorials/cross-entropy-kl) |
+| KL 散度 | 两个分布差多少？ | 蒸馏、RLHF、变分推断、正则约束 | [交叉熵与 KL 散度](/tutorials/cross-entropy-kl) |
+| NLL | 模型给真实样本的负对数概率 | 最大似然训练 | [交叉熵 = KL = NLL](/tutorials/ce-kl-nll-equivalence) |
+
+最重要的一条公式链是：
+
+$$
+H(P,Q)=H(P)+D_{KL}(P\parallel Q)
+$$
+
+如果真实标签 $P$ 是 one-hot，$H(P)=0$，于是交叉熵、KL 散度和负对数似然在训练目标上塌缩成同一个量。这就是为什么分类器、语言模型和许多监督学习目标都可以用“交叉熵 / NLL”来讲。
+
+## 为什么 KL 的方向重要
+
+KL 不对称：$D_{KL}(P\parallel Q)$ 和 $D_{KL}(Q\parallel P)$ 不是一回事。前向 KL 惩罚“真实分布有质量但模型没覆盖”的位置，倾向于 **mean-covering**；反向 KL 惩罚“模型把质量放到真实分布低概率区域”的位置，倾向于 **mode-seeking**。
+
+| 方向 | 常见名字 | 行为倾向 | 典型应用 |
+|---|---|---|---|
+| $D_{KL}(P\parallel Q)$ | 前向 KL | 覆盖所有模式，宁可铺宽 | 经典知识蒸馏、部分变分目标 |
+| $D_{KL}(Q\parallel P)$ | 反向 KL | 抓住高概率模式，避免低概率区域 | RLHF / DPO 中的策略约束直觉、模式选择 |
+
+这条差别解释了很多看似无关的现象：蒸馏为什么常说 student 覆盖 teacher，RLHF 为什么用 KL 把策略拴在参考模型附近，生成模型为什么有时“铺得广”有时“收得窄”。本站的 [前向 KL vs 反向 KL](/tutorials/forward-reverse-kl) 专门用双峰分布把这个差异画出来。
+
+## 它如何落到语言模型
+
+语言模型训练时，每一步都预测下一个 token 的概率分布。给定真实下一个 token $y_t$，训练损失就是：
+
+$$
+-\log p_\theta(y_t\mid y_{<t})
+$$
+
+整段文本的损失是所有 token NLL 的平均，困惑度（perplexity）则是平均 NLL 的指数。也就是说，语言模型的预训练目标本质上就是“在每个位置做一个超大词表分类”，损失就是交叉熵 / NLL。<Cite n={3} />
+
+这也是信息论系列和后面内容的连接点：
+
+- [实战：分类与语言模型的损失](/tutorials/ml-losses) 把 BCE、多分类 CE 和 GPT next-token loss 放进同一张表。
+- [大模型解码](/tutorials/llm-decoding) 说明训练得到的是概率分布，推理时还要用贪心、温度、top-k、top-p 把分布变成文本。
+- [知识蒸馏](/tutorials/knowledge-distillation) 用 KL 让 student 分布逼近 teacher 分布。
+- [从 RL 到 RLHF](/tutorials/rlhf) 用 KL 约束策略不要离参考模型太远。
+
+## 推荐阅读路径
+
+如果只想打通机器学习损失函数，按这个顺序读：
+
+1. [熵与信息](/tutorials/information-theory)：建立自信息、熵、条件熵、互信息的直觉。
+2. [交叉熵与 KL 散度](/tutorials/cross-entropy-kl)：理解“错误信念的编码代价”和“两个分布的差距”。
+3. [交叉熵 = KL = NLL](/tutorials/ce-kl-nll-equivalence)：把 one-hot 标签下三个名字为什么等价讲透。
+4. [前向 KL vs 反向 KL](/tutorials/forward-reverse-kl)：理解 KL 方向如何改变优化行为。
+5. [实战：分类与语言模型的损失](/tutorials/ml-losses)：把前面概念落到 BCE、多分类 CE、语言模型 NLL 与困惑度。
+
+## 常见误区
+
+| 误区 | 更准确的说法 |
+|---|---|
+| KL 是距离 | KL 不对称，也不满足三角不等式；它是散度，不是几何距离 |
+| 交叉熵和 KL 总是一样 | 只有在真实分布固定时优化目标等价；one-hot 时还会进一步等于 NLL |
+| 熵越低模型越好 | 熵低只是更确定；如果确定地错，损失会很大 |
+| 温度只是让采样更随机 | 训练时温度也会改变 softmax 分布形状，是蒸馏和解码的共同旋钮 |
+| 困惑度越低，回答越好 | 困惑度衡量 next-token likelihood，不等价于有用性、安全性或推理能力 |
+
+## 参考资料
+
+<References>
+1. Shannon, C. E. (1948). *A Mathematical Theory of Communication*. Bell System Technical Journal. —— 信息论奠基论文，提出信息熵等核心概念。
+2. Cover, T. M., Thomas, J. A. (2006). *Elements of Information Theory, 2nd edition*. Wiley. —— 系统整理熵、相对熵、互信息和信道等概念，是信息论标准教材。
+3. Bishop, C. M. (2006). *Pattern Recognition and Machine Learning*. Springer. —— 机器学习视角下的最大似然、交叉熵、分类模型和概率建模背景来源。
+4. Goodfellow, Bengio, Courville (2016). *Deep Learning*. MIT Press. [deeplearningbook.org](https://www.deeplearningbook.org/). —— 深度学习中交叉熵、softmax、最大似然和语言模型训练目标的通用背景。
+</References>

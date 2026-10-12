@@ -66,6 +66,12 @@ const featuredPaperResources = [
     desc: "预印本源头入口，可从 cs.CL、cs.LG、cs.AI 等分类追踪最新提交。",
   },
   {
+    title: "Arxiv Daily",
+    href: "https://www.arxivdaily.com/",
+    tag: "每日追踪",
+    desc: "按日期和方向浏览 arXiv 每日新增论文，适合快速发现大模型、机器学习与多模态新工作。",
+  },
+  {
     title: "Papers.cool",
     href: "https://papers.cool/",
     tag: "快速浏览",

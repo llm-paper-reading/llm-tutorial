@@ -1,0 +1,106 @@
+import { tutorialMetadata } from "@/lib/tutorials";
+
+export const metadata = tutorialMetadata("reinforcement-learning-overview");
+
+# 🧭 强化学习总览：从试错到对齐
+
+强化学习最容易学散：一会儿是 Q-learning，一会儿是 PPO，一会儿又变成 RLHF、GRPO、离线 RL。其实它们都在回答同一个问题：**智能体在环境里行动，拿到延迟奖励后，如何把这份反馈变成更好的下一次行动？** Sutton 与 Barto 把强化学习形式化为“智能体通过与环境交互来最大化累积奖励”的学习问题，这也是本系列的主线。<Cite n={1} />
+
+这篇不是替代后面的长文，而是一张地图：先看 RL 的共同骨架，再看本站 15 篇强化学习教程该按什么顺序读、每篇解决哪一个缺口。
+
+<figure className="my-6">
+  <img src="/tutorials/reinforcement-learning-overview/rl-overview-map.svg" alt="强化学习学习路径图：从多臂老虎机和 MDP 出发，进入动态规划、蒙特卡洛、时序差分与 DQN 的价值方法，再进入策略梯度、连续控制、RLHF 与 GRPO 的策略方法，最后扩展到离线、模仿、基于模型、分层和多智能体强化学习" className="mx-auto h-auto max-w-full rounded-lg border border-zinc-200 shadow-sm dark:border-zinc-800" />
+  <figcaption>
+    <span className="figure-caption-main">强化学习学习路径：先建立“状态—动作—奖励—价值—策略”的骨架，再按价值方法、策略方法和扩展问题分层进入细节</span>
+    <span className="figure-caption-source">图源：本站根据 Sutton & Barto《Reinforcement Learning: An Introduction》、Mnih et al. DQN、Schulman et al. PPO 与 DeepSeekMath/DeepSeek-R1 论文整理绘制</span>
+  </figcaption>
+</figure>
+
+## 一句话总图
+
+强化学习可以压成四个对象和一个循环：状态 $s$、动作 $a$、奖励 $r$、策略 $\pi(a\mid s)$，以及智能体与环境反复交互得到轨迹 $s_0,a_0,r_1,s_1,\dots$。目标通常是最大化折扣回报 $G_t=\sum_{k=0}^{\infty}\gamma^k r_{t+k+1}$，而价值函数 $V^\pi(s)$ 或 $Q^\pi(s,a)$ 是“从这里开始还能拿多少回报”的估计。<Cite n={1} />
+
+| 问题 | 核心对象 | 代表路线 | 本站入口 |
+|---|---|---|---|
+| 不知道该探索还是利用 | 单步动作收益 | bandit、UCB、Thompson sampling | [多臂老虎机](/tutorials/multi-armed-bandit) |
+| 环境规则已知 | Bellman 最优方程 | 价值迭代、策略迭代 | [动态规划](/tutorials/dynamic-programming) |
+| 环境未知但能跑完整回合 | 真实回报均值 | Monte Carlo、重要性采样 | [蒙特卡洛方法](/tutorials/monte-carlo) |
+| 环境未知且要边走边学 | 自举目标 | TD、SARSA、Q-learning | [时序差分学习](/tutorials/temporal-difference) |
+| 状态太多，表格装不下 | 函数逼近 | DQN、经验回放、目标网络 | [DQN](/tutorials/dqn) |
+| 动作连续或策略要随机 | 直接优化策略 | REINFORCE、Actor-Critic、PPO | [策略梯度](/tutorials/policy-gradient) |
+| 奖励来自人类偏好或规则 | 对齐目标 | RLHF、DPO、GRPO、RLVR | [从 RL 到 RLHF](/tutorials/rlhf)、[GRPO 与 RLVR](/tutorials/grpo-rlvr) |
+
+## 主线一：价值方法
+
+价值方法先问：“这个状态 / 动作到底值多少？”再通过取最大值导出策略。它的优点是样本复用强、直觉清晰；缺点是连续动作或复杂策略空间里，`argmax_a Q(s,a)` 会变得困难。
+
+学习顺序建议：
+
+1. [多臂老虎机](/tutorials/multi-armed-bandit)：先在没有状态转移的最小问题里理解探索—利用。
+2. [强化学习入门](/tutorials/reinforcement-learning)：把 bandit 扩展成 MDP，补齐状态、动作、奖励、策略、价值和 Q-learning。
+3. [动态规划](/tutorials/dynamic-programming)：在“模型已知”时用 Bellman backup 精确求解。
+4. [蒙特卡洛方法](/tutorials/monte-carlo)：不用模型，靠完整回合的经验回报估值。
+5. [时序差分学习](/tutorials/temporal-difference)：把动态规划的自举和蒙特卡洛的采样合在一起。
+6. [DQN](/tutorials/dqn)：把 Q 表换成神经网络，用经验回放和目标网络稳住训练。DQN 是深度强化学习的标志性起点，展示了只从像素和游戏分数学习 Atari 控制策略的可行性。<Cite n={2} />
+
+这条线的关键词是 **Bellman 方程**。动态规划是“全量精确 backup”，蒙特卡洛是“等一整局再平均”，TD 是“走一步就自举”，DQN 则是“用神经网络近似巨大 Q 表”。
+
+## 主线二：策略方法与对齐
+
+策略方法直接优化 $\pi_\theta(a\mid s)$，不一定显式枚举所有动作。策略梯度定理说明：即使环境转移不可微，也能用采样轨迹估计策略参数梯度，这让连续控制、随机策略和大模型 token 策略优化成为可能。<Cite n={3} />
+
+| 教程 | 解决的核心问题 | 关键概念 |
+|---|---|---|
+| [策略梯度](/tutorials/policy-gradient) | 如何直接让高回报动作概率变大 | REINFORCE、baseline、Actor-Critic、GAE、PPO |
+| [连续控制](/tutorials/continuous-control) | 动作是实数时怎么优化 | DDPG、TD3、SAC、最大熵 |
+| [从 RL 到 RLHF](/tutorials/rlhf) | 如何把人类偏好变成语言模型目标 | 奖励模型、PPO、DPO、反向 KL |
+| [GRPO 与 RLVR](/tutorials/grpo-rlvr) | 如何用可验证奖励训练推理模型 | 组相对优势、verifier、长度偏置、难度偏置 |
+
+PPO 的重要性在于它用裁剪概率比限制单次策略更新幅度，减少策略崩掉的风险；这也是它能从机器人控制一路进入 RLHF 的原因。<Cite n={4} /> 大模型时代的 GRPO 则把 PPO 的 critic 基线换成“同题多回答的组内平均”，用更轻的工程栈训练数学和代码推理。<Cite n={5} />
+
+## 主线三：当交互受限或任务变复杂
+
+基础 RL 假设你可以不断和环境交互，但真实世界常常不是这样：医疗不能随便试错，自动驾驶不能撞车收数据，机器人任务奖励稀疏，多智能体环境还会因为别人也在学习而不稳定。于是就有了几条扩展线：
+
+| 扩展线 | 现实约束 | 本站入口 |
+|---|---|---|
+| 离线 RL | 只能用固定日志，不能在线试错 | [离线强化学习](/tutorials/offline-rl) |
+| 模仿学习 | 没有奖励，只有专家示范 | [模仿学习](/tutorials/imitation-learning) |
+| 基于模型 RL | 交互贵，希望学环境模型后规划 | [基于模型的强化学习](/tutorials/model-based-rl) |
+| 分层 RL | 长程任务太慢，需要时间抽象 | [分层强化学习](/tutorials/hierarchical-rl) |
+| 多智能体 RL | 多个策略同时学习，环境非平稳 | [多智能体强化学习](/tutorials/multi-agent-rl) |
+
+这些扩展不是“高级但可跳过”的旁枝，而是 RL 真正落地时最常遇到的问题。离线 RL 关心分布外动作的 Q 值外推，模仿学习关心示范分布与学习者分布错位，基于模型 RL 用模型误差换样本效率，分层 RL 用选项缩短有效视野，多智能体 RL 则要面对博弈和协作。
+
+## 两条容易混淆的轴
+
+第一条轴是 **model-based vs model-free**：前者显式学习或使用环境模型 $P(s'\mid s,a)$、$R(s,a)$，可以在“脑内”规划；后者不建环境模型，直接学价值或策略。动态规划、Dyna、MCTS、MuZero 在 model-based 一侧；Q-learning、DQN、PPO、SAC 多在 model-free 一侧。
+
+第二条轴是 **on-policy vs off-policy**：on-policy 用当前策略采样的数据更新当前策略；off-policy 可以用别的策略、旧策略或日志数据来学习目标策略。PPO/REINFORCE 属于 on-policy，Q-learning/DQN/离线 RL 属于 off-policy。这个轴决定了能不能大量复用旧数据，也决定了稳定性风险。
+
+| 轴 | A 端 | B 端 | 主要取舍 |
+|---|---|---|---|
+| model-based / model-free | 学模型再规划 | 不学模型直接学价值或策略 | 样本效率 vs 模型误差 |
+| on-policy / off-policy | 只认当前策略数据 | 可用旧数据或别人的数据 | 稳定性 vs 样本复用 |
+| value-based / policy-based | 学价值再贪心 | 直接学策略 | 离散动作优势 vs 连续动作优势 |
+| online / offline | 可持续交互 | 固定数据集 | 探索能力 vs 安全和成本 |
+
+## 推荐阅读路径
+
+如果你是第一次系统学 RL，按下面顺序读：
+
+1. [多臂老虎机](/tutorials/multi-armed-bandit) → [强化学习入门](/tutorials/reinforcement-learning)。先建立探索、MDP、价值、策略和 Q-learning 的词汇表。
+2. [动态规划](/tutorials/dynamic-programming) → [蒙特卡洛方法](/tutorials/monte-carlo) → [时序差分学习](/tutorials/temporal-difference)。这三篇是 Bellman backup 的三种形态。
+3. [DQN](/tutorials/dqn) → [策略梯度](/tutorials/policy-gradient) → [连续控制](/tutorials/continuous-control)。进入深度 RL 和连续控制。
+4. [从 RL 到 RLHF](/tutorials/rlhf) → [GRPO 与 RLVR](/tutorials/grpo-rlvr)。把 RL 思想迁移到语言模型对齐与推理训练。
+5. 最后按兴趣读 [离线 RL](/tutorials/offline-rl)、[模仿学习](/tutorials/imitation-learning)、[基于模型 RL](/tutorials/model-based-rl)、[分层 RL](/tutorials/hierarchical-rl)、[多智能体 RL](/tutorials/multi-agent-rl)。
+
+## 参考资料
+
+<References>
+1. Sutton, R. S., Barto, A. G. (2018). *Reinforcement Learning: An Introduction, 2nd edition*. [incompleteideas.net/book/the-book-2nd.html](http://incompleteideas.net/book/the-book-2nd.html). —— 强化学习基本形式化、MDP、价值函数、动态规划、蒙特卡洛、TD、策略梯度等主线的基础来源。
+2. Mnih et al. (2015). *Human-level control through deep reinforcement learning*. Nature. —— DQN 将 Q-learning、卷积神经网络、经验回放和目标网络结合，用 Atari 像素输入达到人类级控制表现，是深度强化学习标志性工作。
+3. Sutton, McAllester, Singh, Mansour (1999). *Policy Gradient Methods for Reinforcement Learning with Function Approximation*. NeurIPS. —— 策略梯度定理的经典来源，说明可用采样轨迹估计策略参数梯度。
+4. Schulman et al. (2017). *Proximal Policy Optimization Algorithms*. arXiv: [1707.06347](https://arxiv.org/abs/1707.06347). —— PPO 的裁剪目标与稳定策略更新，是现代 on-policy 深度 RL 与早期 RLHF 的核心算法来源。
+5. Shao et al. (2024). *DeepSeekMath: Pushing the Limits of Mathematical Reasoning in Open Language Models*. arXiv: [2402.03300](https://arxiv.org/abs/2402.03300). —— GRPO 的来源：用同题多回答的组内相对奖励替代 critic，支撑可验证推理任务中的轻量化 RL。
+</References>

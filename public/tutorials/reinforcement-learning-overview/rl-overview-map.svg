@@ -1,0 +1,72 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="980" height="520" viewBox="0 0 980 520" role="img" aria-labelledby="title desc">
+  <title id="title">强化学习学习路径图</title>
+  <desc id="desc">从多臂老虎机和 MDP 出发，分成价值方法、策略方法与扩展问题三条路径。</desc>
+  <defs>
+    <marker id="arrow" markerWidth="10" markerHeight="10" refX="8" refY="5" orient="auto" markerUnits="strokeWidth">
+      <path d="M 0 0 L 10 5 L 0 10 z" fill="#52525b" />
+    </marker>
+    <style>
+      .bg { fill: #fcfcfb; }
+      .title { font: 700 24px -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif; fill: #18181b; }
+      .subtitle { font: 14px -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif; fill: #52525b; }
+      .label { font: 700 15px -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif; fill: #18181b; }
+      .small { font: 12px -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif; fill: #52525b; }
+      .box { fill: #ffffff; stroke: #d4d4d8; stroke-width: 1.5; }
+      .root { fill: #f0fdf4; stroke: #009E73; stroke-width: 2; }
+      .value { fill: #eff6ff; stroke: #0072B2; stroke-width: 2; }
+      .policy { fill: #fff7ed; stroke: #E69F00; stroke-width: 2; }
+      .advanced { fill: #fdf2f8; stroke: #CC79A7; stroke-width: 2; }
+      .connector { fill: none; stroke: #52525b; stroke-width: 2; marker-end: url(#arrow); }
+      .soft { fill: none; stroke: #a1a1aa; stroke-width: 1.5; stroke-dasharray: 5 5; marker-end: url(#arrow); }
+      .pill { fill: #f4f4f5; stroke: #e4e4e7; }
+    </style>
+  </defs>
+  <rect class="bg" width="980" height="520" rx="20" />
+  <text class="title" x="36" y="46">强化学习学习路径</text>
+  <text class="subtitle" x="36" y="72">先学反馈闭环，再分清价值、策略和真实约束。</text>
+
+  <rect class="root" x="380" y="98" width="220" height="64" rx="14" />
+  <text class="label" x="418" y="125">MDP 与反馈闭环</text>
+  <text class="small" x="412" y="146">状态 · 动作 · 奖励 · 策略 · 价值</text>
+
+  <rect class="box" x="60" y="104" width="210" height="52" rx="12" />
+  <text class="label" x="96" y="128">多臂老虎机</text>
+  <text class="small" x="92" y="147">探索 vs 利用的最小问题</text>
+  <path class="connector" d="M270 130 H370" />
+
+  <path class="connector" d="M490 162 V210" />
+  <path class="connector" d="M490 210 H230 V246" />
+  <path class="connector" d="M490 210 H490 V246" />
+  <path class="connector" d="M490 210 H750 V246" />
+
+  <rect class="value" x="70" y="246" width="320" height="190" rx="16" />
+  <text class="label" x="96" y="276">价值方法：先估值，再贪心</text>
+  <text class="small" x="96" y="300">动态规划：模型已知，Bellman 全量 backup</text>
+  <text class="small" x="96" y="326">蒙特卡洛：完整回合的经验回报</text>
+  <text class="small" x="96" y="352">时序差分：采样 + 自举，边走边学</text>
+  <text class="small" x="96" y="378">DQN：神经网络近似 Q 表</text>
+  <rect class="pill" x="96" y="394" width="230" height="26" rx="13" />
+  <text class="small" x="113" y="412">关键词：Bellman、TD、replay</text>
+
+  <rect class="policy" x="410" y="246" width="260" height="190" rx="16" />
+  <text class="label" x="436" y="276">策略方法：直接优化 π</text>
+  <text class="small" x="436" y="300">REINFORCE：轨迹采样梯度</text>
+  <text class="small" x="436" y="326">Actor-Critic：价值作基线</text>
+  <text class="small" x="436" y="352">PPO：裁剪稳定更新</text>
+  <text class="small" x="436" y="378">连续控制：DDPG / TD3 / SAC</text>
+  <rect class="pill" x="436" y="394" width="184" height="26" rx="13" />
+  <text class="small" x="453" y="412">关键词：优势、KL、熵</text>
+
+  <rect class="advanced" x="690" y="246" width="230" height="190" rx="16" />
+  <text class="label" x="716" y="276">复杂约束与扩展</text>
+  <text class="small" x="716" y="300">RLHF / GRPO：偏好与可验证奖励</text>
+  <text class="small" x="716" y="326">离线 RL：固定日志与分布偏移</text>
+  <text class="small" x="716" y="352">模仿学习：专家示范与 DAgger</text>
+  <text class="small" x="716" y="378">模型、分层、多智能体</text>
+  <rect class="pill" x="716" y="394" width="166" height="26" rx="13" />
+  <text class="small" x="733" y="412">关键词：安全落地</text>
+
+  <path class="soft" d="M390 342 H410" />
+  <path class="soft" d="M670 342 H690" />
+  <text class="small" x="86" y="472">读法：老虎机 → MDP → DP / MC / TD → DQN → 策略梯度 / 连续控制 → RLHF / GRPO → 离线、模仿、模型、分层、多智能体</text>
+</svg>

@@ -53,6 +53,31 @@ export default function AboutPage() {
             KaTeX 负责公式排版，交互示例尽量在浏览器内完成，减少本地环境配置成本。
           </p>
         </section>
+
+        <section>
+          <h2 className="text-2xl font-semibold text-zinc-900 dark:text-zinc-100">开源与贡献</h2>
+          <p className="mt-4 leading-7 text-zinc-700 dark:text-zinc-300">
+            本站内容在 GitHub 上开源，欢迎通过 Issue 或 Pull Request 参与改进。你可以帮助修正错别字、补充引用来源、优化图示说明，或建议新的教程与论文精读主题。
+          </p>
+          <div className="mt-5 flex flex-wrap gap-3">
+            <a
+              href="https://github.com/llm-paper-reading/llm-tutorial"
+              target="_blank"
+              rel="noreferrer"
+              className="rounded-xl border border-zinc-200 px-4 py-2 text-sm font-medium text-zinc-700 transition hover:border-emerald-400 hover:text-emerald-700 dark:border-zinc-800 dark:text-zinc-300 dark:hover:border-emerald-500 dark:hover:text-emerald-400"
+            >
+              GitHub 项目
+            </a>
+            <a
+              href="https://github.com/llm-paper-reading/llm-tutorial/issues"
+              target="_blank"
+              rel="noreferrer"
+              className="rounded-xl bg-emerald-600 px-4 py-2 text-sm font-medium text-white shadow-sm transition hover:bg-emerald-700 hover:shadow-md dark:hover:bg-emerald-500"
+            >
+              提交 Issue / PR
+            </a>
+          </div>
+        </section>
       </div>
 
       <div className="mt-12 flex flex-wrap justify-center gap-3">

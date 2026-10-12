@@ -5,6 +5,7 @@ import CodeTabs from "@/components/CodeTabs";
 import PaperHeader from "@/components/PaperHeader";
 import References from "@/components/References";
 import Cite from "@/components/Cite";
+import ArticleTitle from "@/components/ArticleTitle";
 import LinePlayground from "@/components/viz/LinePlayground";
 import GradientDescentViz from "@/components/viz/GradientDescentViz";
 import ScatterClassifier from "@/components/viz/ScatterClassifier";
@@ -138,6 +139,7 @@ export function useMDXComponents(components: MDXComponents): MDXComponents {
   return {
     figure: Figure,
     figcaption: FigureCaption,
+    h1: ArticleTitle,
     CodeRunner,
     CodeTabs,
     PaperHeader,

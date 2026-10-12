@@ -1,0 +1,87 @@
+import { tutorialMetadata } from "@/lib/tutorials";
+
+export const metadata = tutorialMetadata("knowledge-distillation-overview");
+
+# 🧭 知识蒸馏总览：把能力从老师搬到学生
+
+知识蒸馏表面上是模型压缩：大模型当老师，小模型当学生。但在大模型时代，它更像一条**能力迁移管道**：把昂贵模型、强化学习阶段或多模型集成里形成的行为，转移到更便宜、更快、更易部署的模型上。
+
+Hinton 等人提出的经典蒸馏用高温 softmax 暴露 teacher 输出分布中的“暗知识”，让 student 不只学习硬标签，而是学习类别之间的相似结构。<Cite n={1} /> 后来，序列级蒸馏把 teacher 的完整生成当成训练目标，成为机器翻译和大模型指令数据生成中的常见做法。<Cite n={2} />
+
+<figure className="my-6">
+  <img src="/tutorials/knowledge-distillation-overview/distillation-overview-map.svg" alt="知识蒸馏路线图：从离线蒸馏开始，经过在线蒸馏和混合蒸馏，最后讨论学生超越老师；横向区分老师样本、学生样本、teacher logits、序列级数据和正则化红利" className="mx-auto h-auto max-w-full rounded-lg border border-zinc-200 shadow-sm dark:border-zinc-800" />
+  <figcaption>
+    <span className="figure-caption-main">知识蒸馏路线：先理解“学什么”（硬答案、软分布、中间特征），再理解“在哪些轨迹上学”（teacher 轨迹、student 轨迹或混合轨迹）</span>
+    <span className="figure-caption-source">图源：本站根据 Hinton et al. 知识蒸馏、Kim & Rush 序列级蒸馏、Agarwal et al. on-policy 蒸馏与 DistiLLM / GKD 相关论文整理绘制</span>
+  </figcaption>
+</figure>
+
+## 三个问题决定蒸馏形态
+
+蒸馏不是单一算法，而是一组“老师—学生”训练方案。判断一个蒸馏方法，先问三个问题：
+
+1. **学生学什么？** 学 teacher 的完整回答、每个 token 的 logits 分布、中间层特征，还是多个样本之间的关系？
+2. **训练序列来自谁？** 来自原始数据集、teacher 生成、student 自己生成，还是几者混合？
+3. **teacher 什么时候参与？** 训练前离线生成并缓存，还是训练中实时对 student 轨迹打分？
+
+| 形态 | 学什么 | 序列来自谁 | teacher 是否在线 | 代表教程 |
+|---|---|---|---|---|
+| 序列级蒸馏 | teacher 的完整输出文本 | teacher | 否 | [知识蒸馏](/tutorials/knowledge-distillation) |
+| 经典 logit 蒸馏 | teacher 的软概率分布 | 数据集或 teacher 序列 | 可离线缓存 | [知识蒸馏](/tutorials/knowledge-distillation) |
+| 在线蒸馏 | teacher 对 student 轨迹的逐 token 分布 | student | 是 | [在线蒸馏](/tutorials/on-policy-distillation) |
+| 混合蒸馏 | teacher 样本 + student 样本 | 混合 | 部分在线 | [混合蒸馏](/tutorials/mixed-distillation) |
+| 自蒸馏 / born-again | 自己或上一代模型的输出 | 数据集或自己 | 通常否 | [学生超越老师](/tutorials/student-beats-teacher) |
+
+## 离线、在线、混合：核心区别
+
+**离线蒸馏** 的 teacher 固定，训练数据也固定。它便宜、可缓存、工程简单：先让 teacher 生成答案或 logits，再训练 student。缺点是 student 训练时看到的是 teacher 或数据集分布，不一定是自己推理时会走到的状态。
+
+**在线蒸馏（on-policy distillation）** 让 student 自己生成序列，teacher 对 student 真实走到的 token 前缀打分。Agarwal 等人的 GKD / OPD 思路强调：暴露偏差来自“训练时看 teacher 轨迹，推理时走 student 轨迹”的分布错位；让 student 在自己的轨迹上学，可以直接修这个错位。<Cite n={3} />
+
+**混合蒸馏** 则承认两个极端都有代价：纯离线覆盖不足，纯在线 teacher 调用太贵。GKD 的 mixed 模式、Speculative KD 和 DistiLLM 都在不同层面做折中：一部分样本来自 teacher 或历史缓存，一部分来自 student 当前策略。
+
+| 维度 | 离线蒸馏 | 在线蒸馏 | 混合蒸馏 |
+|---|---|---|---|
+| 成本 | 最低，可预生成 | 最高，训练中反复调用 teacher | 可控，按比例调节 |
+| 覆盖 student 错误 | 弱 | 强 | 中等到强 |
+| 工程复杂度 | 低 | 高 | 中等 |
+| 适合场景 | 快速压缩、API 造数据、部署小模型 | 长序列推理、暴露偏差明显 | 工业流水线、teacher 成本敏感 |
+
+## 是否必须有 teacher checkpoint
+
+不一定。这里要区分**文本级监督**和**分布级监督**：
+
+| 你要蒸馏的信号 | 需要什么 | 闭源 API 能不能做 |
+|---|---|---|
+| teacher 生成的完整答案 | 文本输出 | 通常可以，但要看使用条款 |
+| teacher 生成的 chain-of-thought / rationale | 文本输出 | 技术上可以，合规上要谨慎 |
+| 每个 token 的完整 logits / softmax | teacher 前向分布 | 通常不行，除非接口暴露完整分布 |
+| student 任意序列上的 teacher logprob | teacher 对给定序列打分 | 闭源生成 API 通常不支持 |
+| 中间层特征 / attention | teacher 内部激活 | 需要 checkpoint 或内部访问 |
+
+所以，闭源 API 可以做 black-box 的序列级蒸馏或数据蒸馏：给题、拿答案、筛选、再 SFT。但严格的 logit-level KL、on-policy token 打分、特征蒸馏，通常需要 teacher checkpoint 或等价的内部访问能力。
+
+## 本系列四篇怎么读
+
+1. [知识蒸馏](/tutorials/knowledge-distillation)：从温度、软标签、KL 损失和暗知识开始，理解经典配方。
+2. [在线蒸馏（OPD）](/tutorials/on-policy-distillation)：解释为什么离线训练会暴露偏差，以及 student 自采样如何修复。
+3. [混合蒸馏](/tutorials/mixed-distillation)：比较 GKD mixed、Speculative KD、DistiLLM 等折中方案。
+4. [学生超越老师](/tutorials/student-beats-teacher)：讨论看似反直觉的现象：student 为什么有时能赢 teacher？答案常常不是“学到更多知识”，而是正则化、数据再训练和搜索 / RL 产生的额外红利。
+
+## 与后训练的关系
+
+在 [大模型后训练](/tutorials/llm-post-training) 里，蒸馏通常出现在两类位置：
+
+- **训练前造数据**：强 teacher 生成指令回答、推理轨迹或偏好候选，student 用 SFT / DPO / RLVR 学。
+- **训练后压缩能力**：昂贵模型经过 RLHF / RLVR / 搜索增强后，再把能力蒸到小模型或线上模型。
+
+这也是为什么蒸馏同时属于“模型压缩”和“大模型对齐”：它既能降推理成本，也能把对齐、推理、工具使用等行为固化到目标模型里。
+
+## 参考资料
+
+<References>
+1. Hinton, Vinyals, Dean (2015). *Distilling the Knowledge in a Neural Network*. arXiv: [1503.02531](https://arxiv.org/abs/1503.02531). —— 知识蒸馏奠基论文，提出 soft targets、温度软化和“暗知识”的核心直觉。
+2. Kim, Rush (2016). *Sequence-Level Knowledge Distillation*. arXiv: [1606.07947](https://arxiv.org/abs/1606.07947). —— 序列级蒸馏代表工作：用 teacher 生成的完整序列训练 student，而不一定使用完整 logits。
+3. Agarwal et al. (2024). *On-Policy Distillation of Language Models: Learning from Self-Generated Mistakes*. arXiv: [2306.13649](https://arxiv.org/abs/2306.13649). —— OPD / GKD 的核心来源，强调 student 自采样轨迹可以缓解离线蒸馏暴露偏差。
+4. Ko et al. (2024). *DistiLLM: Towards Streamlined Distillation for Large Language Models*. arXiv: [2402.03898](https://arxiv.org/abs/2402.03898). —— 对离线、在线和自适应 off-policy 蒸馏范式做了清晰对比，是混合蒸馏页三范式图的来源之一。
+</References>
