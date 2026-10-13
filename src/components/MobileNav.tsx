@@ -9,6 +9,7 @@ import {
   getPapersNavByDate,
   getPapersNavFlat,
 } from "@/lib/papers";
+import { getFrontierNav, getFrontierNavFlat } from "@/lib/frontier";
 import type { NavTree, NavLeaf } from "@/components/Sidebar";
 
 /**
@@ -24,15 +25,20 @@ export default function MobileNav() {
   const pathname = usePathname();
 
   const isPapers = pathname.startsWith("/papers");
+  const isFrontier = pathname.startsWith("/frontier");
   const tree: NavTree<NavLeaf>[] = isPapers
     ? mode === "flat"
       ? getPapersNavFlat()
       : mode === "keywords"
         ? getPapersNav()
         : getPapersNavByDate()
-    : getTutorialsNav();
-  const basePath = isPapers ? "/papers" : "/tutorials";
-  const heading = isPapers ? "全部论文" : "全部教程";
+    : isFrontier
+      ? mode === "flat"
+        ? getFrontierNavFlat()
+        : getFrontierNav()
+      : getTutorialsNav();
+  const basePath = isPapers ? "/papers" : isFrontier ? "/frontier" : "/tutorials";
+  const heading = isPapers ? "全部论文" : isFrontier ? "前沿追踪" : "全部教程";
 
   useEffect(() => {
     setOpen(false);
@@ -88,16 +94,22 @@ export default function MobileNav() {
               </button>
             </div>
 
-            {isPapers && (
+            {(isPapers || isFrontier) && (
               <div
                 role="tablist"
                 className="mb-4 flex gap-0.5 rounded-full bg-zinc-100 p-0.5 text-xs dark:bg-zinc-800/80"
               >
-                {([
-                  ["flat", "列表"],
-                  ["keywords", "关键词"],
-                  ["date", "时间"],
-                ] as const).map(([v, label]) => (
+                {(isPapers
+                  ? ([
+                      ["flat", "列表"],
+                      ["keywords", "关键词"],
+                      ["date", "时间"],
+                    ] as const)
+                  : ([
+                      ["flat", "时间"],
+                      ["keywords", "关键词"],
+                    ] as const)
+                ).map(([v, label]) => (
                   <button
                     key={v}
                     role="tab"

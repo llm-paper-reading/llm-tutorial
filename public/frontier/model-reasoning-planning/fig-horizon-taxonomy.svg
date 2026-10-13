@@ -1,0 +1,101 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="960" height="650" viewBox="0 0 960 650" role="img" aria-labelledby="title desc">
+  <title id="title">长程任务六环节 × 视野承载位置分类网格</title>
+  <desc id="desc">The Horizon Gap 综述的分类网格：规划、记忆、执行、训练、评测、基础与安全六个环节，交叉上下文内、任务内超出上下文、跨任务持久三种视野承载位置；基础与安全行的上下文内格子按构造为空。</desc>
+  <rect width="960" height="650" fill="#fafafa"/>
+  <text x="480" y="36" text-anchor="middle" font-family="Arial, sans-serif" font-size="21" font-weight="700" fill="#111827">长程任务六环节 × 视野承载位置</text>
+  <text x="480" y="60" text-anchor="middle" font-family="Arial, sans-serif" font-size="12" fill="#6b7280">行 = 任务生命周期环节；列 = 额外的「视野」由什么承载</text>
+
+  <!-- 列头 -->
+  <g font-family="Arial, sans-serif" font-size="13" font-weight="700" fill="#374151" text-anchor="middle">
+    <rect x="200" y="76" width="240" height="32" rx="6" fill="#f3f4f6" stroke="#d1d5db"/>
+    <text x="320" y="97">上下文内（within-context）</text>
+    <rect x="450" y="76" width="240" height="32" rx="6" fill="#f3f4f6" stroke="#d1d5db"/>
+    <text x="570" y="97">任务内 · 超出上下文</text>
+    <rect x="700" y="76" width="240" height="32" rx="6" fill="#f3f4f6" stroke="#d1d5db"/>
+    <text x="820" y="97">跨任务持久</text>
+  </g>
+
+  <!-- 行 1：规划与分解 -->
+  <rect x="60" y="118" width="130" height="74" rx="6" fill="#ecfdf5" stroke="#059669" stroke-width="1.5"/>
+  <text x="125" y="160" text-anchor="middle" font-family="Arial, sans-serif" font-size="13.5" font-weight="700" fill="#065f46">规划与分解</text>
+  <g font-family="Arial, sans-serif" font-size="11.5" fill="#374151">
+    <rect x="200" y="118" width="240" height="74" rx="6" fill="#ffffff" stroke="#e5e7eb"/>
+    <text x="212" y="140">CoT · least-to-most</text><text x="212" y="158">plan-and-solve</text>
+    <rect x="450" y="118" width="240" height="74" rx="6" fill="#ffffff" stroke="#e5e7eb"/>
+    <text x="462" y="140">计划文件：Claude Code ·</text><text x="462" y="158">OpenHands · Flow · AutoGPT</text>
+    <rect x="700" y="118" width="240" height="74" rx="6" fill="#ffffff" stroke="#e5e7eb"/>
+    <text x="712" y="140">技能库：Voyager · AWM ·</text><text x="712" y="158">ExpeL</text>
+  </g>
+
+  <!-- 行 2：记忆与上下文管理 -->
+  <rect x="60" y="200" width="130" height="74" rx="6" fill="#eff6ff" stroke="#2563eb" stroke-width="1.5"/>
+  <text x="125" y="230" text-anchor="middle" font-family="Arial, sans-serif" font-size="13" font-weight="700" fill="#1d4ed8">记忆与</text>
+  <text x="125" y="248" text-anchor="middle" font-family="Arial, sans-serif" font-size="13" font-weight="700" fill="#1d4ed8">上下文管理</text>
+  <g font-family="Arial, sans-serif" font-size="11.5" fill="#374151">
+    <rect x="200" y="200" width="240" height="74" rx="6" fill="#f9fafb" stroke="#e5e7eb"/>
+    <text x="212" y="222">KV cache 压缩 · 上下文压缩</text><text x="212" y="240">（Anthropic）· LLMLingua</text>
+    <rect x="450" y="200" width="240" height="74" rx="6" fill="#f9fafb" stroke="#e5e7eb"/>
+    <text x="462" y="222">外部存储：Letta · mem0 ·</text><text x="462" y="240">Zep · scratchpad</text>
+    <rect x="700" y="200" width="240" height="74" rx="6" fill="#f9fafb" stroke="#e5e7eb"/>
+    <text x="712" y="222">经验复用：</text><text x="712" y="240">ReasoningBank</text>
+  </g>
+
+  <!-- 行 3：执行控制 -->
+  <rect x="60" y="282" width="130" height="74" rx="6" fill="#fef3c7" stroke="#d97706" stroke-width="1.5"/>
+  <text x="125" y="324" text-anchor="middle" font-family="Arial, sans-serif" font-size="13.5" font-weight="700" fill="#92400e">执行控制</text>
+  <g font-family="Arial, sans-serif" font-size="11.5" fill="#374151">
+    <rect x="200" y="282" width="240" height="74" rx="6" fill="#ffffff" stroke="#e5e7eb"/>
+    <text x="212" y="304">ReAct 工具循环 · 内部独白</text><text x="212" y="322">约束解码 · 分段执行</text>
+    <rect x="450" y="282" width="240" height="74" rx="6" fill="#ffffff" stroke="#e5e7eb"/>
+    <text x="462" y="304">工作流调度 · 检查点 ·</text><text x="462" y="322">子代理隔离</text>
+    <rect x="700" y="282" width="240" height="74" rx="6" fill="#ffffff" stroke="#e5e7eb"/>
+    <text x="712" y="304">动作策略复用</text>
+  </g>
+
+  <!-- 行 4：训练方法 -->
+  <rect x="60" y="364" width="130" height="74" rx="6" fill="#f5f3ff" stroke="#7c3aed" stroke-width="1.5"/>
+  <text x="125" y="406" text-anchor="middle" font-family="Arial, sans-serif" font-size="13.5" font-weight="700" fill="#5b21b6">训练方法</text>
+  <g font-family="Arial, sans-serif" font-size="11.5" fill="#374151">
+    <rect x="200" y="364" width="240" height="74" rx="6" fill="#f9fafb" stroke="#e5e7eb"/>
+    <text x="212" y="386">CoT SFT · 拒绝采样 ·</text><text x="212" y="404">RLVR · PRM</text>
+    <rect x="450" y="364" width="240" height="74" rx="6" fill="#f9fafb" stroke="#e5e7eb"/>
+    <text x="462" y="386">多轮 agentic RL ·</text><text x="462" y="404">信用分配</text>
+    <rect x="700" y="364" width="240" height="74" rx="6" fill="#f9fafb" stroke="#e5e7eb"/>
+    <text x="712" y="386">经验蒸馏 ·</text><text x="712" y="404">自演化课程</text>
+  </g>
+
+  <!-- 行 5：评测 -->
+  <rect x="60" y="446" width="130" height="74" rx="6" fill="#fdf2f8" stroke="#db2777" stroke-width="1.5"/>
+  <text x="125" y="488" text-anchor="middle" font-family="Arial, sans-serif" font-size="13.5" font-weight="700" fill="#9d174d">评测</text>
+  <g font-family="Arial, sans-serif" font-size="11.5" fill="#374151">
+    <rect x="200" y="446" width="240" height="74" rx="6" fill="#ffffff" stroke="#e5e7eb"/>
+    <text x="212" y="468">单轮 benchmark ·</text><text x="212" y="486">LLM-as-judge</text>
+    <rect x="450" y="446" width="240" height="74" rx="6" fill="#ffffff" stroke="#e5e7eb"/>
+    <text x="462" y="468">SWE-bench · Terminal-Bench</text><text x="462" y="486">OSWorld</text>
+    <rect x="700" y="446" width="240" height="74" rx="6" fill="#ffffff" stroke="#e5e7eb"/>
+    <text x="712" y="468">纵向（跨任务）</text><text x="712" y="486">追踪评测</text>
+  </g>
+
+  <!-- 行 6：基础与安全 -->
+  <rect x="60" y="528" width="130" height="74" rx="6" fill="#f3f4f6" stroke="#6b7280" stroke-width="1.5"/>
+  <text x="125" y="570" text-anchor="middle" font-family="Arial, sans-serif" font-size="13.5" font-weight="700" fill="#374151">基础与安全</text>
+  <g font-family="Arial, sans-serif" font-size="11.5">
+    <rect x="200" y="528" width="240" height="74" rx="6" fill="#ffffff" stroke="#d1d5db" stroke-dasharray="6 5"/>
+    <text x="320" y="558" text-anchor="middle" fill="#9ca3af" font-style="italic">空（按构造）</text>
+    <text x="320" y="576" text-anchor="middle" fill="#9ca3af" font-style="italic">此类现象预设任务已</text>
+    <text x="320" y="592" text-anchor="middle" fill="#9ca3af" font-style="italic">超出单次前向</text>
+    <rect x="450" y="528" width="240" height="74" rx="6" fill="#ffffff" stroke="#e5e7eb"/>
+    <text x="462" y="558" fill="#374151">监督（oversight）· 沙箱</text><text x="462" y="576" fill="#374151">奖励欺骗防护</text>
+    <rect x="700" y="528" width="240" height="74" rx="6" fill="#ffffff" stroke="#e5e7eb"/>
+    <text x="712" y="558" fill="#374151">对齐持久性</text>
+  </g>
+
+  <!-- 底部箭头说明 -->
+  <defs>
+    <marker id="arrGrid" markerWidth="10" markerHeight="10" refX="8" refY="5" orient="auto">
+      <path d="M1,1 L9,5 L1,9 Z" fill="#6b7280"/>
+    </marker>
+  </defs>
+  <line x1="200" y1="626" x2="930" y2="626" stroke="#6b7280" stroke-width="2" marker-end="url(#arrGrid)"/>
+  <text x="150" y="630" font-family="Arial, sans-serif" font-size="11.5" fill="#6b7280">状态持久化程度 →</text>
+</svg>

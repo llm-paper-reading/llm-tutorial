@@ -1,0 +1,50 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="960" height="480" viewBox="0 0 960 480" role="img" aria-labelledby="title desc">
+  <title id="title">奖励密集化：从末端 outcome 信号到步级过程信号</title>
+  <desc id="desc">上：outcome 奖励只在轨迹末端有一个 0/1 信号；下：Cliff 式过程奖励在第一个错误处切分，正确前缀受奖励、错误后缀受惩罚。</desc>
+  <rect width="960" height="480" fill="#fafafa"/>
+  <text x="480" y="40" text-anchor="middle" font-family="Arial, sans-serif" font-size="22" font-weight="700" fill="#111827">奖励密集化：从末端 outcome 信号到步级过程信号</text>
+
+  <!-- 面板一：outcome 奖励 -->
+  <text x="70" y="92" font-family="Arial, sans-serif" font-size="15" font-weight="700" fill="#374151">① outcome 奖励：信号稀疏</text>
+  <line x1="145" y1="140" x2="690" y2="140" stroke="#d1d5db" stroke-width="2"/>
+  <g font-family="Arial, sans-serif" font-size="11" fill="#6b7280" text-anchor="middle">
+    <circle cx="130" cy="140" r="15" fill="#f3f4f6" stroke="#9ca3af" stroke-width="1.5"/><text x="130" y="144">s1</text>
+    <circle cx="212" cy="140" r="15" fill="#f3f4f6" stroke="#9ca3af" stroke-width="1.5"/><text x="212" y="144">s2</text>
+    <circle cx="294" cy="140" r="15" fill="#f3f4f6" stroke="#9ca3af" stroke-width="1.5"/><text x="294" y="144">s3</text>
+    <circle cx="376" cy="140" r="15" fill="#f3f4f6" stroke="#9ca3af" stroke-width="1.5"/><text x="376" y="144">s4</text>
+    <circle cx="458" cy="140" r="15" fill="#f3f4f6" stroke="#9ca3af" stroke-width="1.5"/><text x="458" y="144">s5</text>
+    <circle cx="540" cy="140" r="15" fill="#f3f4f6" stroke="#9ca3af" stroke-width="1.5"/><text x="540" y="144">s6</text>
+    <circle cx="622" cy="140" r="15" fill="#f3f4f6" stroke="#9ca3af" stroke-width="1.5"/><text x="622" y="144">s7</text>
+    <circle cx="704" cy="140" r="15" fill="#f3f4f6" stroke="#9ca3af" stroke-width="1.5"/><text x="704" y="144">s8</text>
+  </g>
+  <line x1="724" y1="140" x2="756" y2="140" stroke="#d97706" stroke-width="2.5" marker-end="url(#arrA)"/>
+  <defs>
+    <marker id="arrA" markerWidth="10" markerHeight="10" refX="8" refY="5" orient="auto">
+      <path d="M1,1 L9,5 L1,9 Z" fill="#d97706"/>
+    </marker>
+  </defs>
+  <rect x="760" y="112" width="140" height="56" rx="10" fill="#fef3c7" stroke="#d97706" stroke-width="2"/>
+  <text x="830" y="136" text-anchor="middle" font-family="Arial, sans-serif" font-size="15" font-weight="700" fill="#92400e">R = 0 / 1</text>
+  <text x="830" y="156" text-anchor="middle" font-family="Arial, sans-serif" font-size="11" fill="#b45309">只在轨迹末端</text>
+  <text x="130" y="196" font-family="Arial, sans-serif" font-size="12" fill="#6b7280">整条轨迹只有一个 0/1 信号——失败发生在哪一步无从知晓</text>
+
+  <!-- 面板二：过程奖励 -->
+  <text x="70" y="252" font-family="Arial, sans-serif" font-size="15" font-weight="700" fill="#374151">② 过程奖励：信号密集（Cliff 式切分）</text>
+  <line x1="145" y1="300" x2="690" y2="300" stroke="#d1d5db" stroke-width="2"/>
+  <g font-family="Arial, sans-serif" font-size="13" font-weight="700" text-anchor="middle">
+    <circle cx="130" cy="300" r="15" fill="#ecfdf5" stroke="#059669" stroke-width="1.5"/><text x="130" y="305" fill="#047857">+</text>
+    <circle cx="212" cy="300" r="15" fill="#ecfdf5" stroke="#059669" stroke-width="1.5"/><text x="212" y="305" fill="#047857">+</text>
+    <circle cx="294" cy="300" r="15" fill="#ecfdf5" stroke="#059669" stroke-width="1.5"/><text x="294" y="305" fill="#047857">+</text>
+    <circle cx="376" cy="300" r="15" fill="#ecfdf5" stroke="#059669" stroke-width="1.5"/><text x="376" y="305" fill="#047857">+</text>
+    <circle cx="458" cy="300" r="15" fill="#fef2f2" stroke="#dc2626" stroke-width="1.5"/><text x="458" y="305" fill="#b91c1c">−</text>
+    <circle cx="540" cy="300" r="15" fill="#fef2f2" stroke="#dc2626" stroke-width="1.5"/><text x="540" y="305" fill="#b91c1c">−</text>
+    <circle cx="622" cy="300" r="15" fill="#fef2f2" stroke="#dc2626" stroke-width="1.5"/><text x="622" y="305" fill="#b91c1c">−</text>
+    <circle cx="704" cy="300" r="15" fill="#fef2f2" stroke="#dc2626" stroke-width="1.5"/><text x="704" y="305" fill="#b91c1c">−</text>
+  </g>
+  <line x1="417" y1="264" x2="417" y2="336" stroke="#d97706" stroke-width="2" stroke-dasharray="6 5"/>
+  <text x="417" y="256" text-anchor="middle" font-family="Arial, sans-serif" font-size="11" fill="#92400e">第一个错误</text>
+  <text x="253" y="348" text-anchor="middle" font-family="Arial, sans-serif" font-size="12" fill="#047857">正确前缀 → 受奖励</text>
+  <text x="581" y="348" text-anchor="middle" font-family="Arial, sans-serif" font-size="12" fill="#b91c1c">错误后缀 → 受惩罚</text>
+  <text x="130" y="400" font-family="Arial, sans-serif" font-size="12" fill="#6b7280">步级信号让信用可以分摊——PRM、credit assignment、rubric 都是「制造密集信号」的不同手法</text>
+  <text x="130" y="440" font-family="Arial, sans-serif" font-size="11.5" fill="#92400e">对照实验：Qwen2.5-0.5B + GRPO + GSM8K 上，过程奖励比结果奖励高约 10 个百分点（arXiv:2607.02869）</text>
+</svg>

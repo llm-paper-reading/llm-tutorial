@@ -25,8 +25,9 @@ export default function AboutPage() {
         <section>
           <h2 className="text-2xl font-semibold text-zinc-900 dark:text-zinc-100">内容定位</h2>
           <p className="mt-4 leading-7 text-zinc-700 dark:text-zinc-300">
-            站点覆盖机器学习基础、深度学习、强化学习、大模型对齐和论文精读。每篇内容尽量从问题动机出发，
-            解释方法为什么被提出、解决了什么限制，以及它和其他方法之间的关系。
+            站点覆盖机器学习基础、深度学习、强化学习、大模型对齐和论文精读,并设有前沿追踪板块,
+            沉淀对新技术与新模型的调研报告。每篇内容尽量从问题动机出发,
+            解释方法为什么被提出、解决了什么限制,以及它和其他方法之间的关系。
           </p>
         </section>
 
@@ -92,6 +93,12 @@ export default function AboutPage() {
           className="rounded-xl border border-zinc-200 px-6 py-3 font-medium text-zinc-700 transition hover:border-emerald-400 hover:text-emerald-700 dark:border-zinc-800 dark:text-zinc-300 dark:hover:border-emerald-500 dark:hover:text-emerald-400"
         >
           查看论文精读
+        </Link>
+        <Link
+          href="/frontier"
+          className="rounded-xl border border-zinc-200 px-6 py-3 font-medium text-zinc-700 transition hover:border-emerald-400 hover:text-emerald-700 dark:border-zinc-800 dark:text-zinc-300 dark:hover:border-emerald-500 dark:hover:text-emerald-400"
+        >
+          前沿追踪
         </Link>
       </div>
     </main>

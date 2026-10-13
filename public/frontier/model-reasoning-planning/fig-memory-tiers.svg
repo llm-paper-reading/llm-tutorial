@@ -1,0 +1,41 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="960" height="440" viewBox="0 0 960 440" role="img" aria-labelledby="title desc">
+  <title id="title">记忆的三层：保真度与持久性的权衡</title>
+  <desc id="desc">上下文窗口、外部存储、权重三层记忆沿保真度（纵轴）与持久性（横轴）排布：上下文窗口高保真但不持久，权重跨任务持久但即时保真低。</desc>
+  <rect width="960" height="440" fill="#fafafa"/>
+  <text x="480" y="38" text-anchor="middle" font-family="Arial, sans-serif" font-size="22" font-weight="700" fill="#111827">记忆的三层：保真度 ↔ 持久性权衡</text>
+
+  <!-- 坐标轴 -->
+  <defs>
+    <marker id="arrY" markerWidth="10" markerHeight="10" refX="8" refY="5" orient="auto">
+      <path d="M1,1 L9,5 L1,9 Z" fill="#6b7280"/>
+    </marker>
+  </defs>
+  <line x1="100" y1="390" x2="100" y2="80" stroke="#6b7280" stroke-width="2.5" marker-end="url(#arrY)"/>
+  <line x1="100" y1="390" x2="920" y2="390" stroke="#6b7280" stroke-width="2.5" marker-end="url(#arrY)"/>
+  <text x="70" y="235" font-family="Arial, sans-serif" font-size="13" fill="#374151" transform="rotate(-90 70 235)" text-anchor="middle">保真度 →</text>
+  <text x="510" y="418" font-family="Arial, sans-serif" font-size="13" fill="#374151" text-anchor="middle">持久性 →</text>
+
+  <!-- 三层 -->
+  <rect x="140" y="105" width="250" height="118" rx="14" fill="#ecfdf5" stroke="#059669" stroke-width="2"/>
+  <text x="265" y="135" text-anchor="middle" font-family="Arial, sans-serif" font-size="16" font-weight="700" fill="#065f46">上下文窗口</text>
+  <text x="265" y="157" text-anchor="middle" font-family="Arial, sans-serif" font-size="11.5" fill="#047857">完整历史 · 上下文压缩（compaction）</text>
+  <text x="265" y="175" text-anchor="middle" font-family="Arial, sans-serif" font-size="11.5" fill="#047857">LLMLingua · KV cache 压缩</text>
+  <text x="265" y="202" text-anchor="middle" font-family="Arial, sans-serif" font-size="12" font-weight="700" fill="#047857">高保真 · 会话内持久</text>
+
+  <rect x="410" y="205" width="250" height="118" rx="14" fill="#eff6ff" stroke="#2563eb" stroke-width="2"/>
+  <text x="535" y="235" text-anchor="middle" font-family="Arial, sans-serif" font-size="16" font-weight="700" fill="#1d4ed8">外部存储</text>
+  <text x="535" y="257" text-anchor="middle" font-family="Arial, sans-serif" font-size="11.5" fill="#2563eb">Letta · mem0 · Zep</text>
+  <text x="535" y="275" text-anchor="middle" font-family="Arial, sans-serif" font-size="11.5" fill="#2563eb">scratchpad · 上下文数据库</text>
+  <text x="535" y="302" text-anchor="middle" font-family="Arial, sans-serif" font-size="12" font-weight="700" fill="#2563eb">中等保真 · 跨会话持久</text>
+
+  <rect x="680" y="255" width="250" height="118" rx="14" fill="#f5f3ff" stroke="#7c3aed" stroke-width="2"/>
+  <text x="805" y="285" text-anchor="middle" font-family="Arial, sans-serif" font-size="16" font-weight="700" fill="#5b21b6">权重</text>
+  <text x="805" y="307" text-anchor="middle" font-family="Arial, sans-serif" font-size="11.5" fill="#6d28d9">RL · 蒸馏 · sleep-time compute</text>
+  <text x="805" y="325" text-anchor="middle" font-family="Arial, sans-serif" font-size="11.5" fill="#6d28d9">技能内化 · 经验写进参数</text>
+  <text x="805" y="352" text-anchor="middle" font-family="Arial, sans-serif" font-size="12" font-weight="700" fill="#6d28d9">低即时保真 · 跨任务持久</text>
+
+  <!-- 权衡方向虚线 -->
+  <line x1="392" y1="180" x2="408" y2="220" stroke="#6b7280" stroke-width="2" stroke-dasharray="6 5"/>
+  <line x1="662" y1="280" x2="678" y2="320" stroke="#6b7280" stroke-width="2" stroke-dasharray="6 5"/>
+  <text x="480" y="165" font-family="Arial, sans-serif" font-size="11.5" fill="#6b7280">沿箭头：持久性上升，即时保真下降</text>
+</svg>

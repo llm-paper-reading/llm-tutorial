@@ -1,0 +1,39 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="960" height="620" viewBox="0 0 960 620" role="img" aria-labelledby="title desc">
+  <title id="title">2026 年推理与规划能力方法栈</title>
+  <desc id="desc">自底向上四层：模型架构层、数据层、训练层、产品层（Agent Harness），每层列出代表技术。</desc>
+  <rect width="960" height="620" fill="#fafafa"/>
+  <text x="480" y="42" text-anchor="middle" font-family="Arial, sans-serif" font-size="22" font-weight="700" fill="#111827">2026 年推理 / 规划能力方法栈（自底向上四层）</text>
+
+  <!-- 产品层 -->
+  <rect x="70" y="76" width="780" height="108" rx="14" fill="#ecfdf5" stroke="#059669" stroke-width="2"/>
+  <text x="95" y="118" font-family="Arial, sans-serif" font-size="17" font-weight="700" fill="#065f46">产品层（Agent Harness）</text>
+  <text x="95" y="152" font-family="Arial, sans-serif" font-size="13.5" fill="#047857">系统提示词 · 工具循环 · 规划工具 · 子代理隔离 · 上下文压缩 · 沙箱 · CLAUDE.md / AGENTS.md</text>
+  <text x="940" y="136" text-anchor="end" font-family="Arial, sans-serif" font-size="11" fill="#9ca3af">对应第五、六章</text>
+
+  <!-- 训练层 -->
+  <rect x="70" y="202" width="780" height="108" rx="14" fill="#eff6ff" stroke="#2563eb" stroke-width="2"/>
+  <text x="95" y="244" font-family="Arial, sans-serif" font-size="17" font-weight="700" fill="#1d4ed8">训练层（Post-training）</text>
+  <text x="95" y="278" font-family="Arial, sans-serif" font-size="13.5" fill="#2563eb">RLVR（可验证奖励 RL）→ Agentic RL（多轮工具轨迹 RL）· on-policy 蒸馏 · 自我改进</text>
+  <text x="940" y="262" text-anchor="end" font-family="Arial, sans-serif" font-size="11" fill="#9ca3af">对应第二章</text>
+
+  <!-- 数据层 -->
+  <rect x="70" y="328" width="780" height="108" rx="14" fill="#fef3c7" stroke="#d97706" stroke-width="2"/>
+  <text x="95" y="370" font-family="Arial, sans-serif" font-size="17" font-weight="700" fill="#92400e">数据层</text>
+  <text x="95" y="404" font-family="Arial, sans-serif" font-size="13.5" fill="#b45309">Agent 驱动的可验证轨迹合成 · 难度课程（curriculum）· 拒绝采样 · 自生成任务</text>
+  <text x="940" y="388" text-anchor="end" font-family="Arial, sans-serif" font-size="11" fill="#9ca3af">对应 2.4 节</text>
+
+  <!-- 模型架构层 -->
+  <rect x="70" y="454" width="780" height="108" rx="14" fill="#f5f3ff" stroke="#7c3aed" stroke-width="2"/>
+  <text x="95" y="496" font-family="Arial, sans-serif" font-size="17" font-weight="700" fill="#5b21b6">模型架构层</text>
+  <text x="95" y="530" font-family="Arial, sans-serif" font-size="13.5" fill="#6d28d9">MoE 稀疏化（Kimi K3 2.8T/104B · MiniMax-M2 229.9B/9.8B）· 长上下文 1M · 混合注意力 KDA/MLA · Muon</text>
+  <text x="940" y="514" text-anchor="end" font-family="Arial, sans-serif" font-size="11" fill="#9ca3af">对应 4.2 节</text>
+
+  <!-- 左侧自底向上箭头 -->
+  <defs>
+    <marker id="arrowUp" markerWidth="10" markerHeight="10" refX="5" refY="8" orient="auto">
+      <path d="M1,9 L5,1 L9,9 Z" fill="#6b7280"/>
+    </marker>
+  </defs>
+  <line x1="42" y1="556" x2="42" y2="92" stroke="#6b7280" stroke-width="2" marker-end="url(#arrowUp)"/>
+  <text x="30" y="330" font-family="Arial, sans-serif" font-size="11" fill="#6b7280" transform="rotate(-90 30 330)" text-anchor="middle">自底向上</text>
+</svg>

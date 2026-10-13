@@ -1,11 +1,12 @@
 import type { MetadataRoute } from "next";
 import { tutorials, SITE_URL } from "@/lib/tutorials";
 import { papers } from "@/lib/papers";
+import { reports } from "@/lib/frontier";
 
 // 静态导出(output: 'export')要求 metadata 路由显式声明静态
 export const dynamic = "force-static";
 
-// 由注册表自动生成站点地图 —— 新增教程 / 论文无需改动这里。
+// 由注册表自动生成站点地图 —— 新增教程 / 论文 / 报告无需改动这里。
 export default function sitemap(): MetadataRoute.Sitemap {
   const home = {
     url: SITE_URL,
@@ -32,5 +33,23 @@ export default function sitemap(): MetadataRoute.Sitemap {
     changeFrequency: "monthly" as const,
     priority: 0.7,
   }));
-  return [home, about, ...tutorialEntries, paperIndex, ...paperEntries];
+  const frontierIndex = {
+    url: `${SITE_URL}/frontier`,
+    changeFrequency: "weekly" as const,
+    priority: 0.8,
+  };
+  const frontierEntries = reports.map((r) => ({
+    url: `${SITE_URL}/frontier/${r.slug}`,
+    changeFrequency: "monthly" as const,
+    priority: 0.7,
+  }));
+  return [
+    home,
+    about,
+    ...tutorialEntries,
+    paperIndex,
+    ...paperEntries,
+    frontierIndex,
+    ...frontierEntries,
+  ];
 }

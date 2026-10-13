@@ -4,6 +4,7 @@ import Link from "next/link";
 import { usePathname } from "next/navigation";
 import { getNeighbors, type Tutorial } from "@/lib/tutorials";
 import { getPaperNeighbors, type Paper } from "@/lib/papers";
+import { getReportNeighbors, type Report } from "@/lib/frontier";
 
 /** PrevNext 渲染所需的最小叶子形状。 */
 export interface PrevNextLeaf {
@@ -15,14 +16,17 @@ export interface PrevNextLeaf {
 }
 
 export interface PrevNextProps {
-  /** 决定取哪套注册表的邻居与上下文标签;"/tutorials" 或 "/papers" */
-  basePath: "/tutorials" | "/papers";
+  /** 决定取哪套注册表的邻居与上下文标签;"/tutorials"、"/papers" 或 "/frontier" */
+  basePath: "/tutorials" | "/papers" | "/frontier";
 }
 
 /** 根据 basePath 选数据源(函数不跨 server→client 边界,在组件内部解析)。 */
 function resolve(basePath: PrevNextProps["basePath"]) {
   if (basePath === "/papers") {
     return { neighbors: (slug: string) => getPaperNeighbors(slug) };
+  }
+  if (basePath === "/frontier") {
+    return { neighbors: (slug: string) => getReportNeighbors(slug) };
   }
   return { neighbors: (slug: string) => getNeighbors(slug) };
 }

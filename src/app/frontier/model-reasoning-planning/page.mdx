@@ -1,0 +1,395 @@
+import { frontierMetadata } from "@/lib/frontier";
+
+export const metadata = frontierMetadata("model-reasoning-planning");
+
+# 大模型推理与任务规划能力提升调研报告
+
+> 📡 **调研信息**（2026-09-16）：arXiv 十余组关键词检索（150+ 篇论文线索）+ verl / AReaL / rllm / openai/codex 等 GitHub 一手仓库 + Claude Code 与 Codex 官方文档 + Kimi K3 / MiniMax-M2 技术报告 + 泄漏系统提示词逐行分析。覆盖四问：推理能力提升的最新方法、任务规划（长程分解）能力如何提升、有哪些开源实现、Claude Code 与 Codex 如何实现推理与规划。
+
+> 📌 **前置与读法**：报告默认读者了解 [RLHF](/tutorials/rlhf) 与 [GRPO / RLVR](/papers/grpo-deepseek-r1) 的基本概念，蒸馏相关章节可配合 [on-policy 蒸馏教程](/tutorials/on-policy-distillation) 阅读。只关心工程实现的读者可以从第五章「Claude Code 的实现」直接读起；关心训练侧的读者建议按 二 → 三 → 四 章顺序读。
+
+**执行摘要**：2025–2026 年，推理能力的范式已从「RLVR + 长思维链」演进为**以 Agent 轨迹为训练单位的长程 RL**。核心发现：
+
+- **训练粒度**：从单轮问答变成多轮工具调用轨迹，Agentic RL 成为最活跃的方向；
+- **奖励信号**：从结果奖励（outcome）转向密集化的过程 / 步骤奖励（PRM、credit assignment、rubric）；
+- **数据生产**：从人工标注转向 Agent 自驱动的可验证轨迹合成；
+- **任务规划**：靠「外部化规划」（plan tool + 计划持久化）与「分层记忆 / 经验复用」两条腿；
+- **开源生态**：verl / AReaL / rllm / SkyRL 四大 RL 训练框架为支柱，开放权重模型已接近前沿；
+- **编码 Agent 的本质**：模型推理能力 + 一个堵住长程任务失败模式的 harness——Claude Code 与 Codex 的系统提示词主体都刻意不足百行，复杂行为外化到工具设计、hooks 与子代理隔离中。
+
+**关键数字速览**：
+
+| 关键数字 | 含义 |
+|------|------|
+| 1,547 篇 | The Horizon Gap 长程任务综述覆盖论文数（arXiv:2608.06663） |
+| 61–93% | 前沿模型步级推理冗余度（arXiv:2605.23926） |
+| 约 +10 个百分点 | 过程奖励相对结果奖励的提升（Qwen2.5-0.5B + GRPO + GSM8K，arXiv:2607.02869） |
+| 9.8B（4%） | MiniMax-M2 激活参数及占总量 229.9B 的比例（arXiv:2605.26494） |
+| 105+ 篇 | 2026 年 arXiv 上 multi-turn agentic RL 相关论文数 |
+| 不足 100 行 | Claude Code / Codex 系统提示词主体行数（泄漏捕获） |
+
+## 一、总览：方法栈与关键判断
+
+2026 年提升推理 / 规划能力的方法栈自底向上分四层：
+
+<figure className="my-6">
+  <img src="./fig-stack.svg" alt="2026 年推理/规划能力方法栈：自底向上分模型架构层（MoE 稀疏化、长上下文、混合注意力、Muon）、数据层（可验证轨迹合成、课程、拒绝采样）、训练层（RLVR→Agentic RL、蒸馏、自我改进）、产品层（系统提示词、工具循环、规划工具、子代理、上下文压缩、沙箱、CLAUDE.md/AGENTS.md）四层，每层标注对应章节" className="mx-auto h-auto max-w-full rounded-lg border border-zinc-200 shadow-sm dark:border-zinc-800" />
+  <figcaption className="mt-2 text-center text-xs text-zinc-500 dark:text-zinc-400">
+    <span className="figure-caption-main">2026 年推理 / 规划能力方法栈：自底向上四层，右侧标注各层对应的章节</span>
+    <span className="figure-caption-source">图源：本站整理</span>
+  </figcaption>
+</figure>
+
+四层与后文章节的对应：**模型架构层**对应 4.2 的开源权重模型；**数据层**对应 2.4 的蒸馏与合成数据；**训练层**对应第二章的五条技术主线；**产品层**对应第五、六章的 Claude Code / Codex 拆解——自底向上读即为本报告的章节顺序。
+
+五个关键判断：
+
+| 关键判断 | 依据 |
+|------|------|
+| **训练粒度从「单轮」转向「多轮轨迹」** | verl / AReaL 均支持 multi-turn RL with tool calling；MiniMax-M2、Kimi K3 的后训练均强调 agentic RL；arXiv 上 multi-turn agentic RL 论文 105+ 篇（2026 年） |
+| **奖励从 outcome 转向密集过程信号** | The Horizon Gap 综述（1,547 篇）核心结论：长程任务失败本质是「信号稀疏」，领域应对是制造更密的步级信号（PRM、credit assignment、轨迹级诊断） |
+| **harness 与模型能力开始共同训练** | ClawGym II / EvoHarness-RL / SBCO 直接对 harness 做黑盒 RL；Claude Code 官方博客承认「单一上下文窗口内规划+执行」是失败模式来源，推出动态工作流 |
+| **开源权重模型已接近前沿** | Kimi K3（2.8T/104B）全权重开源，除 Claude Fable 5 和 GPT-5.6 Sol 外超越所有开放与专有模型；MiniMax-M2 以 4% 激活率做到 frontier-tier |
+| **编码 Agent 的「智能」大部分在 harness 工程** | 两家系统提示词主体均不足百行；核心智能在工具设计（权限分级）、规划工具（plan mode / update_plan）、上下文管理（压缩 / 子代理隔离）、验证闭环（tests / review subagent） |
+
+## 二、推理能力提升的五大技术主线
+
+### 2.1 RLVR 的深化：从 GRPO 到密集过程奖励
+
+**RLVR（可验证奖励强化学习）**仍是第一支柱：数学 / 代码任务答案可自动验证，用规则奖励替代人工标注的 reward model，直接对推理链做 RL（本站 [GRPO 与 DeepSeek-R1](/papers/grpo-deepseek-r1) 精读覆盖了这条链的起点）。2026 年的关键词是**奖励信号密集化**：
+
+<figure className="my-6">
+  <img src="./fig-reward-density.svg" alt="奖励密集化对比：上图为 outcome 奖励，八步轨迹只在末端有一个 0/1 信号；下图为 Cliff 式过程奖励，在第一个错误处切分，正确前缀每步受奖励、错误后缀每步受惩罚" className="mx-auto h-auto max-w-full rounded-lg border border-zinc-200 shadow-sm dark:border-zinc-800" />
+  <figcaption className="mt-2 text-center text-xs text-zinc-500 dark:text-zinc-400">
+    <span className="figure-caption-main">奖励密集化：outcome 奖励只在轨迹末端有一个 0/1 信号；Cliff 式过程奖励在第一个错误处切分，前缀受奖励、后缀受惩罚</span>
+    <span className="figure-caption-source">图源：本站整理（依据 Cliff, arXiv:2609.02817 与奖励粒度对照实验, arXiv:2607.02869 的描述绘制）</span>
+  </figcaption>
+</figure>
+
+- **Cliff**（arXiv:2609.02817）：教师 LLM 定位每个 rollout 的**第一个错误**，把轨迹切成「受奖励的正确前缀 + 受惩罚的错误后缀」做过程奖励塑形；
+- **GAR**（arXiv:2609.03342）：用 rollout 梯度与专家锚定梯度的余弦相似度导出密集奖励，数学基准上超过 GRPO；
+- **ConsensusBench**（arXiv:2609.04648）：把中间结论聚成「共识节点」，构造规则化的过程奖励来加密稀疏 outcome 奖励；
+- **极稀疏监督**（arXiv:2609.04565）：反直觉发现——on-policy 蒸馏与 RLVR 中，每条轨迹只监督 1–2 个 token 就足以激励推理能力；
+- **奖励粒度对照**（arXiv:2607.02869）：Qwen2.5-0.5B + GRPO + GSM8K 上，**过程奖励比结果奖励高约 10 个百分点**——「奖励粒度是一阶设计决策」。
+
+**GRPO 变体与修复**持续涌现（GRPO 家族的修补脉络）：
+
+- **SIGNBALANCE**（2609.04063）：修「幸运猜对」样本优势过高的问题；
+- **DA3PO**（2608.27982）：难度感知的优势放大——对难采样对的正确响应放大优势；
+- **GAPO**（2609.00444）：按 rollout 优势自适应调整重要性采样裁剪边界；
+- **不可行性定理**（2607.23364）：证明 GRPO 与 Dr.GRPO 分坐「长度偏差 vs 梯度偏差」权衡的两端，无法同时消除——给 GRPO 家族的修补划了理论边界；
+- **进化策略路线**（2608.27351）：ES 推理覆盖更宽、Pass@K 更高，提出 GRPO→ES 顺序训练；
+- **PMD 变体**（2602.05933）：Kimi K1.5 / K2 实际采用 Policy Mirror Descent（PMD-mean 更稳定）。
+
+**验证器成为瓶颈与热点**：
+
+- **Proof-Carrying Cognition**（2609.09776）：论证「验证器可靠性是 RL 推理的约束瓶颈」；
+- **LLMs as a Jury**（2607.10139）：跨模型共识是免费验证信号，可匹敌训练的 PRM 且有闭式定律；
+- **HSRM**（2608.30841）：约 2M 参数的轻量验证器直接读生成器隐状态排序候选解；
+- **Verification Autonomy Levels L0–L5**（2608.19009）：给验证方案分级，发现替换 / 采样验证器存在「完备性盲区」；
+- **Agon**（2607.07690）：两个实力相当的模型互相出题互相读解法——训练中**隐式互评**，零过程标注、零 reward model。
+
+### 2.2 Agentic RL：把 RL 搬到多轮工具轨迹上
+
+这是 2026 年最活跃的方向（arXiv 相关论文 105+ 篇）。核心难题是**信用分配（credit assignment）**：一条几十轮的轨迹只有末端一个 0/1 奖励，怎么把功劳 / 过错分摊到每一步？方法谱系：
+
+| 方法 | arXiv | 思路 |
+|------|-------|------|
+| GACA | 2609.12424 | 无 critic 估计器，逐步自适应「步级 vs 轨迹级」优势权重，ALFWorld / WebShop 超 GRPO / GiGPO |
+| PGPO | 2609.02236 | 相邻状态势差导出动作优势，支持跨轨迹信用（尤其失败轨迹） |
+| RTPO | 2608.18682 | rollout 组织成「稀疏反向树」，时间逆序轮级更新，修复上下文错配与策略漂移 |
+| G2PO | 2606.22995 | 线性轨迹 → 全局状态转移图，边中心优势，比 GRPO 最高 +22.2% |
+| IAPO | 2608.24588 | 类型化「影响-依赖图」重分配轨迹级优势 |
+| VICT | 2608.28128 | 验证器内部原子回溯到动作，重分配组相对优势 |
+| TRACE | 2607.13988 | 冻结参考模型 log-ratio 状态价值 + TD 差分做轮级奖励，无 SFT 冷启动 |
+| ECHO | 2606.31650 | 轮次压缩成「源索引记忆记录」，outcome 信用路由回被复用的证据与选择动作 |
+| DiDPO | 2608.07147 | 用 code-diff 结构构造细粒度信用单元（编码 Agent 专用） |
+| CBPO | 2608.24300 | 精确前缀组估计「局部决策敏感度」，分支预算与 token 级信用解耦 |
+
+**环境与系统基础设施**（长程 Agent RL 的另一半）：EnvCraft（2609.05576）合成 139 个沙箱环境、约 2 万任务；MCP-Universe RL（2608.22167）在 MCP 工具服务器上做 RL 的环境编排框架；**ClawGym II**（2608.16798）对**黑盒 harness（OpenClaw、Claude Code 等）直接做 RL**——serving 代理把多轮轨迹重建为前缀树，适配 PPO / GRPO 训练不可见的 harness；Iris（2609.04304）训练 35B-A3B 与 397B-A17B 搜索 Agent（「SFT-RL climbing」交替训练），号称开源最强 BrowseComp 系成绩；EvoCUA-1.5（2607.09773）多轮 computer-use Agent 在线 RL，OSWorld-Verified 63.2%。
+
+**关键失败模式研究**：
+
+- **Spurious Tool Use**（arXiv:2609.16268）：RL 训练的工具 Agent 会学到「表面线索触发调用」的捷径策略，需要 LLM-judge 的「工具必要性」奖励来压制——这是 reward hacking 在 agentic 场景的具体形态。<Cite n={7} />
+- **The Horizon Gap**（arXiv:2608.06663，39 页、1,547 篇论文综述）：前沿模型能一次前向解出难题，却在小时级任务上崩溃，三大失败模式为**丢失早前决策、把未完成宣告为完成、偏离既定目标**；根因是「信号稀疏」——视野越长 outcome 信号越无信息量。综述明确区分三个常被混淆的概念：long-horizon（任务属性）≠ long-context（模型属性）≠ long-term memory（系统属性）。<Cite n={1} />
+- **Plans Don't Persist**（arXiv:2606.22953）：诊断性发现——Agent 的计划会从隐状态中**衰减**而非持久存在（探针可迁移到 DeepSeek-R1-Distill-Llama-70B），直接推论是**规划必须外化**（写进上下文 / 文件 / 工具状态）。<Cite n={2} />
+
+### 2.3 测试时扩展与推理效率
+
+**搜索式推理**：When LLM Meets Tree Search（2608.30395，EMNLP 2026）把测试时扩展统一为「对部分推理状态空间的搜索」，设计空间三轴为搜索拓扑 / 评估信号 / 控制动态，并提出统一的「计算-精度」报告标准——预训练 scaling 饱和使 TTS 成为关键杠杆。<Cite n={5} /> PATR（2607.15610）过程评分器引导的树 rollout；AnySearch（2609.00813）课程 RL 训练**预算感知**搜索策略，一个策略适配任意推理预算；DF-Sample（2609.12317）training-free 恢复潜在高质量推理路径，GPQA 超 GRPO。
+
+**过度思考（overthinking）**：How Much Thinking is Enough?（2605.23926）测得前沿模型步级推理冗余度 **61–93%**，且在长度无关的 outcome 奖励下 overthinking 是**结构性**的（必然出现）。<Cite n={6} /> 应对路线：ERR+（2608.28771）奖励「token 级熵下降」+ 长度效率；ETR（2604.05355）熵趋势奖励，准确率 +9.9% 同时 CoT 缩短 67%；CRISP（2604.17297）注意力信号压缩 CoT 省 50–60%；Abstract CoT（2604.22709）用保留词表 token 替代自然语言 CoT，推理 token 省 11.6 倍；ORBIT（2601.08310）多阶段 RL 发现每档预算的 Pareto 最优行为再蒸馏融合——**可控思考预算**成为产品级需求；Parason（2608.24658）让模型在并行结构里执行推理，AIME 约 1.7 倍加速。
+
+### 2.4 蒸馏与合成数据
+
+- **On-policy distillation 已成标准组件**（本站有[专题教程](/tutorials/on-policy-distillation)与 [Thinking Machines OPD 精读](/papers/tml-opd)）：verl / AReaL 均直接支持；OPD-then-RLVR 两阶段（2609.04108）稳定优于联合训练；BIRD（2607.15736）把 Qwen3-8B 的 MATH-500 做到 92%；TREK（2607.05339）先蒸馏扩展探索再 GRPO 精炼；
+- **MIMIC**（2609.16076）：从可执行代码合成可验证推理轨迹提供密集过程奖励——「以代码为推理数据源」是新趋势；
+- **Hindsight Hint Distillation**（2605.11556）：从模型自己的失败尝试合成提示来脚手架 on-policy rollout，SWE-bench Verified +8% 无需 CoT 标注；
+- **Ling & Ring 2.6**（2606.15079）：万亿参数家族用「最短正确响应蒸馏」等 token 效率技术；
+- **Purified OPSD**（2607.02234）：诊断 OPSD 在长 CoT 模型上失败的根因是「参考诱导的捷径记忆」，用 reference-only 教师 + PMI 过滤修复；
+- **Agent-driven data pipeline**（详见第四节 MiniMax-M2）：可执行工作区 + 工件对齐奖励，完全绕开人工标注。
+
+### 2.5 自我改进与超人类监督
+
+**Scaling LRM Beyond Human Supervision**（arXiv:2608.31075，72 页立场论文）提出 **L0–L4 五级自主性阶梯**：沿奖励轴（人工判断 → 可复用验证器 → 无人类反馈奖励）与经验轴（人工任务 → 自生成课程 → 模型构建环境 → 自主协同进化）刻画 LRM 如何在人类监督淡出后继续提升；点名四大风险：**reward hacking、反馈漂移、课程坍缩、环境错误**。<Cite n={4} /> 相关工作：Ring-Zero（2607.12395）零 RL 扩展到 1T 参数，报告涌现出**自我验证与并行推理**；SESA（2607.29468）自演化搜索 Agent 同时演化任务生成器与技能记忆；RODS（2606.19047）用奖励方差做「能力边界探测器」在线合成任务变体，约 20 倍轨迹效率；Aspire（2608.31111）测试从**模糊目标**自演化——自己构建训练 / 验证信号。
+
+## 三、任务规划能力：从 Plan-and-Execute 到长程 Agent RL
+
+### 3.1 规划为什么难
+
+The Horizon Gap 综述给出的三大失败模式（丢决策、假完成、目标漂移）中，**规划**是任务生命周期六环节（Planning → Memory → Execution → Training → Evaluation → Foundations）的第一环。综述用「六环节 × 视野承载位置」的网格组织全部 1,547 篇论文：<Cite n={1} />
+
+<figure className="my-6">
+  <img src="./fig-horizon-taxonomy.svg" alt="长程任务六环节（规划与分解、记忆与上下文管理、执行控制、训练方法、评测、基础与安全）交叉三种视野承载位置（上下文内、任务内超出上下文、跨任务持久）的分类网格，每格列出代表系统；基础与安全行的上下文内格子按构造为空" className="mx-auto h-auto max-w-full rounded-lg border border-zinc-200 shadow-sm dark:border-zinc-800" />
+  <figcaption className="mt-2 text-center text-xs text-zinc-500 dark:text-zinc-400">
+    <span className="figure-caption-main">The Horizon Gap 的分类网格：六环节 × 三种视野承载位置，每格列出代表系统；基础与安全行的「上下文内」格子按构造为空——退化与监督现象预设任务已超出单次前向</span>
+    <span className="figure-caption-source">图源：Mingguang Chen et al., <em>The Horizon Gap</em>（arXiv:2608.06663）Figure 1，本站重绘（有简化）</span>
+  </figcaption>
+</figure>
+
+学术侧的四个关键诊断：
+
+- **Plans Don't Persist**（2606.22953）：计划在隐状态中衰减，不持久——推论：**规划必须外化**；<Cite n={2} />
+- **SkillWeaver**（2606.18051）：把查询分解为原子子任务并检索匹配技能，发现**分解质量是关键瓶颈**；
+- **The Illusion of Agentic Complexity**（2606.30524）：README 生成任务上单 Agent 与多 Agent 质量相当而 token 少得多，**开发者引导的计划帮助最大**——多 Agent 复杂度在很多任务上是幻觉；<Cite n={3} />
+- **2.5-D 分解**（2605.07066）：LLM 只在 2D 规划、确定性执行器算垂直放置，消除一整类坐标错误——**把确定性计算从 LLM 手里拿走**是规划可靠的通用手法。
+
+### 3.2 规划方法谱系（按架构分层）
+
+综述把规划策略放在一条谱系上：从「先规划后执行」的早期承诺，到搜索式与世界模型前瞻的延迟承诺，合适的位置取决于环境的不确定性与动作空间大小——这也是 3.1 中各方法分层的底层逻辑。<Cite n={1} />
+
+<figure className="my-6">
+  <img src="./fig-planning-spectrum.svg" alt="规划策略谱系：先规划后执行、交错推理-行动（ReAct 式）、搜索式（MCTS/树搜索）、世界模型前瞻四种策略，沿环境不确定性与动作空间规模递增方向排布" className="mx-auto h-auto max-w-full rounded-lg border border-zinc-200 shadow-sm dark:border-zinc-800" />
+  <figcaption className="mt-2 text-center text-xs text-zinc-500 dark:text-zinc-400">
+    <span className="figure-caption-main">规划策略谱系：四种策略沿「环境不确定性与动作空间规模」排布——早承诺买全局连贯（代价是对未预见情况脆弱），延迟承诺买稳健（代价是算力）</span>
+    <span className="figure-caption-source">图源：Mingguang Chen et al., <em>The Horizon Gap</em>（arXiv:2608.06663）Figure 3，本站重绘（有简化）</span>
+  </figcaption>
+</figure>
+
+**① Prompt / Scaffolding 层（不训练）**：DOLORES（2605.11388）推理时用形式化元推理语言构造任务特定脚手架（structured meta-cognition），击败固定脚手架；ReActNet（2609.05774）把任务条件的角色分工编译成时序工作流图，无需 RL / 梯度；AI Planning Framework（2603.12710）把 Agent 架构映射到经典搜索范式（BFS / 最好优先 / DFS）。
+
+**② 训练层（把规划做进权重）**：HiPER（2602.16165）分层 RL + 规划层 / 执行层分别获得信用；MiRA（2603.19685）在线子目标分解 + 里程碑 RL 奖励；HIPIF（2606.10507）围绕显式子目标训练并**折叠已完成的历史**；MagicAgent（2602.19000）在合成轨迹上训练「广义规划」基础模型，32B 超越 Kimi-K2 等超大规模模型；**SPACE**（2609.02042）从程序化技能蒸馏「块边界监督」，让 Agent 输出**变长动作块**（act more, decide less），决策轮次最多减 78.9%；DynAMO（2606.19382）Plan-then-Execute 产出**可验证工作流图**，依赖感知并行执行。
+
+**③ 记忆 / 经验层（规划知识的持久化与复用）**：CHIME（2609.02074）规划 / 执行记忆库分离，**先归因结果再记忆**（credit-aware）；GeoSkill / MASkills / SkillLift 分层技能库 + 协同修订 / 技能条件化信用分配 / 从稀疏 oracle 学密集 rubric 降 40–70% 成本；OPID / SEED 从 on-policy 轨迹提取「事后技能」（hindsight skills）回注训练；**EvoHarness-RL**（2608.05446）让 Agent 学习**构造与协调 Belief / Progress / Experience 外部状态**的策略——连「维护哪些外部状态」都是学出来的；HarnessEvolve（2609.00829）参考轨迹 + 质量门控对抗自演化失败；**EvoHarnessBench**（2609.04280）警示 harness 演化存在「诱导遗忘」与不一致适应增益。
+
+### 3.3 长上下文 ≠ 长规划
+
+The Horizon Gap 明确区分：**长视野（任务步数）≠ 长上下文（模型 token 容量）≠ 长期记忆（系统持久化）**——三者解决手段完全不同：长视野靠外化规划 + 密集信号；长上下文靠架构（Kimi K3 的 1M context、[DeepSeek-V4](/papers/deepseek-v4) 的 CSA / HCA 混合注意力）；长期记忆靠系统设计（Claude Code 的 auto memory、OpenViking 式上下文数据库）。<Cite n={1} />
+
+<figure className="my-6">
+  <img src="./fig-memory-tiers.svg" alt="记忆的三层权衡：上下文窗口（高保真、会话内持久）、外部存储（中等保真、跨会话持久）、权重（低即时保真、跨任务持久），沿保真度与持久性两轴排布" className="mx-auto h-auto max-w-xl rounded-lg border border-zinc-200 shadow-sm dark:border-zinc-800" />
+  <figcaption className="mt-2 text-center text-xs text-zinc-500 dark:text-zinc-400">
+    <span className="figure-caption-main">记忆的三层：上下文窗口（高保真 · 会话内）、外部存储（中等 · 跨会话）、权重（低即时保真 · 跨任务）——沿箭头持久性上升、即时保真下降</span>
+    <span className="figure-caption-source">图源：Mingguang Chen et al., <em>The Horizon Gap</em>（arXiv:2608.06663）Figure 4，本站重绘（有简化）</span>
+  </figcaption>
+</figure>
+
+另需警惕长程评测论文可信度——KLong（2602.17547）声称 106B 击败 Kimi K2 Thinking（1T）11.28%，后因**数据错误撤稿**。
+
+### 3.4 评测基准的变化
+
+评测口径正在从静态 benchmark 转向工作流完成度：AA 智能指数 v4.3 把 **30% 权重给真实工作流评测**（GDPval-AA、AA-Briefcase 等），说明业界已把「Agent 长程任务完成度」视为推理能力的最终试金石。这与 The Horizon Gap 的诊断形成呼应——静态的单轮 benchmark 衡量不出长视野能力，而长视野恰恰是当前模型与产品的分水岭。<Cite n={1} /> 对自建团队的直接含义：评测集要对齐自己产品的真实任务形状（多轮、工具、可验证），而不是只跑 AIME / GPQA。
+
+## 四、开源实现全景
+
+本章回答「想自己训 / 自己搭，从哪里下手」：4.1 是训练框架，4.2 是开源权重模型。
+
+### 4.1 RL 训练框架四强
+
+| 框架 | 出品方 | 定位 | 关键特性 |
+|------|--------|------|----------|
+| **verl**（23.5k★） | 字节 Seed 发起、社区维护 | 生产级通用 RL 训练库（HybridFlow，EuroSys 2025） | FSDP / FSDP2 / Megatron + vLLM / SGLang；3D-HybridEngine；到 671B；PPO / GRPO / GSPO / ReMax / REINFORCE++ / RLOO / PRIME / DAPO / DrGRPO / SPPO；multi-turn RL with tool calling；多模态；NVIDIA / AMD / Ascend。2026 新增 verl-vla / VeRL-Tinker / VeRL-Omni / RL-Insight / verl-SpeCo |
+| **AReaL**（5.8k★） | 清华 IIIIS + 蚂蚁（inclusionAI） | 全异步 RL 系统，「Agent 应用的 RL 桥梁」 | AReaL 2.0 微服务架构（训练 / 推理 / Agent / 权重更新解耦）；boba² 相比同步系统 2.77× 加速；GRPO / GSPO / PPO / DAPO / LitePPO / SAPO / IcePop / KPop / M2PO；Hermes 在线 RL 循环 + 端到端 SWE RL 示例；AReaL-SEA 235B 在 τ²-bench 超 GPT-5 |
+| **rllm**（5.8k★） | UC Berkeley Sky Computing Lab | 「任何 harness、任何后端、任何基准上的 Agentic RL」 | **同一 Agent 代码库同时用于评测与训练**：Model Gateway 透明捕获 token IDs + logprobs；训练后端 verl / tinker / fireworks 一键切换；10+ CLI Agent harness（含 **Claude Code、Codex**）；60+ 基准自动拉取。DeepScaleR / DeepCoder / DeepSWE / FinQA-4B 出自 rllm |
+| **SkyRL** | Skywork AI | 全栈 RL 库（Train-Agent-Deploy） | Megatron 后端 5D 并行；GRPO / DAPO；自定义环境与工具调用教程；Tinker 集成（自有硬件零代码改动） |
+
+其他值得关注：**OpenViking**（volcengine，37.7k★）自演化上下文数据库，统一 Agent 记忆 / 知识 RAG / 技能——推理能力的「系统层」开源方案，与训练层互补；EnvCraft / MCP-Universe RL / PlayTrain / AgentJet 是环境合成与分布式训练基础设施论文的开源化。<Cite n={[11,12,13]} />
+
+**选型建议**（按需求对号入座）：要通用 RL 底座、蹭最全的算法与生态 → **verl**；要异步长程 agentic RL、微服务化的大规模训练 → **AReaL**；要直接训 CLI 编码 Agent（含 Claude Code / Codex 作为 harness）→ **rllm**；要文档最好的上手路径与自定义环境教程 → **SkyRL**。四者不互斥——rllm 本身就把 verl / tinker / fireworks 作为可切换的训练后端。
+
+### 4.2 开源权重模型
+
+| 模型 | 规模 | 关键技术 | 推理 / Agent 定位 |
+|------|------|----------|----------------|
+| **[Kimi K3](/papers/kimi-k3)**（2607.24653） | 2.8T MoE / 104B 激活 | KDA + Attention Residuals + Stable LatentMoE（896 专家激活 16）；1M context；原生视觉；scaling 效率较 K2 +2.5× | 通用 / Agent / 编码三域 RL；**百万 token 级 agentic RL（持久 rollout 与沙箱状态）**；多档 reasoning-effort；全权重开源，仅次于 Claude Fable 5 与 GPT-5.6 Sol |
+| **MiniMax-M2 / M2.7**（2605.26494） | 229.9B / **9.8B 激活（4%）** | 三支柱：Agent 驱动数据管线（可执行工作区 + 工件对齐奖励）；Forge RL 系统（窗口化 FIFO、前缀树合并、白盒 / 黑盒 Agent 解耦）；自演化 M2.7（能自主调试训练运行并修改自己的脚手架） | 「为 Agent 部署端到端设计」；前沿级 agentic coding / deep search / 办公任务；激活率 4% 意味推理成本像小模型 |
+| **[DeepSeek-V4](/papers/deepseek-v4)**（2606.19348） | V4-Pro 1.6T/49B；V4-Flash 284B/13B | CSA / HCA 混合注意力；流形约束超连接；Muon 优化器；32T+ token；百万 context | 效率导向开放权重前沿；生态衍生（Ascend 全参后训练） |
+| **Qwen3.5**（2604.15804） | 数百亿–数百千亿 | Hybrid Attention MoE；256K context | 开源生态默认底座——verl / AReaL / rllm 的配方大多以 Qwen 系为训练对象 |
+| **Ling & Ring 2.6**（2606.15079） | 万亿参数家族 | 最短正确响应蒸馏等 token 效率技术 | Agent 智能 + token 效率并重 |
+
+方法论要点：①「Agent 数据管线」取代人工标注——MiniMax-M2 的可验证轨迹合成、Kimi K3 的百万 token agentic RL 代表数据生产方式换代；② RL 系统与算法协同设计——Forge 前缀树合并、AReaL 微服务异步、rllm gateway 捕获 logprobs，系统创新直接决定能训什么规模；③ 多档推理努力成为标配——Kimi K3、GPT-5.6、Claude 的 effort low / medium / high / xhigh / max 映射 10 / 15 / 25 / 80 / max 思考预算。<Cite n={[8,9]} />
+
+## 五、Claude Code 的实现
+
+### 5.1 总体架构与 Agent Loop
+
+官方定义：Claude Code 是围绕 Claude 的 **agentic harness**——提供工具、上下文管理与执行环境，把语言模型变成能干的编码 Agent；模型侧推理能力（extended thinking、effort 分档）来自 API 训练侧的 RL，harness 侧解决「长程任务在单一上下文窗口中规划 + 执行容易失败」。<Cite n={15} />
+
+Agent Loop 官方三阶段：**gather context → take action → verify results**，循环直到无工具调用的纯文本响应出现。<Cite n={15} />
+
+<figure className="my-6">
+  <img src="./fig-agent-loop.svg" alt="Claude Code 的 Agent Loop：收集上下文（只读工具并发）、采取行动（写状态工具串行）、验证结果（测试/构建/截图对比）三阶段循环；终止条件为无工具调用的纯文本响应；护栏为 max_turns 与 max_budget_usd" className="mx-auto h-auto max-w-full rounded-lg border border-zinc-200 shadow-sm dark:border-zinc-800" />
+  <figcaption className="mt-2 text-center text-xs text-zinc-500 dark:text-zinc-400">
+    <span className="figure-caption-main">Claude Code 的 Agent Loop：gather → act → verify 三阶段循环，直到出现无工具调用的纯文本响应；护栏是 max_turns 与 max_budget_usd——预算即护栏</span>
+    <span className="figure-caption-source">图源：本站整理（依据 Claude Code 官方文档与 Agent SDK 文档描述绘制）</span>
+  </figcaption>
+</figure>
+
+SDK 视角的精确循环：接收 prompt（+系统提示词 + 工具定义 + 历史）→ 模型输出文本或工具调用（**只读工具并发、写状态工具串行**）→ 执行工具结果回注 → 重复直到纯文本响应 → 返回 ResultMessage。终止护栏：`max_turns`（工具轮数上限）、`max_budget_usd`（花费上限）——**预算即护栏**。
+
+### 5.2 系统提示词：短提示 + 强结构
+
+从泄漏的系统提示词（asgeirtj/system_prompts_leaks 的 Fable 5.1 捕获，2026-09-01）看，主体**不足百行**，但每段都在堵一个具体失败模式：<Cite n={16} />
+
+| 提示词段落 | 针对的失败模式 |
+|-----------|---------------|
+| **Reporting outcomes** | 「把没验证的说成完成」——任何 done / fixed / verified 声明必须基于本会话观察到的工具输出；失败要放在第一句 |
+| **Delivering work** | 范围悄悄收窄 / 扩大；中途不确定性；把部分工作说成完成 |
+| **Writing for the user** | 最终消息自包含（用户可能只看最后一条）；一句话一个意思 |
+| **Context management** | 长对话自动摘要；不必提前收尾 |
+| **autonomous operation** | 用户不在线时禁止「要不要我……」式阻塞提问；turn 结束前检查最后一段是否是「未兑现的承诺」 |
+| **EnterPlanMode 工具描述** | 何时应进入计划模式（新功能 / 多方案 / 多文件 / 架构决策 / 需求不明） |
+| **effort 映射表** | low=10 / medium=15 / high=25 / xhigh=80 / max=max（思考预算数值） |
+
+重要演进：老版本（Opus 4.6 捕获）有 **TaskCreate / TaskGet / TaskList**（结构化任务清单），最新版（Fable 5.1）**任务工具已移除**，规划职责集中到 plan mode + AskUserQuestion + 子代理体系——从「清单式规划」演进为「计划审批式规划」。
+
+### 5.3 规划实现：Plan Mode + 动态工作流
+
+**Plan Mode**：Shift+Tab 切换或 `claude --permission-mode plan` 启动；只读探索、产出计划，ExitPlanMode 请求用户批准后才放行。官方四阶段工作流：**Explore → Plan → Implement → Commit**。官方同样提醒「计划有开销」——一句话能说清的 diff 就跳过计划。
+
+**动态工作流（Dynamic Workflows，2026-06 官方博客）**——对「单一上下文窗口内规划 + 执行」失败模式的系统性回应。官方点名三大失败模式：**agentic laziness**（部分进展后宣布完成）、**self-preferential bias**（评判自己的输出时有自我偏好）、**goal drift**（有损压缩后偏离目标）。<Cite n={15} />解法是让 Claude Code **现场写自己的 harness**：执行 JS 脚本，用特殊函数生成与协调子代理（可选模型、可选 git worktree 隔离），用确定性 JS 循环持有计划，让 Agent 在隔离上下文里推理。组合模式：classify-and-act、fan-out-and-synthesize、adversarial verification、generate-and-filter、tournament、loop-until-done；触发词 "ultracode"。
+
+**Loop Engineering（循环工程）**——官方博客的四类循环设计学：
+
+| 循环类型 | 触发 | 停止 | 适用 |
+|----------|------|------|------|
+| Turn-based | 用户 prompt | Claude 自判完成 | 短任务；用 SKILL.md 编码自验证步骤 |
+| Goal-based（/goal） | 手动 | 评估器模型检查目标条件或轮数上限 | 确定性判据（测试数、Lighthouse 分数） |
+| Time-based（/loop、/schedule） | 定时 | — | 周期性工作、外部系统监控 |
+| Proactive | 事件 / 日程，无人在场 | 目标 + 预算 | bug 分诊、依赖升级等定义良好的循环工作 |
+
+### 5.4 上下文管理与记忆
+
+官方最佳实践开篇即讲「上下文窗口是最重要的资源」：<Cite n={15} />
+
+- **自动压缩**：接近上限先清老工具输出、再摘要对话；`/context` 查占用；CLAUDE.md 可写「压缩时保留什么」；PreCompact hook 压缩前归档全量转录；
+- **子代理**：独立上下文窗口跑调研 / 验证，只把摘要返回主对话——「让研究不进你的上下文」；fork 型继承完整对话副本；
+- **Skills**：描述在会话开始时加载、正文按需载入；
+- **MCP 工具搜索**：MCP 工具定义默认延迟加载（只占工具名），大量 MCP 服务器不再撑爆开局上下文；
+- **CLAUDE.md / auto memory**：CLAUDE.md 每会话加载（团队约定、命令、风格）；auto memory（MEMORY.md 索引 + 单事实单文件）跨会话持久化学习——对应 The Horizon Gap 说的「long-term memory 是系统属性」；
+- **会话 JSONL**：每条消息 / 工具调用写 `~/.claude/projects/` 下的明文 JSONL，支持回退、恢复、分叉。
+
+### 5.5 验证闭环
+
+官方核心建议：「**给 Claude 一个能跑的检查：测试、构建、截图对比。这是『你盯着的会话』和『你能走开的会话』的区别。**」验证强度四档：① prompt 内要求跑检查并迭代；② `/goal` 条件（独立评估器每轮复查）；③ Stop hook（确定性门控，脚本不过就禁止结束回合，连续 8 次阻断后强制结束）；④ 验证子代理 / 动态工作流（新鲜上下文的模型试图反驳结果——**对抗性验证，做工作的 Agent 不给自己打分**）。
+
+### 5.6 安全与权限
+
+权限模式：Auto（分类器模型后台审查动作，只拦范围升级 / 未知基础设施 / 敌意内容驱动三类风险）/ Manual / Accept edits / Plan；`/sandbox` OS 级隔离；编辑前快照文件支持 checkpoints 回退（仅覆盖文件编辑，不覆盖 Bash 副作用）。
+
+## 六、Codex 的实现
+
+### 6.1 总体架构
+
+OpenAI Codex（openai/codex，Apache-2.0，124.7k★）核心为 **codex-rs**（Rust，业务逻辑在 codex-rs/core），外层 TypeScript / Node 分发。表面覆盖 CLI、IDE 扩展、桌面 App、Codex 云。模型侧用 GPT-5.6 家族（Sol / Terra / Luna）与 GPT-6 Astra，**推理努力分档**（light / low、medium、high、extra high）+ **Max 模式**（单任务更深思考）+ **Ultra 模式**（并行子代理，可主动委派）。<Cite n={14} />
+
+### 6.2 系统提示词（开源仓库内可直读）
+
+codex-rs/core 下有按模型版本的 prompt 文件（gpt_5_codex_prompt.md 等），可直接阅读。<Cite n={14} />以 gpt_5_codex_prompt.md 为例全文约 100 行：① General（优先 `rg` 搜索）；② **Editing constraints**（默认 ASCII、注释克制、apply_patch 单文件编辑、**脏工作区纪律**：绝不回退用户未提交修改、发现意外变更立即停止、禁 `git reset --hard` 等破坏性命令）；③ **Plan tool**：「**最简单的约 25% 任务跳过规划工具；不要做单步计划；每完成计划中一个子任务后更新计划**」——这是 Codex 任务规划的提示词层；④ Special user requests（review 请求默认代码审查心态）；⑤ Frontend tasks（5.2 版新增：避免「AI slop」式平庸设计）；⑥ 最终消息格式规范（文件引用 `src/app.ts:42` 可点击格式等）。
+
+与 Claude Code 对照：**Codex 的 prompt 更短更工程化**（编辑约束 / 安全纪律占比大），Claude Code 更强调「结果报告诚实性」与「自主运行纪律」。两者都把「规划」做成轻量工具 + 提示词纪律，而不是复杂多 Agent 规划器。
+
+### 6.3 AGENTS.md：分层指令装配
+
+Codex 的项目指令体系（对应 CLAUDE.md）有明确的**发现与合并算法**：全局层（~/.codex/，AGENTS.override.md 优先于 AGENTS.md）；项目层从项目根（git 根）**沿目录路径向下**到当前工作目录，每目录至多一个文件（AGENTS.override.md > AGENTS.md > project_doc_fallback_filenames 备选名）；合并顺序全局 → 根 → 嵌套拼接，**越靠近当前目录越靠后、优先级越高**；默认 32 KiB 上限（project_doc_max_bytes 可调）；每次运行重建（无缓存）。
+
+### 6.4 沙箱与审批（两层安全模型）
+
+这是 Codex 工程上最有特色的层：
+
+- **沙箱模式**（技术能力边界）：read-only / workspace-write（默认 Auto 预设）/ danger-full-access；可写根内 `.git`、`.agents`、`.codex` 递归只读保护；
+- **OS 级强制**：macOS 用 **Seatbelt**（sandbox-exec）；Linux 用 **bwrap + seccomp**；Windows 原生沙箱或 WSL2 继承；
+- **自动审批审查（auto-review）**：审批请求先过 reviewer Agent 检查「数据外泄、凭据探测、持久性安全削弱、破坏性动作」；低 / 中风险放行、critical 拒绝、高风险需用户授权；失败即失败关闭；
+- **网络控制**：workspace-write 默认断网；可开 network_proxy 域名白名单；本地 / 私网默认阻断 + DNS 重绑定防护；web search 默认走缓存索引降低 prompt injection 暴露；
+- **云环境两阶段**：容器创建 + checkout → setup 阶段（**有网**，依赖安装、secrets 只在此阶段解密）→ agent 阶段（**默认断网**、secrets 已剥离）→ 出结果。容器缓存 12 小时。
+
+### 6.5 子代理与模型分工
+
+**子代理**：主线程保持需求 / 约束 / 决策，噪声中间输出进子代理线程（解决 context pollution 与 context rot）。内置 default / worker / explorer；自定义 Agent 用 TOML 文件（必填 name / description / developer_instructions，可选 model / model_reasoning_effort / sandbox_mode / mcp_servers）。模型 / 努力继承链：显式 spawn 值 > [agents] 默认 > 父值 > 自定义文件。**模型分工**：gpt-5.6-sol（复杂多步）/ terra（均衡、探索与并行工人）/ luna（高速窄任务）——模型分层本身就是成本 / 能力路由。**Astra 上下文管理（实验）**：跨上下文窗口记笔记、任务内可搜索早前消息与工具结果。
+
+## 七、对比与启示
+
+### 7.1 机制对照表
+
+| 机制 | Claude Code | Codex |
+|------|-------------|-------|
+| 核心循环 | gather→act→verify 循环，无工具调用即结束；max_turns / max_budget 护栏 | agent 阶段循环跑终端命令、编辑、跑检查；轮次模型自定 |
+| 项目指令 | CLAUDE.md（多级 + @import） | AGENTS.md（全局→根→嵌套拼接，override 优先，32KiB 上限） |
+| 跨会话记忆 | auto memory（MEMORY.md + 单事实文件，自动学习） | 无持久记忆（每次运行重建指令链）；实验性 Astra 跨窗口笔记 |
+| 规划 | Plan Mode（审批制）+ Workflow（确定性 JS 持有计划）+ /goal | update_plan 工具 + 三条纪律（25% 跳过、禁单步计划、完成子任务即更新）+ /plan |
+| 任务清单 | 已从 TaskCreate 系列移除，并入 plan / workflow | 无独立任务清单工具 |
+| 子代理 | Agent 工具（.claude/agents/*.md 定义，fork / worktree 隔离，SendMessage 续聊） | 子代理线程（TOML 定义，/agent 切换，Ultra 主动委派） |
+| 上下文管理 | 自动压缩 + 子代理隔离 + skills 按需 + MCP tool search | 压缩 + 子代理隔离 + Astra 跨窗口笔记（实验） |
+| 验证闭环 | 测试 / 构建 / 截图 + /goal 评估器 + Stop hook + 对抗性 review 子代理 | setup / agent 两阶段 + 自动审批审查 reviewer + 代码审查规则 |
+| 沙箱 | /sandbox OS 级隔离 + 权限模式（Auto 分类器） | Seatbelt / bwrap+seccomp / Windows 原生 + 两层模型 + 网络代理 |
+| 推理努力 | effort low / medium / high / xhigh / max（10 / 15 / 25 / 80 / max） | light / low / medium / high / extra high + Max + Ultra |
+
+### 7.2 两条路线的分工
+
+2026 年的共识性分工：**模型侧**（API 训练）——RLVR + Agentic RL + 蒸馏把「单步推理质量」和「多轮工具使用」做进权重，思考预算（effort）成为模型接口；**Harness 侧**（产品工程）——解决模型做不到的四件事：**持久规划**（plan tool / workflow / AGENTS.md）、**上下文经济学**（子代理隔离 + 压缩 + 按需加载）、**验证闭环**（确定性检查 + 对抗性审查）、**安全边界**（沙箱 + 审批 + 网络）。
+
+<figure className="my-6">
+  <img src="./fig-model-harness.svg" alt="模型侧（API 训练：RLVR→Agentic RL、on-policy 蒸馏、effort 分档）与 Harness 侧（产品工程：持久规划、上下文经济学、验证闭环、安全边界）合成编码 Agent（Claude Code / Codex）的分工示意" className="mx-auto h-auto max-w-full rounded-lg border border-zinc-200 shadow-sm dark:border-zinc-800" />
+  <figcaption className="mt-2 text-center text-xs text-zinc-500 dark:text-zinc-400">
+    <span className="figure-caption-main">两条路线的分工：模型侧把推理与工具使用做进权重，Harness 侧堵住模型做不到的四件事，合成编码 Agent；两家系统提示词主体都刻意不足百行</span>
+    <span className="figure-caption-source">图源：本站整理</span>
+  </figcaption>
+</figure>
+
+两家的系统提示词都刻意**短**（主体不足百行），因为长提示词本身会稀释指令遵循；复杂行为外化到工具设计（工具描述是行为规范的主要载体）、hooks（确定性强制）、子代理（隔离与专门化）里。这与学术侧发现一致：多 Agent 复杂度在很多任务上是幻觉，任务特定脚手架优于固定脚手架。<Cite n={3} />
+
+### 7.3 对自建 Agent / 训练团队的启示
+
+1. **规划外化 + 密集验证**是当前性价比最高的组合：plan tool 三条纪律（Codex 式）或计划审批（Claude 式）都很轻；验证闭环把「看起来完成」变成「验证过完成」；
+2. **上下文是第一资源**：子代理隔离调研、MCP 工具延迟加载、压缩指令定制是三个最直接的手段；
+3. **训练侧若要自研**：verl（通用底座）/ AReaL（异步长程）/ rllm（CLI Agent 直接训练，支持 Claude Code / Codex 作为 harness）+ Qwen / DeepSeek 底座 + 可验证环境 + 密集过程奖励是 2026 年的合理技术栈；
+4. **评测要对齐长程 Agent 任务**：AA-Briefcase / GDPval 类工作流评测 + Terminal-Bench + SWE-bench Verified 组合，比 AIME / GPQA 更能反映产品化推理能力；
+5. **警惕三类坑**：reward hacking（工具调用被表面线索触发）、harness 诱导遗忘、长程评测论文可信度（KLong 撤稿事件）。
+
+### 7.4 值得跟踪的信号
+
+- **harness 本身成为训练对象**：ClawGym II（黑盒 RL 训 Claude Code）、EvoHarness-RL、SBCO——若成熟，产品 Agent 的脚手架将从人工设计变为学习产物；MiniMax M2.7「自主调试训练运行并修改自己的脚手架」是同一信号的商业版；
+- **L0–L4 自主性阶梯**：奖励轴与经验轴的去人类化是接下来 1–2 年的主叙事；
+- **推理效率**：overthinking 是结构性的（61–93% 冗余），可控预算（ORBIT / ERR+）与并行推理（Parason）会把「思考成本」变成可调度资源；
+- **rllm 型「评测即训练」**：同一 Agent 代码库跑评测与训练、gateway 透明捕获 logprobs——工具链统一将大幅降低 agentic RL 工程门槛。
+
+## 小结
+
+> 一句话结论：要提升推理与规划，模型侧押注「多轮 Agent RL + 密集过程奖励 + 可验证轨迹合成」，工程侧押注「外化规划 + 上下文经济学 + 验证闭环 + 沙箱」——Claude Code 和 Codex 已经把工程侧的答案开源或文档化了，模型侧的答案一半在开放权重（Kimi K3 / MiniMax-M2），一半在 API 训练侧。
+
+如果只从这篇报告带走三件事，带这三条——它们对任何自建 Agent 都成立，且不依赖特定模型：
+
+1. **规划必须外化**：计划放在隐状态里会衰减（Plans Don't Persist），plan tool / 工作流图 / 计划文件比「相信模型记得」可靠；
+2. **验证必须闭环**：「看起来完成」和「验证过完成」是两种 Agent，给模型一个能跑的检查是一切的前提；
+3. **上下文是第一资源**：子代理隔离、按需加载、压缩定制——上下文填满导致的性能退化是一切长程失败的第一约束。
+
+## 参考资料
+
+<References>
+1. *The Horizon Gap: Agents in the Duration Gap*（2026）. arXiv: [2608.06663](https://arxiv.org/abs/2608.06663). —— 39 页、1,547 篇论文的长程任务综述;三大失败模式、信号稀疏根因、long-horizon / long-context / long-term memory 概念区分的来源。
+2. *Plans Don't Persist*（2026）. arXiv: [2606.22953](https://arxiv.org/abs/2606.22953). —— 计划从 Agent 隐状态衰减的诊断实验,「规划必须外化」推论的来源。
+3. *The Illusion of Agentic Complexity*（2026）. arXiv: [2606.30524](https://arxiv.org/abs/2606.30524). —— 单 Agent 与多 Agent 对照实验,「多 Agent 复杂度是幻觉」结论的来源。
+4. *Scaling LRM Beyond Human Supervision*（2026）. arXiv: [2608.31075](https://arxiv.org/abs/2608.31075). —— 72 页立场论文,L0–L4 自主性阶梯与四大风险的来源。
+5. *When LLM Meets Tree Search*（EMNLP 2026）. arXiv: [2608.30395](https://arxiv.org/abs/2608.30395). —— 测试时扩展统一框架「对部分推理状态空间的搜索」的来源。
+6. *How Much Thinking is Enough?*（2026）. arXiv: [2605.23926](https://arxiv.org/abs/2605.23926). —— 前沿模型推理冗余度 61–93% 与结构性 overthinking 结论的来源。
+7. *Spurious Tool Use*（2026）. arXiv: [2609.16268](https://arxiv.org/abs/2609.16268). —— agentic 场景 reward hacking 具体形态的来源。
+8. Kimi Team（2026）. *Kimi K3: Open Frontier Intelligence*. arXiv: [2607.24653](https://arxiv.org/abs/2607.24653). —— Kimi K3 规模、架构与百万 token agentic RL 的来源;站内有[精读](/papers/kimi-k3)。
+9. MiniMax（2026）. *MiniMax-M2 Technical Report*. arXiv: [2605.26494](https://arxiv.org/abs/2605.26494). —— 229.9B/9.8B 激活、Agent 驱动数据管线与 Forge RL 系统的来源。
+10. DeepSeek-AI（2026）. *DeepSeek-V4: Towards Highly Efficient Million-Token Context Intelligence*. arXiv: [2606.19348](https://arxiv.org/abs/2606.19348). —— CSA/HCA 混合注意力与长上下文架构的来源;站内有[精读](/papers/deepseek-v4)。
+11. verl contributors. *verl: Volcano Engine Reinforcement Learning for LLM*. [github.com/volcengine/verl](https://github.com/volcengine/verl). —— verl 特性与生态位描述的来源。
+12. inclusionAI. *AReaL: Ant RL for LLMs*. [github.com/inclusionAI/AReaL](https://github.com/inclusionAI/AReaL). —— AReaL 2.0 微服务架构与异步系统描述的来源。
+13. rllm-org（UC Berkeley）. *rllm: RL for LLM Agents*. [github.com/rllm-org/rllm](https://github.com/rllm-org/rllm). —— 「评测即训练」设计与 CLI Agent harness 支持的来源。
+14. OpenAI. *Codex*. [github.com/openai/codex](https://github.com/openai/codex). —— codex-rs 架构、prompt 文件与沙箱 / 审批模型的一手来源;配套官方文档 learn.chatgpt.com/docs。
+15. Anthropic. *Claude Code 官方文档与工程博客*. [code.claude.com/docs](https://code.claude.com/docs)（How Claude Code works / Best practices / Agent SDK agent-loop / Dynamic workflows / Loop engineering）. —— Agent Loop、上下文管理与验证闭环描述的一手来源。
+16. asgeirtj. *system_prompts_leaks*. [github.com/asgeirtj/system_prompts_leaks](https://github.com/asgeirtj/system_prompts_leaks). —— Claude Code 与 Codex 系统提示词的泄漏捕获来源（Fable 5.1，2026-09-01）。
+</References>

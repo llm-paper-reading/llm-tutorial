@@ -38,6 +38,7 @@ export default function NavBar() {
           {link("/", "首页")}
           {link(`/tutorials/${getFirstTutorial().slug}`, "教程", "/tutorials/")}
           {link("/papers", "论文", "/papers/")}
+          {link("/frontier", "前沿追踪", "/frontier/")}
           {link("/about", "关于")}
           <ThemeToggle />
         </nav>
