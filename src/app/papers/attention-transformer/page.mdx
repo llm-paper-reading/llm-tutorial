@@ -1,8 +1,9 @@
+import paper from "./meta";
 import { paperMetadata } from "@/lib/papers";
 
-export const metadata = paperMetadata("attention-transformer");
+export const metadata = paperMetadata(paper);
 
-<PaperHeader slug="attention-transformer" />
+<PaperHeader slug={paper.slug} />
 
 # Transformer：注意力就是你所需要的一切
 

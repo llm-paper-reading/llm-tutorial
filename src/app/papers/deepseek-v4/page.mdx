@@ -1,8 +1,9 @@
+import paper from "./meta";
 import { paperMetadata } from "@/lib/papers";
 
-export const metadata = paperMetadata("deepseek-v4");
+export const metadata = paperMetadata(paper);
 
-<PaperHeader slug="deepseek-v4" />
+<PaperHeader slug={paper.slug} />
 
 # DeepSeek-V4：高效百万上下文智能
 

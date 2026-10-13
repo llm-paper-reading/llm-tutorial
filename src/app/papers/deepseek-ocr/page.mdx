@@ -1,8 +1,9 @@
+import paper from "./meta";
 import { paperMetadata } from "@/lib/papers";
 
-export const metadata = paperMetadata("deepseek-ocr");
+export const metadata = paperMetadata(paper);
 
-<PaperHeader slug="deepseek-ocr" />
+<PaperHeader slug={paper.slug} />
 
 # DeepSeek-OCR：上下文光学压缩
 

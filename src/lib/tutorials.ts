@@ -1,3 +1,5 @@
+import { SITE_URL } from "@/lib/site";
+
 // 教程注册表 —— 单一数据源。
 // 导航栏、侧边栏、首页、上一篇/下一篇都从这里读取,避免多处维护不一致。
 
@@ -513,15 +515,6 @@ export function getNeighbors(slug: string): {
     next: i < tutorials.length - 1 ? tutorials[i + 1] : null,
   };
 }
-
-/**
- * 站点基础 URL。优先读环境变量,便于部署到不同域名;
- * 本地/未配置时回退到占位域名(仅影响 sitemap/OG 的绝对地址)。
- * GitHub Pages 项目站点形如 https://<user>.github.io/<repo>,
- * 由部署方通过 NEXT_PUBLIC_SITE_URL 整体传入(含子路径)。
- */
-export const SITE_URL =
-  process.env.NEXT_PUBLIC_SITE_URL ?? "https://ml-tutorial.example.com";
 
 /**
  * 由注册表生成单篇教程的页面 metadata(title/description/openGraph)。

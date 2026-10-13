@@ -1,8 +1,9 @@
+import paper from "./meta";
 import { paperMetadata } from "@/lib/papers";
 
-export const metadata = paperMetadata("ui-tars-2");
+export const metadata = paperMetadata(paper);
 
-<PaperHeader slug="ui-tars-2" />
+<PaperHeader slug={paper.slug} />
 
 # UI-TARS-2：GUI Agent 的多轮强化学习
 

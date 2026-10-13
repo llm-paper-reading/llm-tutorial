@@ -1,8 +1,9 @@
+import paper from "./meta";
 import { paperMetadata } from "@/lib/papers";
 
-export const metadata = paperMetadata("minillm-gu");
+export const metadata = paperMetadata(paper);
 
-<PaperHeader slug="minillm-gu" />
+<PaperHeader slug={paper.slug} />
 
 # MiniLLM：用反向 KL 做在线蒸馏
 

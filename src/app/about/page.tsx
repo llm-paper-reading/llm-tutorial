@@ -1,6 +1,7 @@
 import type { Metadata } from "next";
 import Link from "next/link";
 import { getFirstTutorial } from "@/lib/tutorials";
+import { GITHUB_ISSUES_URL, GITHUB_URL } from "@/lib/site";
 
 export const metadata: Metadata = {
   title: "关于",
@@ -62,7 +63,7 @@ export default function AboutPage() {
           </p>
           <div className="mt-5 flex flex-wrap gap-3">
             <a
-              href="https://github.com/llm-paper-reading/llm-tutorial"
+              href={GITHUB_URL}
               target="_blank"
               rel="noreferrer"
               className="rounded-xl border border-zinc-200 px-4 py-2 text-sm font-medium text-zinc-700 transition hover:border-emerald-400 hover:text-emerald-700 dark:border-zinc-800 dark:text-zinc-300 dark:hover:border-emerald-500 dark:hover:text-emerald-400"
@@ -70,7 +71,7 @@ export default function AboutPage() {
               GitHub 项目
             </a>
             <a
-              href="https://github.com/llm-paper-reading/llm-tutorial/issues"
+              href={GITHUB_ISSUES_URL}
               target="_blank"
               rel="noreferrer"
               className="rounded-xl bg-emerald-600 px-4 py-2 text-sm font-medium text-white shadow-sm transition hover:bg-emerald-700 hover:shadow-md dark:hover:bg-emerald-500"

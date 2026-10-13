@@ -57,15 +57,22 @@ export default function Home() {
           </span>
         </div>
 
-        {/* 开始学习 CTA */}
-        <Link
-          href={`/tutorials/${first.slug}`}
-          className="mt-8 inline-flex items-center gap-2 rounded-xl bg-emerald-600 px-6 py-3 font-medium text-white shadow-sm transition hover:bg-emerald-700 hover:shadow-md dark:bg-emerald-600 dark:hover:bg-emerald-500"
-        >
-          🚀 从头开始学
-          <span className="text-emerald-200">·</span>
-          <span className="font-normal text-emerald-100">{first.title}</span>
-        </Link>
+        <div className="mt-8 flex flex-wrap items-center justify-center gap-3">
+          <Link
+            href={`/tutorials/${first.slug}`}
+            className="inline-flex items-center gap-2 rounded-xl bg-emerald-600 px-6 py-3 font-medium text-white shadow-sm transition hover:bg-emerald-700 hover:shadow-md dark:bg-emerald-600 dark:hover:bg-emerald-500"
+          >
+            🚀 从头开始学
+            <span className="text-emerald-200">·</span>
+            <span className="font-normal text-emerald-100">{first.title}</span>
+          </Link>
+          <Link
+            href="/resources"
+            className="inline-flex items-center gap-2 rounded-xl border border-zinc-200 px-6 py-3 font-medium text-zinc-700 transition hover:border-emerald-400 hover:text-emerald-700 dark:border-zinc-800 dark:text-zinc-300 dark:hover:border-emerald-500 dark:hover:text-emerald-400"
+          >
+            🧭 浏览资源导航
+          </Link>
+        </div>
       </div>
 
       <div className="mt-16 space-y-10">

@@ -1,8 +1,9 @@
+import paper from "./meta";
 import { paperMetadata } from "@/lib/papers";
 
-export const metadata = paperMetadata("deepseek-v3-2");
+export const metadata = paperMetadata(paper);
 
-<PaperHeader slug="deepseek-v3-2" />
+<PaperHeader slug={paper.slug} />
 
 # DeepSeek-V3.2：稀疏注意力与可扩展的 RL 后训练
 

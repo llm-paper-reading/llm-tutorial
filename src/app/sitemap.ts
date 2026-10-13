@@ -1,5 +1,6 @@
 import type { MetadataRoute } from "next";
-import { tutorials, SITE_URL } from "@/lib/tutorials";
+import { tutorials } from "@/lib/tutorials";
+import { SITE_URL } from "@/lib/site";
 import { papers } from "@/lib/papers";
 import { reports } from "@/lib/frontier";
 
@@ -17,6 +18,11 @@ export default function sitemap(): MetadataRoute.Sitemap {
     url: `${SITE_URL}/about`,
     changeFrequency: "monthly" as const,
     priority: 0.6,
+  };
+  const resources = {
+    url: `${SITE_URL}/resources`,
+    changeFrequency: "monthly" as const,
+    priority: 0.7,
   };
   const tutorialEntries = tutorials.map((t) => ({
     url: `${SITE_URL}/tutorials/${t.slug}`,
@@ -46,6 +52,7 @@ export default function sitemap(): MetadataRoute.Sitemap {
   return [
     home,
     about,
+    resources,
     ...tutorialEntries,
     paperIndex,
     ...paperEntries,

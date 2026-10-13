@@ -2,18 +2,17 @@
 
 import Link from "next/link";
 import { usePathname } from "next/navigation";
+import { getSiteLinks, isSiteLinkActive } from "@/lib/site-nav";
 import ThemeToggle from "./ThemeToggle";
 import MobileNav from "./MobileNav";
-import { getFirstTutorial } from "@/lib/tutorials";
 
 export default function NavBar() {
   const pathname = usePathname();
-  const link = (href: string, label: string, matchPrefix?: string) => {
-    const active = matchPrefix
-      ? pathname === href || pathname.startsWith(matchPrefix)
-      : pathname === href || (href !== "/" && pathname.startsWith(href));
+  const link = ({ href, label, matchPrefix }: ReturnType<typeof getSiteLinks>[number]) => {
+    const active = isSiteLinkActive(pathname, { href, label, matchPrefix });
     return (
       <Link
+        key={href}
         href={href}
         className={`rounded-md px-3 py-1.5 text-sm font-medium transition ${
           active
@@ -35,11 +34,7 @@ export default function NavBar() {
           <span>大模型与机器学习教程</span>
         </Link>
         <nav className="ml-auto flex items-center gap-1">
-          {link("/", "首页")}
-          {link(`/tutorials/${getFirstTutorial().slug}`, "教程", "/tutorials/")}
-          {link("/papers", "论文", "/papers/")}
-          {link("/frontier", "前沿追踪", "/frontier/")}
-          {link("/about", "关于")}
+          {getSiteLinks().map((item) => link(item))}
           <ThemeToggle />
         </nav>
       </div>

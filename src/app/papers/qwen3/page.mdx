@@ -1,8 +1,9 @@
+import paper from "./meta";
 import { paperMetadata } from "@/lib/papers";
 
-export const metadata = paperMetadata("qwen3");
+export const metadata = paperMetadata(paper);
 
-<PaperHeader slug="qwen3" />
+<PaperHeader slug={paper.slug} />
 
 # Qwen3：混合推理与在线蒸馏
 

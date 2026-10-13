@@ -5,7 +5,7 @@
 // 注册表顺序即展示顺序,新报告插在最上面(新→旧),与论文区的旧→新相反——
 // 前沿追踪更关心「最新发生了什么」。
 
-import { SITE_URL } from "@/lib/tutorials";
+import { SITE_URL } from "@/lib/site";
 
 export interface Report {
   slug: string;

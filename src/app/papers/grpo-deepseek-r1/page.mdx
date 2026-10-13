@@ -1,8 +1,9 @@
+import paper from "./meta";
 import { paperMetadata } from "@/lib/papers";
 
-export const metadata = paperMetadata("grpo-deepseek-r1");
+export const metadata = paperMetadata(paper);
 
-<PaperHeader slug="grpo-deepseek-r1" />
+<PaperHeader slug={paper.slug} />
 
 # GRPO 与 DeepSeek-R1：训练会推理的大模型
 

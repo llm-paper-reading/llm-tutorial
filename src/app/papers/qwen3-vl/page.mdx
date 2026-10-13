@@ -1,8 +1,9 @@
+import paper from "./meta";
 import { paperMetadata } from "@/lib/papers";
 
-export const metadata = paperMetadata("qwen3-vl");
+export const metadata = paperMetadata(paper);
 
-<PaperHeader slug="qwen3-vl" />
+<PaperHeader slug={paper.slug} />
 
 # Qwen3-VL：看懂、想清、做得出
 

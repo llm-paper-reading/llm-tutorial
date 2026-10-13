@@ -1,8 +1,9 @@
+import paper from "./meta";
 import { paperMetadata } from "@/lib/papers";
 
-export const metadata = paperMetadata("ppo-schulman");
+export const metadata = paperMetadata(paper);
 
-<PaperHeader slug="ppo-schulman" />
+<PaperHeader slug={paper.slug} />
 
 # PPO：信赖域的工程化妥协
 

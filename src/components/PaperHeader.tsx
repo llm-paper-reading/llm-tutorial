@@ -1,5 +1,6 @@
 import Link from "next/link";
-import { getPaper } from "@/lib/papers";
+import KimiPaperButton from "@/components/KimiPaperButton";
+import { getPaper, type Paper } from "@/lib/papers";
 import { getTagHint, getTagIcon } from "@/lib/paper-tags";
 
 export default function PaperHeader({ slug }: { slug: string }) {
@@ -10,8 +11,17 @@ export default function PaperHeader({ slug }: { slug: string }) {
   const motivation = splitMotivation(p.motivation);
 
   const links: { label: string; href: string; emoji: string }[] = [];
+  const arxivId = getArxivId(p.arxivUrl);
+  const pdfUrl = getPaperPdfUrl(p, arxivId);
+  if (arxivId) {
+    links.push({
+      label: "Cool Papers",
+      href: `https://papers.cool/arxiv/${arxivId}`,
+      emoji: "🧊",
+    });
+  }
   if (p.arxivUrl) links.push({ label: "arXiv", href: p.arxivUrl, emoji: "📄" });
-  if (p.pdfUrl) links.push({ label: "PDF", href: p.pdfUrl, emoji: "📑" });
+  if (pdfUrl) links.push({ label: "PDF", href: pdfUrl, emoji: "📑" });
   if (p.codeUrl) links.push({ label: "代码", href: p.codeUrl, emoji: "💻" });
 
   return (
@@ -51,22 +61,33 @@ export default function PaperHeader({ slug }: { slug: string }) {
       )}
 
       {/* 外链 */}
-      {links.length > 0 && (
-        <div className="mt-3 flex flex-wrap gap-2">
-          {links.map((l) => (
-            <a
-              key={l.label}
-              href={l.href}
-              target="_blank"
-              rel="noreferrer"
-              className="inline-flex items-center gap-1 rounded-md border border-zinc-200 bg-white px-2.5 py-1 text-xs font-medium text-zinc-700 transition hover:border-emerald-400 hover:text-emerald-700 dark:border-zinc-700 dark:bg-zinc-800 dark:text-zinc-300 dark:hover:border-emerald-500 dark:hover:text-emerald-400"
-            >
-              <span>{l.emoji}</span>
-              {l.label}
-            </a>
-          ))}
-        </div>
-      )}
+      <div className="mt-3 flex flex-wrap gap-2">
+        {links.map((l) => (
+          <a
+            key={l.label}
+            href={l.href}
+            target="_blank"
+            rel="noreferrer"
+            className="inline-flex items-center gap-1 rounded-md border border-zinc-200 bg-white px-2.5 py-1 text-xs font-medium text-zinc-700 transition hover:border-emerald-400 hover:text-emerald-700 dark:border-zinc-700 dark:bg-zinc-800 dark:text-zinc-300 dark:hover:border-emerald-500 dark:hover:text-emerald-400"
+          >
+            <span>{l.emoji}</span>
+            {l.label}
+          </a>
+        ))}
+        {pdfUrl ? (
+          <KimiPaperButton pdfUrl={pdfUrl} />
+        ) : (
+          <button
+            type="button"
+            disabled
+            title="这篇内容暂无可用 PDF 链接"
+            className="inline-flex cursor-not-allowed items-center gap-1 rounded-md border border-zinc-200 bg-white px-2.5 py-1 text-xs font-medium text-zinc-400 opacity-70 dark:border-zinc-700 dark:bg-zinc-800 dark:text-zinc-500"
+          >
+            <span>🌙</span>
+            Kimi 阅读（暂无 PDF）
+          </button>
+        )}
+      </div>
 
       {motivation && (
         <section className="mt-4 rounded-lg border border-zinc-200 bg-zinc-50/70 px-3 py-2.5 text-sm dark:border-zinc-800 dark:bg-zinc-900/40">
@@ -84,6 +105,18 @@ export default function PaperHeader({ slug }: { slug: string }) {
       )}
     </div>
   );
+}
+
+function getArxivId(arxivUrl?: string) {
+  if (!arxivUrl) return null;
+  const match = arxivUrl.match(/arxiv\.org\/(?:abs|pdf)\/([^/?#]+)/i);
+  return match?.[1]?.replace(/\.pdf$/i, "") ?? null;
+}
+
+function getPaperPdfUrl(p: Paper, arxivId?: string | null) {
+  if (p.pdfUrl) return p.pdfUrl;
+  if (!arxivId) return null;
+  return `https://arxiv.org/pdf/${arxivId}`;
 }
 
 function splitMotivation(motivation?: string) {
