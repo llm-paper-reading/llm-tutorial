@@ -1,8 +1,9 @@
+import paper from "./meta";
 import { paperMetadata } from "@/lib/papers";
 
-export const metadata = paperMetadata("tml-opd");
+export const metadata = paperMetadata(paper);
 
-<PaperHeader slug="tml-opd" />
+<PaperHeader slug={paper.slug} />
 
 # Thinking Machines OPD：用 1/10 RL 成本复制推理能力
 

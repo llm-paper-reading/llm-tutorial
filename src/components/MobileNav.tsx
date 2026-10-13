@@ -4,6 +4,7 @@ import { useState, useEffect } from "react";
 import Link from "next/link";
 import { usePathname } from "next/navigation";
 import { getTutorialsNav } from "@/lib/tutorials";
+import { getSiteLinks, isSiteLinkActive } from "@/lib/site-nav";
 import {
   getPapersNav,
   getPapersNavByDate,
@@ -23,16 +24,21 @@ export default function MobileNav() {
   const [mode, setMode] = useState<"flat" | "keywords" | "date">("flat");
   const pathname = usePathname();
 
+  const siteLinks = getSiteLinks();
+  const isTutorials = pathname.startsWith("/tutorials");
   const isPapers = pathname.startsWith("/papers");
+  const showTree = isTutorials || isPapers;
   const tree: NavTree<NavLeaf>[] = isPapers
     ? mode === "flat"
       ? getPapersNavFlat()
       : mode === "keywords"
         ? getPapersNav()
         : getPapersNavByDate()
-    : getTutorialsNav();
+    : isTutorials
+      ? getTutorialsNav()
+      : [];
   const basePath = isPapers ? "/papers" : "/tutorials";
-  const heading = isPapers ? "全部论文" : "全部教程";
+  const heading = isPapers ? "全部论文" : isTutorials ? "全部教程" : "站点导航";
 
   useEffect(() => {
     setOpen(false);
@@ -88,6 +94,31 @@ export default function MobileNav() {
               </button>
             </div>
 
+            <div className="mb-5">
+              <div className="mb-2 text-xs font-semibold text-zinc-400">
+                站点导航
+              </div>
+              <div className="grid grid-cols-2 gap-2 text-sm">
+                {siteLinks.map((item) => {
+                  const active = isSiteLinkActive(pathname, item);
+                  return (
+                    <Link
+                      key={item.href}
+                      href={item.href}
+                      aria-current={active ? "page" : undefined}
+                      className={`rounded-lg px-3 py-2 transition ${
+                        active
+                          ? "bg-emerald-50 font-medium text-emerald-700 dark:bg-emerald-950 dark:text-emerald-400"
+                          : "bg-zinc-50 text-zinc-600 hover:bg-zinc-100 hover:text-zinc-900 dark:bg-zinc-800/70 dark:text-zinc-300 dark:hover:bg-zinc-800 dark:hover:text-zinc-100"
+                      }`}
+                    >
+                      {item.label}
+                    </Link>
+                  );
+                })}
+              </div>
+            </div>
+
             {isPapers && (
               <div
                 role="tablist"
@@ -115,8 +146,9 @@ export default function MobileNav() {
               </div>
             )}
 
-            <div className="space-y-6 text-sm">
-              {tree.map((dir) => (
+            {showTree && (
+              <div className="space-y-6 text-sm">
+                {tree.map((dir) => (
                 <div key={dir.name}>
                   <div className="mb-2 flex items-center gap-1.5 text-[15px] font-semibold text-zinc-900 dark:text-zinc-100">
                     <span>{dir.icon}</span>
@@ -169,8 +201,9 @@ export default function MobileNav() {
                     ))}
                   </div>
                 </div>
-              ))}
-            </div>
+                ))}
+              </div>
+            )}
           </nav>
         </div>
       )}

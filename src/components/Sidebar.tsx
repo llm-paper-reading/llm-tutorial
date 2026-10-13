@@ -30,8 +30,6 @@ export interface SidebarProps<L extends NavLeaf> {
   tree: NavTree<L>[];
   basePath: string;
   heading: string;
-  /** 上一篇/下一篇标签里展示的「领域 · 板块」上下文 */
-  contextLabel?: (leaf: L) => string;
   /** 备用组织方式:提供后显示树切换按钮(如 列表 ↔ 关键词 ↔ 时间) */
   altTree?: NavTree<L>[];
   altLabel?: string;
@@ -65,7 +63,7 @@ function TreeSwitch({
             role="tab"
             aria-selected={selected}
             onClick={() => onChange(l.key)}
-            className={`flex flex-1 items-center justify-center gap-1 rounded-full px-2 py-1 text-xs transition-all duration-200 ${
+            className={`flex min-w-0 flex-1 items-center justify-center gap-0.5 whitespace-nowrap rounded-full px-1.5 py-1 text-xs transition-all duration-200 ${
               selected
                 ? "bg-white font-medium text-zinc-900 shadow-sm dark:bg-zinc-700 dark:text-zinc-50"
                 : "text-zinc-500 hover:text-zinc-800 dark:text-zinc-400 dark:hover:text-zinc-200"

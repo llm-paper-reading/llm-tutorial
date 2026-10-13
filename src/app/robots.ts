@@ -1,5 +1,5 @@
 import type { MetadataRoute } from "next";
-import { SITE_URL } from "@/lib/tutorials";
+import { SITE_URL } from "@/lib/site";
 
 // 静态导出(output: 'export')要求 metadata 路由显式声明静态
 export const dynamic = "force-static";

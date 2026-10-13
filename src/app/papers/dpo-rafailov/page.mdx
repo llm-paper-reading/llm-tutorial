@@ -1,8 +1,9 @@
+import paper from "./meta";
 import { paperMetadata } from "@/lib/papers";
 
-export const metadata = paperMetadata("dpo-rafailov");
+export const metadata = paperMetadata(paper);
 
-<PaperHeader slug="dpo-rafailov" />
+<PaperHeader slug={paper.slug} />
 
 # DPO：无需奖励模型与 RL 的偏好对齐
 

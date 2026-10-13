@@ -1,8 +1,9 @@
+import paper from "./meta";
 import { paperMetadata } from "@/lib/papers";
 
-export const metadata = paperMetadata("distilling-knowledge");
+export const metadata = paperMetadata(paper);
 
-<PaperHeader slug="distilling-knowledge" />
+<PaperHeader slug={paper.slug} />
 
 # Distilling the Knowledge：把集成模型压进一个学生网络
 

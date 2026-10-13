@@ -1,8 +1,9 @@
+import paper from "./meta";
 import { paperMetadata } from "@/lib/papers";
 
-export const metadata = paperMetadata("minimax-m3");
+export const metadata = paperMetadata(paper);
 
-<PaperHeader slug="minimax-m3" />
+<PaperHeader slug={paper.slug} />
 
 # MiniMax-M3：块稀疏注意力与原生多模态
 

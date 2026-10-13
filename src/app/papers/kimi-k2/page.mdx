@@ -1,8 +1,9 @@
+import paper from "./meta";
 import { paperMetadata } from "@/lib/papers";
 
-export const metadata = paperMetadata("kimi-k2");
+export const metadata = paperMetadata(paper);
 
-<PaperHeader slug="kimi-k2" />
+<PaperHeader slug={paper.slug} />
 
 # Kimi K2：1T 参数 MoE 的 Agentic 训练
 

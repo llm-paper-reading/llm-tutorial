@@ -3,8 +3,7 @@
 import { ComponentPropsWithoutRef } from "react";
 import { usePathname } from "next/navigation";
 
-const githubUrl = "https://github.com/llm-paper-reading/llm-tutorial";
-const sourceBaseUrl = `${githubUrl}/edit/main/src/app`;
+import { SOURCE_BASE_URL } from "@/lib/site";
 
 type ArticleTitleProps = ComponentPropsWithoutRef<"h1">;
 
@@ -36,7 +35,7 @@ function getEditUrl(pathname: string) {
   const route = pathname.replace(/\/$/, "");
 
   if (route.startsWith("/papers/") || route.startsWith("/tutorials/")) {
-    return `${sourceBaseUrl}${route}/page.mdx`;
+    return `${SOURCE_BASE_URL}${route}/page.mdx`;
   }
 
   return null;

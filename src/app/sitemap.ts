@@ -1,5 +1,6 @@
 import type { MetadataRoute } from "next";
-import { tutorials, SITE_URL } from "@/lib/tutorials";
+import { tutorials } from "@/lib/tutorials";
+import { SITE_URL } from "@/lib/site";
 import { papers } from "@/lib/papers";
 
 // 静态导出(output: 'export')要求 metadata 路由显式声明静态
@@ -17,6 +18,11 @@ export default function sitemap(): MetadataRoute.Sitemap {
     changeFrequency: "monthly" as const,
     priority: 0.6,
   };
+  const resources = {
+    url: `${SITE_URL}/resources`,
+    changeFrequency: "monthly" as const,
+    priority: 0.7,
+  };
   const tutorialEntries = tutorials.map((t) => ({
     url: `${SITE_URL}/tutorials/${t.slug}`,
     changeFrequency: "monthly" as const,
@@ -32,5 +38,5 @@ export default function sitemap(): MetadataRoute.Sitemap {
     changeFrequency: "monthly" as const,
     priority: 0.7,
   }));
-  return [home, about, ...tutorialEntries, paperIndex, ...paperEntries];
+  return [home, about, resources, ...tutorialEntries, paperIndex, ...paperEntries];
 }

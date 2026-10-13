@@ -1,8 +1,9 @@
+import paper from "./meta";
 import { paperMetadata } from "@/lib/papers";
 
-export const metadata = paperMetadata("kimi-k3");
+export const metadata = paperMetadata(paper);
 
-<PaperHeader slug="kimi-k3" />
+<PaperHeader slug={paper.slug} />
 
 # Kimi K3：开源 3T 的混合注意力与 LatentMoE
 

@@ -3,7 +3,7 @@ import "./globals.css";
 import "katex/dist/katex.min.css";
 import NavBar from "@/components/NavBar";
 import Footer from "@/components/Footer";
-import { SITE_URL } from "@/lib/tutorials";
+import { SITE_URL } from "@/lib/site";
 
 export const metadata: Metadata = {
   metadataBase: new URL(SITE_URL),

@@ -1,8 +1,9 @@
+import paper from "./meta";
 import { paperMetadata } from "@/lib/papers";
 
-export const metadata = paperMetadata("glm-5");
+export const metadata = paperMetadata(paper);
 
-<PaperHeader slug="glm-5" />
+<PaperHeader slug={paper.slug} />
 
 # GLM-5：从 Vibe Coding 到 Agentic Engineering
 

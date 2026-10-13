@@ -1,8 +1,9 @@
+import paper from "./meta";
 import { paperMetadata } from "@/lib/papers";
 
-export const metadata = paperMetadata("rethinking-opd");
+export const metadata = paperMetadata(paper);
 
-<PaperHeader slug="rethinking-opd" />
+<PaperHeader slug={paper.slug} />
 
 # Rethinking OPD：为什么强老师也可能教不会学生
 

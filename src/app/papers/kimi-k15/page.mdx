@@ -1,8 +1,9 @@
+import paper from "./meta";
 import { paperMetadata } from "@/lib/papers";
 
-export const metadata = paperMetadata("kimi-k15");
+export const metadata = paperMetadata(paper);
 
-<PaperHeader slug="kimi-k15" />
+<PaperHeader slug={paper.slug} />
 
 # Kimi K1.5：多模态长上下文扩展的 RL 推理
 
