@@ -7,22 +7,36 @@ const KIMI_NEW_CHAT_URL = "https://www.kimi.com/?chat_enter_method=new_chat";
 export default function KimiPaperButton({ pdfUrl }: { pdfUrl: string }) {
   const [copied, setCopied] = useState(false);
   const timerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+  const openTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
   const prompt = useMemo(() => buildKimiPrompt(pdfUrl), [pdfUrl]);
 
   useEffect(() => {
     return () => {
       if (timerRef.current) clearTimeout(timerRef.current);
+      if (openTimerRef.current) clearTimeout(openTimerRef.current);
     };
   }, []);
 
-  const handleClick = async () => {
+  const handleClick = () => {
+    const kimiWindow = window.open("", "_blank");
+    if (kimiWindow) {
+      kimiWindow.opener = null;
+      kimiWindow.document.title = "正在打开 Kimi…";
+      kimiWindow.document.body.innerHTML = "<p>正在打开 Kimi…</p>";
+    }
+
     setCopied(true);
     if (timerRef.current) clearTimeout(timerRef.current);
+    if (openTimerRef.current) clearTimeout(openTimerRef.current);
     timerRef.current = setTimeout(() => setCopied(false), 2400);
 
-    await copyText(prompt);
-    setTimeout(() => {
-      window.open(buildKimiUrl(), "_blank", "noopener,noreferrer");
+    void copyText(prompt);
+    openTimerRef.current = setTimeout(() => {
+      if (kimiWindow) {
+        kimiWindow.location.href = buildKimiUrl();
+      } else {
+        window.open(buildKimiUrl(), "_blank", "noopener,noreferrer");
+      }
     }, 900);
   };
 

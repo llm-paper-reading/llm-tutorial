@@ -15,6 +15,7 @@ export default function Comments() {
   const pathname = usePathname();
   const containerRef = useRef<HTMLDivElement>(null);
   const [theme, setTheme] = useState<"light" | "dark">("light");
+  const [visible, setVisible] = useState(false);
 
   useEffect(() => {
     const root = document.documentElement;
@@ -27,8 +28,23 @@ export default function Comments() {
   }, []);
 
   useEffect(() => {
-    if (!commentsReady() || !containerRef.current) return;
-    // 路由切换时 giscus 不会自动跟随,整块重挂:先清空再重建 script
+    if (!commentsReady() || !containerRef.current || visible) return;
+    const observer = new IntersectionObserver(
+      ([entry]) => {
+        if (!entry.isIntersecting) return;
+        setVisible(true);
+        observer.disconnect();
+      },
+      { rootMargin: "600px 0px" },
+    );
+    observer.observe(containerRef.current);
+    return () => observer.disconnect();
+  }, [visible]);
+
+  useEffect(() => {
+    if (!commentsReady() || !containerRef.current || !visible) return;
+    // 路由切换时 giscus 不会自动跟随,整块重挂:先清空再重建 script。
+    // 主题切换不重挂,交给下面的 postMessage 更新,避免评论区重新加载。
     containerRef.current.innerHTML = "";
     const wrapper = document.createElement("div");
     wrapper.className = "giscus";
@@ -48,12 +64,28 @@ export default function Comments() {
       "data-reactions-enabled": "1",
       "data-emit-metadata": "0",
       "data-input-position": "bottom",
-      "data-theme": "preferred_color_scheme",
+      "data-theme": theme,
       "data-lang": "zh-CN",
       "data-loading": "lazy",
     }).forEach(([k, v]) => script.setAttribute(k, v));
     containerRef.current.appendChild(script);
-  }, [pathname, theme]);
+  }, [pathname, visible]);
+
+  useEffect(() => {
+    const syncTheme = () => {
+      const iframe = containerRef.current?.querySelector<HTMLIFrameElement>(
+        "iframe.giscus-frame",
+      );
+      iframe?.contentWindow?.postMessage(
+        { giscus: { setConfig: { theme } } },
+        "https://giscus.app",
+      );
+    };
+
+    syncTheme();
+    const t = setTimeout(syncTheme, 300);
+    return () => clearTimeout(t);
+  }, [theme]);
 
   if (!commentsReady()) return null;
 
