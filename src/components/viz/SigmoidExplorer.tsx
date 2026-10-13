@@ -16,6 +16,8 @@ const sigmoid = (z: number) => 1 / (1 + Math.exp(-z));
 
 const sx = (x: number) => PAD + ((x - X_MIN) / (X_MAX - X_MIN)) * (W - 2 * PAD);
 const sy = (y: number) => H - PAD - y * (H - 2 * PAD); // y ∈ [0,1]
+const fmt = (v: number) => v.toFixed(3);
+const point = (x: number, y: number) => `${fmt(sx(x))},${fmt(sy(y))}`;
 
 /** Sigmoid 浏览器:拖动权重 w 和偏置 b,观察 S 形曲线如何变陡、平移,以及某点 x 被判为正类的概率。 */
 export default function SigmoidExplorer() {
@@ -25,8 +27,9 @@ export default function SigmoidExplorer() {
 
   const curve = useMemo(() => {
     const pts: string[] = [];
-    for (let xi = X_MIN; xi <= X_MAX + 0.001; xi += 0.2) {
-      pts.push(`${sx(xi)},${sy(sigmoid(w * xi + b))}`);
+    for (let i = 0; i <= 100; i++) {
+      const xi = X_MIN + i * 0.2;
+      pts.push(point(xi, sigmoid(w * xi + b)));
     }
     return "M" + pts.join(" L");
   }, [w, b]);

@@ -13,6 +13,7 @@ const paper = {
   venue: "arXiv",
   year: 2025,
   arxivUrl: "https://arxiv.org/abs/2509.02544",
+  pdfUrl: "https://arxiv.org/pdf/2509.02544",
   codeUrl: "https://github.com/bytedance/ui-tars",
 } satisfies Paper;
 

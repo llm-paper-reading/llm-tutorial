@@ -13,6 +13,7 @@ const paper = {
   venue: "arXiv",
   year: 2025,
   arxivUrl: "https://arxiv.org/abs/2508.06471",
+  pdfUrl: "https://arxiv.org/pdf/2508.06471",
   codeUrl: "https://github.com/zai-org/GLM-4.5",
 } satisfies Paper;
 

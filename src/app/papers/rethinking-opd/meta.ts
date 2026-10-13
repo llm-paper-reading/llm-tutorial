@@ -13,6 +13,7 @@ const paper = {
   venue: "arXiv",
   year: 2026,
   arxivUrl: "https://arxiv.org/abs/2604.13016",
+  pdfUrl: "https://arxiv.org/pdf/2604.13016",
   codeUrl: "https://github.com/thunlp/OPD",
 } satisfies Paper;
 

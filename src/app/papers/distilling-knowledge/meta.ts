@@ -14,6 +14,7 @@ const paper = {
   year: 2015,
   date: "2015-03",
   arxivUrl: "https://arxiv.org/abs/1503.02531",
+  pdfUrl: "https://arxiv.org/pdf/1503.02531",
 } satisfies Paper;
 
 export default paper;

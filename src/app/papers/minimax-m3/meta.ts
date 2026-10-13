@@ -13,6 +13,7 @@ const paper = {
   venue: "arXiv",
   year: 2026,
   arxivUrl: "https://arxiv.org/abs/2606.13392",
+  pdfUrl: "https://arxiv.org/pdf/2606.13392",
   codeUrl: "https://huggingface.co/MiniMaxAI/MiniMax-M3",
 } satisfies Paper;
 

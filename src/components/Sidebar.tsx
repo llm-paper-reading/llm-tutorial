@@ -199,7 +199,7 @@ function TopicGroup<L extends NavLeaf>({
             <li key={`${name}::${leaf.slug}`}>
               <LeafLink
                 leaf={leaf}
-                active={pathname === `${basePath}/${leaf.slug}`}
+                active={pathname === normalizePath(`${basePath}/${leaf.slug}`)}
                 basePath={basePath}
                 showIcon={showLeafIcons}
               />
@@ -222,7 +222,7 @@ export default function Sidebar<L extends NavLeaf>({
   altLabel2,
   showLeafIcons = true,
 }: SidebarProps<L>) {
-  const pathname = usePathname();
+  const pathname = normalizePath(usePathname());
   const [which, setWhich] = useState<string>("main");
 
   const trees = new Map<string, NavTree<L>[]>([["main", tree]]);
@@ -262,7 +262,7 @@ export default function Sidebar<L extends NavLeaf>({
                 // 只自动展开最靠前的一个,其余保持收起(可手动展开)。
                 const firstActiveTopicIdx = dir.topics.findIndex((t) =>
                   t.leaves.some(
-                    (leaf) => pathname === `${basePath}/${leaf.slug}`,
+                    (leaf) => pathname === normalizePath(`${basePath}/${leaf.slug}`),
                   ),
                 );
                 const activeHere =
@@ -274,7 +274,7 @@ export default function Sidebar<L extends NavLeaf>({
                         <li key={`${dir.name}::${leaf.slug}`}>
                           <LeafLink
                             leaf={leaf}
-                            active={pathname === `${basePath}/${leaf.slug}`}
+                            active={pathname === normalizePath(`${basePath}/${leaf.slug}`)}
                             basePath={basePath}
                             showIcon={showLeafIcons}
                           />
@@ -301,4 +301,9 @@ export default function Sidebar<L extends NavLeaf>({
       </div>
     </nav>
   );
+}
+
+function normalizePath(pathname: string) {
+  if (pathname === "/") return pathname;
+  return pathname.replace(/\/$/, "");
 }

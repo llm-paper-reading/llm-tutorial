@@ -57,7 +57,7 @@ export interface Paper {
   /** 发表年月（YYYY-MM）。有 arXiv 编号的论文可省略（从编号解析），无编号资料（官方博客等）必填 */
   date?: string;
   arxivUrl?: string;
-  pdfUrl?: string;
+  pdfUrl: string;
   codeUrl?: string;
 }
 // 顺序即阅读顺序；同时决定上一篇 / 下一篇。

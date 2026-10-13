@@ -28,6 +28,8 @@ const TEST: { x: number; y: number }[] = [
 
 const sx = (x: number) => PAD + ((x - X_MIN) / (X_MAX - X_MIN)) * (W - 2 * PAD);
 const sy = (y: number) => H - PAD - ((y - -0.3) / (1.3 - -0.3)) * (H - 2 * PAD);
+const fmt = (v: number) => v.toFixed(3);
+const point = (x: number, y: number) => `${fmt(sx(x))},${fmt(sy(y))}`;
 
 // ---- 多项式最小二乘拟合(正规方程 + 高斯消元)----
 function polyfit(pts: { x: number; y: number }[], degree: number): number[] {
@@ -77,8 +79,9 @@ export default function OverfittingExplorer() {
     const trainErr = rmse(coef, TRAIN);
     const testErr = rmse(coef, TEST);
     const pts: string[] = [];
-    for (let x = X_MIN; x <= X_MAX + 1e-6; x += 0.01) {
-      pts.push(`${sx(x)},${sy(evalPoly(coef, x))}`);
+    for (let i = 0; i <= 100; i++) {
+      const x = i / 100;
+      pts.push(point(x, evalPoly(coef, x)));
     }
     return { coef, trainErr, testErr, curve: "M" + pts.join(" L") };
   }, [degree]);
@@ -97,7 +100,7 @@ export default function OverfittingExplorer() {
           <path
             d={"M" + Array.from({ length: 101 }, (_, i) => {
               const x = i / 100;
-              return `${sx(x)},${sy(trueFn(x))}`;
+              return point(x, trueFn(x));
             }).join(" L")}
             fill="none" stroke="var(--chart-muted)" strokeWidth={1.5} strokeDasharray="4 4"
           />

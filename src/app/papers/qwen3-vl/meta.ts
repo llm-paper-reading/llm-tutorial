@@ -13,6 +13,7 @@ const paper = {
   venue: "官方博客",
   year: 2025,
   date: "2025-09",
+  pdfUrl: "https://qwen.ai/blog?id=qwen3-vl",
   codeUrl: "https://huggingface.co/Qwen/Qwen3-VL-235B-A22B-Instruct",
 } satisfies Paper;
 

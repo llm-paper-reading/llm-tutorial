@@ -16,12 +16,15 @@ const nll = (y: 0 | 1, p: number) => {
 
 const sx = (p: number) => PAD + p * (W - 2 * PAD);
 const sy = (l: number) => H - PAD - (Math.min(l, Y_MAX) / Y_MAX) * (H - 2 * PAD);
+const fmt = (v: number) => v.toFixed(3);
+const point = (p: number, loss: number) => `${fmt(sx(p))},${fmt(sy(loss))}`;
 
 // 预生成两条损失曲线
 const curve = (y: 0 | 1) => {
   const pts: string[] = [];
-  for (let p = 0.002; p <= 0.998; p += 0.004) {
-    pts.push(`${sx(p)},${sy(nll(y, p))}`);
+  for (let i = 0; i <= 249; i++) {
+    const p = 0.002 + i * 0.004;
+    pts.push(point(p, nll(y, p)));
   }
   return "M" + pts.join(" L");
 };

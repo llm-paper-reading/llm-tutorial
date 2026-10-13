@@ -38,7 +38,8 @@ export default function PPOClipExplorer() {
     const uc: [number, number][] = [];
     const cp: [number, number][] = [];
     const STEP = (R_MAX - R_MIN) / 120;
-    for (let r = R_MIN; r <= R_MAX + 1e-9; r += STEP) {
+    for (let i = 0; i <= 120; i++) {
+      const r = R_MIN + i * STEP;
       const u = r * A;
       const c = Math.min(r * A, clip(r, 1 - eps, 1 + eps) * A);
       uc.push([r, u]);

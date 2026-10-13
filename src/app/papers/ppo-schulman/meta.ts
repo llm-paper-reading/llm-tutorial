@@ -13,6 +13,7 @@ const paper = {
   venue: "arXiv",
   year: 2017,
   arxivUrl: "https://arxiv.org/abs/1707.06347",
+  pdfUrl: "https://arxiv.org/pdf/1707.06347",
 } satisfies Paper;
 
 export default paper;

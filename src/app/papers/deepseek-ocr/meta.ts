@@ -13,6 +13,7 @@ const paper = {
   venue: "arXiv",
   year: 2025,
   arxivUrl: "https://arxiv.org/abs/2510.18234",
+  pdfUrl: "https://arxiv.org/pdf/2510.18234",
   codeUrl: "https://github.com/deepseek-ai/DeepSeek-OCR",
 } satisfies Paper;
 

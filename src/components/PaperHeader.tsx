@@ -1,6 +1,6 @@
 import Link from "next/link";
 import KimiPaperButton from "@/components/KimiPaperButton";
-import { getPaper, type Paper } from "@/lib/papers";
+import { getPaper } from "@/lib/papers";
 import { getTagHint, getTagIcon } from "@/lib/paper-tags";
 
 export default function PaperHeader({ slug }: { slug: string }) {
@@ -10,19 +10,20 @@ export default function PaperHeader({ slug }: { slug: string }) {
   const venueYear = [p.venue, p.year].filter(Boolean).join(" · ");
   const motivation = splitMotivation(p.motivation);
 
-  const links: { label: string; href: string; emoji: string }[] = [];
   const arxivId = getArxivId(p.arxivUrl);
-  const pdfUrl = getPaperPdfUrl(p, arxivId);
+  const sourceLinks: { label: string; href: string; emoji: string }[] = [];
+  const readingLinks: { label: string; href: string; emoji: string }[] = [];
+
+  if (p.arxivUrl) sourceLinks.push({ label: "arXiv", href: p.arxivUrl, emoji: "📄" });
+  sourceLinks.push({ label: "PDF", href: p.pdfUrl, emoji: "📑" });
+  if (p.codeUrl) sourceLinks.push({ label: "代码", href: p.codeUrl, emoji: "💻" });
   if (arxivId) {
-    links.push({
+    readingLinks.push({
       label: "Cool Papers",
       href: `https://papers.cool/arxiv/${arxivId}`,
       emoji: "🧊",
     });
   }
-  if (p.arxivUrl) links.push({ label: "arXiv", href: p.arxivUrl, emoji: "📄" });
-  if (pdfUrl) links.push({ label: "PDF", href: pdfUrl, emoji: "📑" });
-  if (p.codeUrl) links.push({ label: "代码", href: p.codeUrl, emoji: "💻" });
 
   return (
     <div className="mb-8 rounded-xl border border-zinc-200 bg-zinc-50 p-5 dark:border-zinc-800 dark:bg-zinc-900/50">
@@ -60,33 +61,20 @@ export default function PaperHeader({ slug }: { slug: string }) {
         </div>
       )}
 
-      {/* 外链 */}
-      <div className="mt-3 flex flex-wrap gap-2">
-        {links.map((l) => (
-          <a
-            key={l.label}
-            href={l.href}
-            target="_blank"
-            rel="noreferrer"
-            className="inline-flex items-center gap-1 rounded-md border border-zinc-200 bg-white px-2.5 py-1 text-xs font-medium text-zinc-700 transition hover:border-emerald-400 hover:text-emerald-700 dark:border-zinc-700 dark:bg-zinc-800 dark:text-zinc-300 dark:hover:border-emerald-500 dark:hover:text-emerald-400"
-          >
-            <span>{l.emoji}</span>
-            {l.label}
-          </a>
-        ))}
-        {pdfUrl ? (
-          <KimiPaperButton pdfUrl={pdfUrl} />
-        ) : (
-          <button
-            type="button"
-            disabled
-            title="这篇内容暂无可用 PDF 链接"
-            className="inline-flex cursor-not-allowed items-center gap-1 rounded-md border border-zinc-200 bg-white px-2.5 py-1 text-xs font-medium text-zinc-400 opacity-70 dark:border-zinc-700 dark:bg-zinc-800 dark:text-zinc-500"
-          >
-            <span>🌙</span>
-            Kimi 阅读（暂无 PDF）
-          </button>
+      {/* 原始资料与辅助阅读 */}
+      <div className="mt-4 space-y-2.5">
+        {sourceLinks.length > 0 && (
+          <LinkGroup links={sourceLinks} />
         )}
+        <div className="flex flex-wrap items-center gap-2">
+          <span className="w-14 shrink-0 text-xs font-medium text-zinc-400 dark:text-zinc-500">
+            辅助阅读
+          </span>
+          {readingLinks.map((l) => (
+            <ExternalLink key={l.label} link={l} />
+          ))}
+          <KimiPaperButton pdfUrl={p.pdfUrl} />
+        </div>
       </div>
 
       {motivation && (
@@ -107,16 +95,36 @@ export default function PaperHeader({ slug }: { slug: string }) {
   );
 }
 
+type HeaderLink = { label: string; href: string; emoji: string };
+
+function LinkGroup({ links }: { links: HeaderLink[] }) {
+  return (
+    <div className="flex flex-wrap items-center gap-2">
+      {links.map((l) => (
+        <ExternalLink key={l.label} link={l} />
+      ))}
+    </div>
+  );
+}
+
+function ExternalLink({ link }: { link: HeaderLink }) {
+  return (
+    <a
+      href={link.href}
+      target="_blank"
+      rel="noreferrer"
+      className="inline-flex items-center gap-1 rounded-md border border-zinc-200 bg-white px-2.5 py-1 text-xs font-medium text-zinc-700 transition hover:border-emerald-400 hover:text-emerald-700 dark:border-zinc-700 dark:bg-zinc-800 dark:text-zinc-300 dark:hover:border-emerald-500 dark:hover:text-emerald-400"
+    >
+      <span>{link.emoji}</span>
+      {link.label}
+    </a>
+  );
+}
+
 function getArxivId(arxivUrl?: string) {
   if (!arxivUrl) return null;
   const match = arxivUrl.match(/arxiv\.org\/(?:abs|pdf)\/([^/?#]+)/i);
   return match?.[1]?.replace(/\.pdf$/i, "") ?? null;
-}
-
-function getPaperPdfUrl(p: Paper, arxivId?: string | null) {
-  if (p.pdfUrl) return p.pdfUrl;
-  if (!arxivId) return null;
-  return `https://arxiv.org/pdf/${arxivId}`;
 }
 
 function splitMotivation(motivation?: string) {

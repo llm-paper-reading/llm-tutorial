@@ -9,7 +9,7 @@ export const metadata = paperMetadata(paper);
 
 2015 年这篇 workshop 论文把“知识蒸馏”这个词带进深度学习主流语境：训练时可以用一个很笨重的模型或模型集成去抽取结构，部署时再把它学到的输入到输出的映射压进一个更轻的学生模型。<Cite n={1} />它真正重要的不是“模型变小”这件事本身，而是重新定义了模型里的知识：知识不只在参数里，也在老师对所有类别给出的概率关系里。<Cite n={1} />
 
-> 📌 前置：建议先读 [知识蒸馏总览](/tutorials/knowledge-distillation-overview) 与 [前向 / 反向 KL](/tutorials/forward-reverse-kl)。本文是现代 KD、offline distillation、[OPD](/papers/opd-agarwal)、[MiniLLM](/papers/minillm-gu) 的起点之一，但它关注的是分类 / 语音识别模型，而不是自回归 LLM。
+> 📌 前置：建议先读 [知识蒸馏总览](/tutorials/knowledge-distillation-overview) 与 [交叉熵与 KL 散度](/tutorials/cross-entropy-kl)，理解 soft targets、温度缩放和常规 KL 目标即可。本文是现代 KD、offline distillation、[OPD](/papers/opd-agarwal)、[MiniLLM](/papers/minillm-gu) 的起点之一，但它关注的是分类 / 语音识别模型，而不是自回归 LLM。
 
 ## 一、动机：训练和部署本来就不是同一个问题
 

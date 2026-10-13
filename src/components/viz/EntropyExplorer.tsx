@@ -15,12 +15,15 @@ const binaryEntropy = (p: number) => {
 
 const sx = (p: number) => PAD + p * (W - 2 * PAD);
 const sy = (h: number) => H - PAD - (h / 1) * (H - 2 * PAD); // H 最大为 1 bit
+const fmt = (v: number) => v.toFixed(3);
+const point = (p: number, h: number) => `${fmt(sx(p))},${fmt(sy(h))}`;
 
 // 预生成熵曲线
 const CURVE = (() => {
   const pts: string[] = [];
-  for (let p = 0; p <= 1.0001; p += 0.01) {
-    pts.push(`${sx(p)},${sy(binaryEntropy(p))}`);
+  for (let i = 0; i <= 100; i++) {
+    const p = i / 100;
+    pts.push(point(p, binaryEntropy(p)));
   }
   return "M" + pts.join(" L");
 })();

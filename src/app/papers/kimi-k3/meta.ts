@@ -13,6 +13,7 @@ const paper = {
   venue: "arXiv",
   year: 2026,
   arxivUrl: "https://arxiv.org/abs/2607.24653",
+  pdfUrl: "https://arxiv.org/pdf/2607.24653",
   codeUrl: "https://huggingface.co/moonshotai/Kimi-K3",
 } satisfies Paper;
 

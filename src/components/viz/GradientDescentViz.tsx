@@ -16,12 +16,15 @@ const L_MAX = 26;
 
 const sx = (w: number) => PAD + ((w - W_MIN) / (W_MAX - W_MIN)) * (W - 2 * PAD);
 const sy = (l: number) => H - PAD - (l / L_MAX) * (H - 2 * PAD);
+const fmt = (v: number) => v.toFixed(3);
+const point = (w: number, l: number) => `${fmt(sx(w))},${fmt(sy(l))}`;
 
 // 预生成损失曲线路径
 const CURVE = (() => {
   const pts: string[] = [];
-  for (let w = W_MIN; w <= W_MAX; w += 0.1) {
-    pts.push(`${sx(w)},${sy(Math.min(loss(w), L_MAX))}`);
+  for (let i = 0; i <= 100; i++) {
+    const w = W_MIN + i * 0.1;
+    pts.push(point(w, Math.min(loss(w), L_MAX)));
   }
   return "M" + pts.join(" L");
 })();
