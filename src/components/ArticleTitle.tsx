@@ -34,8 +34,12 @@ export default function ArticleTitle({ children, className = "", ...props }: Art
 function getEditUrl(pathname: string) {
   const route = pathname.replace(/\/$/, "");
 
-  if (route.startsWith("/papers/") || route.startsWith("/tutorials/")) {
+  if (route.startsWith("/papers/") || route.startsWith("/tutorials/") || route.startsWith("/frontier/")) {
     return `${SOURCE_BASE_URL}${route}/page.mdx`;
+  }
+
+  if (route === "/frontier") {
+    return `${SOURCE_BASE_URL}/frontier/page.tsx`;
   }
 
   return null;
