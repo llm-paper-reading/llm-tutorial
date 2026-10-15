@@ -1,5 +1,6 @@
 import Link from "next/link";
 import KimiPaperButton from "@/components/KimiPaperButton";
+import PaperFAQSection from "@/components/PaperFAQSection";
 import { getPaper } from "@/lib/papers";
 import { getTagHint, getTagIcon } from "@/lib/paper-tags";
 
@@ -26,7 +27,8 @@ export default function PaperHeader({ slug }: { slug: string }) {
   }
 
   return (
-    <div className="mb-8 rounded-xl border border-zinc-200 bg-zinc-50 p-5 dark:border-zinc-800 dark:bg-zinc-900/50">
+    <>
+      <div className="mb-8 rounded-xl border border-zinc-200 bg-zinc-50 p-5 text-sm leading-6 dark:border-zinc-800 dark:bg-zinc-900/50">
       {/* 论文原标题(英文) */}
       {p.paperTitle && (
         <p className="mb-2 text-sm italic text-zinc-500 dark:text-zinc-400">
@@ -62,19 +64,15 @@ export default function PaperHeader({ slug }: { slug: string }) {
       )}
 
       {/* 原始资料与辅助阅读 */}
-      <div className="mt-4 space-y-2.5">
-        {sourceLinks.length > 0 && (
-          <LinkGroup links={sourceLinks} />
-        )}
-        <div className="flex flex-wrap items-center gap-2">
-          <span className="w-14 shrink-0 text-xs font-medium text-zinc-400 dark:text-zinc-500">
-            辅助阅读
-          </span>
-          {readingLinks.map((l) => (
-            <ExternalLink key={l.label} link={l} />
-          ))}
-          <KimiPaperButton pdfUrl={p.pdfUrl} />
-        </div>
+      <div className="mt-4 flex flex-wrap items-center gap-2">
+        {sourceLinks.map((l) => (
+          <ExternalLink key={l.label} link={l} />
+        ))}
+        <span className="mx-1 h-4 w-px bg-zinc-200 dark:bg-zinc-700" aria-hidden="true" />
+        {readingLinks.map((l) => (
+          <ExternalLink key={l.label} link={l} />
+        ))}
+        <KimiPaperButton pdfUrl={p.pdfUrl} />
       </div>
 
       {motivation && (
@@ -91,21 +89,13 @@ export default function PaperHeader({ slug }: { slug: string }) {
           </div>
         </section>
       )}
-    </div>
+      </div>
+      <PaperFAQSection slug={p.slug} />
+    </>
   );
 }
 
 type HeaderLink = { label: string; href: string; emoji: string };
-
-function LinkGroup({ links }: { links: HeaderLink[] }) {
-  return (
-    <div className="flex flex-wrap items-center gap-2">
-      {links.map((l) => (
-        <ExternalLink key={l.label} link={l} />
-      ))}
-    </div>
-  );
-}
 
 function ExternalLink({ link }: { link: HeaderLink }) {
   return (
