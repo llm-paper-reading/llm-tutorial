@@ -177,7 +177,7 @@ The Horizon Gap 综述给出的三大失败模式（丢决策、假完成、目�
 The Horizon Gap 明确区分：**长视野（任务步数）≠ 长上下文（模型 token 容量）≠ 长期记忆（系统持久化）**——三者解决手段完全不同：长视野靠外化规划 + 密集信号；长上下文靠架构（Kimi K3 的 1M context、[DeepSeek-V4](/papers/deepseek-v4) 的 CSA / HCA 混合注意力）；长期记忆靠系统设计（Claude Code 的 auto memory、OpenViking 式上下文数据库）。<Cite n={1} />
 
 <figure className="my-6">
-  <img src="./fig-memory-tiers.svg" alt="记忆的三层权衡：上下文窗口（高保真、会话内持久）、外部存储（中等保真、跨会话持久）、权重（低即时保真、跨任务持久），沿保真度与持久性两轴排布" className="mx-auto h-auto max-w-xl rounded-lg border border-zinc-200 shadow-sm dark:border-zinc-800" />
+  <img src="./fig-memory-tiers.svg" alt="记忆的三层权衡：上下文窗口（高保真、会话内持久）、外部存储（中等保真、跨会话持久）、权重（低即时保真、跨任务持久），沿保真度与持久性两轴排布" className="mx-auto h-auto max-w-full rounded-lg border border-zinc-200 shadow-sm dark:border-zinc-800" />
   <figcaption className="mt-2 text-center text-xs text-zinc-500 dark:text-zinc-400">
     <span className="figure-caption-main">记忆的三层：上下文窗口（高保真 · 会话内）、外部存储（中等 · 跨会话）、权重（低即时保真 · 跨任务）——沿箭头持久性上升、即时保真下降</span>
     <span className="figure-caption-source">图源：Mingguang Chen et al., <em>The Horizon Gap</em>（arXiv:2608.06663）Figure 4，本站重绘（有简化）</span>

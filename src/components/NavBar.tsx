@@ -33,7 +33,7 @@ export default function NavBar() {
           <span className="text-xl">🤖</span>
           <span>大模型与机器学习教程</span>
         </Link>
-        <nav className="ml-auto flex items-center gap-1">
+        <nav className="ml-auto hidden items-center gap-1 lg:flex">
           {getSiteLinks().map((item) => link(item))}
           <ThemeToggle />
         </nav>

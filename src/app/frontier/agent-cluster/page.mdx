@@ -209,7 +209,7 @@ OpenAI 官方口径（introducing-upgrades-to-codex 公告）：<Cite n={11} />
 ### 8.1 设计空间本身存在张力（不可能三角）
 
 <figure className="my-6">
-  <img src="./fig-impossible-triangle.svg" alt="框架选型不可能三角:控制力(精确图编排,LangGraph)、上手速度(高层抽象,CrewAI/smolagents)、通用性(把决策留给模型)三个顶点,三者不可能同时最优" className="mx-auto h-auto max-w-xl rounded-lg border border-zinc-200 shadow-sm dark:border-zinc-800" />
+  <img src="./fig-impossible-triangle.svg" alt="框架选型不可能三角:控制力(精确图编排,LangGraph)、上手速度(高层抽象,CrewAI/smolagents)、通用性(把决策留给模型)三个顶点,三者不可能同时最优" className="mx-auto h-auto max-w-full rounded-lg border border-zinc-200 shadow-sm dark:border-zinc-800" />
   <figcaption className="mt-2 text-center text-xs text-zinc-500 dark:text-zinc-400">
     <span className="figure-caption-main">框架选型的不可能三角：控制力（LangGraph 式显式图）、上手速度（CrewAI / smolagents 式高层抽象）、通用性（把决策留给模型）不可同时最优——微软 MAF 试图「既要又要」的代价是概念面积大</span>
     <span className="figure-caption-source">图源：本站整理</span>
@@ -259,18 +259,28 @@ OpenAI 官方口径（introducing-upgrades-to-codex 公告）：<Cite n={11} />
 
 ### 9.1 Claude Code：分层的规模上限（逐项核实）
 
-| 机制 | 并发上限 | 总量 / 深度上限 | 可调性 |
-|------|---------|-------------|--------|
-| **Subagent**（Agent 工具） | 默认 **20** 个 / 会话，到限后再 spawn 报 `Concurrent subagent limit reached` | 会话累计 spawn 数**无上限**（旧变量 `CLAUDE_CODE_MAX_SUBAGENTS_PER_SESSION` 默认 200，v2.1.224 已移除为 no-op） | `CLAUDE_CODE_MAX_CONCURRENT_SUBAGENTS` 任意正整数（v2.1.217+）；**ultracode 会话完全豁免** |
-| **嵌套深度** | — | 默认 **3 层**（主对话之下） | `CLAUDE_CODE_MAX_SUBAGENT_SPAWN_DEPTH`，设 1 关闭嵌套 |
-| **工具级并行** | `CLAUDE_CODE_MAX_TOOL_USE_CONCURRENCY` 默认 **10**（只读工具与 subagent 的并行执行数） | — | 环境变量；官方 429 处置建议即「调低它、避免大量并行 subagent」 |
-| **Dynamic workflows**（ultracode / Workflow 工具） | **16 个并发 agent**（CPU 少时自动更少，含 CPU 受限容器） | 单次 run **1,000 个 agent 总量**（防失控）；单次 `parallel()` / `pipeline()` 最多 **4,096 项** | 规模指引（advisory 非硬帽）：small 5 个以内、medium 10 个以内（Pro 计划 v2.1.271+ 默认）、large 50 个以内、unrestricted 无指引 |
-| **Agent teams**（实验性，默认关闭 `CLAUDE_CODE_EXPERIMENTAL_AGENT_TEAMS=1`） | **无硬上限**；官方建议 **3–5** 起步（「三个专注的 teammates 常胜过五个分散的」） | 每会话仅 1 个 team；无嵌套 team；lead 固定 | — |
-| **Agent view**（`claude agents`，研究预览） | 无文档化数量上限；每个后台会话是完整 Claude Code 会话 | — | 官方明示「10 个并行 ≈ 10 倍配额消耗」 |
-| **/batch skill** | 一次大改动拆 **5–30** 个 worktree 隔离 subagent，各自开 PR | — | — |
-| **跨会话视野** | Desktop 跨会话消息默认见**最近 20 个**活跃会话 | — | — |
+各并行机制的默认数值：
 
-**官方口径的「稳定」规模**：四个并行机制的官方定位对比表写明——subagents「每回合几个委派任务」、agent teams「一小撮长时运行的 peers」、dynamic workflows「**每 run 数十到数百个 agent**」。超过 25 个 agent 或预计 150 万 token 的 workflow 会触发 "Large workflow" 警告（advisory，不暂停）。
+| 机制 | 默认并发 | 总量 / 深度 | 备注 |
+|------|---------|------------|------|
+| **Subagent**（Agent 工具） | **20** 个 / 会话 | 会话累计 spawn 数无上限 | ultracode 会话完全豁免并发帽 |
+| 嵌套深度 | — | 默认 **3 层**（主对话之下） | 设 1 即关闭嵌套 |
+| 工具级并行（只读工具与 subagent） | **10** | — | 官方 429 处置建议即「调低它」 |
+| **Dynamic workflows**（ultracode / Workflow 工具） | **16** 个 agent（CPU 少时自动更少） | 单次 run **1,000** 个 agent 总量 | 防失控设计，非能力上限 |
+| **Agent teams**（实验性，默认关闭） | **无硬上限** | 每会话仅 1 个 team，无嵌套 | 官方建议 **3–5** 起步 |
+| **Agent view**（`claude agents`，研究预览） | 未文档化 | — | 每个后台会话是完整 Claude Code 会话 |
+| **/batch skill** | — | 一次拆 **5–30** 个 worktree 隔离 subagent | 各自开 PR |
+| Desktop 跨会话视野 | 最近 **20** 个活跃会话 | — | — |
+
+可调性与细节（均为官方文档逐项核实）：
+
+- **并发调节**：`CLAUDE_CODE_MAX_CONCURRENT_SUBAGENTS` 可设任意正整数（v2.1.217+）；到限后再 spawn 报 `Concurrent subagent limit reached`。旧变量 `CLAUDE_CODE_MAX_SUBAGENTS_PER_SESSION`（默认 200）在 v2.1.224 已移除为 no-op。
+- **嵌套深度调节**：`CLAUDE_CODE_MAX_SUBAGENT_SPAWN_DEPTH`（默认 3，设 1 关闭嵌套）。
+- **工具级并行调节**：`CLAUDE_CODE_MAX_TOOL_USE_CONCURRENCY`（默认 10）；官方 429 处置路径是调低它、避免大量并行 subagent、或切小模型。
+- **Agent teams 开关**：`CLAUDE_CODE_EXPERIMENTAL_AGENT_TEAMS=1`（默认关闭）；官方建议「三个专注的 teammates 常胜过五个分散的」。
+- **Workflow 细节**：单次 `parallel()` / `pipeline()` 最多 4,096 项；规模指引（advisory 非硬帽）small 5 个以内、medium 10 个以内（Pro 计划 v2.1.271+ 默认）、large 50 个以内、unrestricted 无指引；超过 25 个 agent 或预计 150 万 token 的 workflow 会触发 "Large workflow" 警告（不暂停）。
+
+**官方口径的「稳定」规模**：四个并行机制的官方定位对比表写明——subagents「每回合几个委派任务」、agent teams「一小撮长时运行的 peers」、dynamic workflows「**每 run 数十到数百个 agent**」；Agent view 官方明示「10 个并行 ≈ 10 倍配额消耗」。
 
 ### 9.2 真正卡住规模的是用量额度，不是 agent 数
 

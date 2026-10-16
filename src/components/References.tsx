@@ -26,7 +26,7 @@ export default function References({ children }: { children?: ReactNode }) {
               </span>
               <div
                 className="
-                  min-w-0 flex-1 text-sm leading-relaxed text-zinc-600 dark:text-zinc-300
+                  min-w-0 flex-1 break-words text-sm leading-relaxed text-zinc-600 dark:text-zinc-300
                   [&_a]:text-emerald-600 dark:[&_a]:text-emerald-400
                   [&_em]:text-zinc-800 dark:[&_em]:text-zinc-200
                 "
