@@ -1,0 +1,336 @@
+import { frontierMetadata } from "@/lib/frontier";
+
+export const metadata = frontierMetadata("agent-cluster");
+
+# 大规模 Agent 集群控制技术调研报告
+
+> 📡 **调研信息**（2026-09-15，同日增补第六～八节，09-16 增补第九节）：browser-skill（真实 Chromium）逐项目直查 25+ 主流框架与协议项目的 GitHub 一手页面——README 全文、release/tag 版本、star/fork 数均为当日实时数据；增补部分另查 Anthropic / OpenAI 官方产品页与客户案例库、Claude Code / Codex 官方文档、openai/codex 源码常量。
+
+> 📌 **前置与读法**：本报告是《[大模型推理与任务规划能力提升调研报告](/frontier/model-reasoning-planning)》的姊妹篇——那篇回答「模型如何获得多轮推理与规划能力」，本篇回答「多个 agent 如何组织成可控的集群」。多智能体的基础概念可先读站内[多智能体强化学习](/tutorials/multi-agent-rl)教程。只想做选型的读者直接看第四节（选型速查）、第七节（优缺点对照）与第八节（通用性分析）；关心「能稳定跑多大规模」直接看第九节。
+
+**执行摘要**：多智能体框架在 2024–2025 经历「百框大战」后已进入**收敛期**。核心发现：
+
+- **格局收敛**：两大头部确立（CrewAI 58.6k⭐、LangGraph 41.7k⭐）；AutoGen（61.0k⭐）进维护模式由微软 Agent Framework 接棒，OpenAI Swarm 归档被 Agents SDK 取代——「实验框架→生产 SDK」的换代周期完成；
+- **技术重心转移**：从「多 agent 对话编排」转向「状态持久化 + 图工作流 + 跨框架互操作协议（A2A / MCP）」；
+- **共识架构**：大规模集群的共识是 Anthropic 工程文章定型的 **orchestrator-worker（主控-工人）** 模式——代价是多 agent 系统 token 消耗约为普通对话 **15 倍**，token 使用量单独解释 80% 的性能方差；
+- **编码 agent 是集群思想最成熟的落地**：Claude Code（145.1k⭐）与 Codex（124.3k⭐）的 subagent 机制证明 orchestrator-worker 在垂直领域已大规模可用，且已溢出到法律、金融、医疗等非编码领域；
+- **集群规模上限是分层的**：Claude Code 单会话并发 subagent 默认 20（dynamic workflow 单 run 总量 1,000）、Codex 本地仅 4–6——但两家共同的真正天花板都是**用量额度**（5 小时滚动窗口 + 周额度），不是 agent 数量；
+- **没有通用最优框架**：控制力 × 上手速度 × 通用性是不可能三角，通用性由协议层（A2A / MCP）承担而非单一框架。
+
+**关键数字速览**：
+
+| 关键数字 | 含义 |
+|------|------|
+| 约 15 倍 | 多 agent 系统 token 消耗相对普通对话的倍数（Anthropic 工程文章） |
+| 80% | token 使用量单独解释的多 agent 系统性能方差（加工具调用数与模型选择共 95%） |
+| 20 / 1,000 | Claude Code 单会话默认并发 subagent 数 / dynamic workflow 单 run 的 agent 总量上限 |
+| 4–6 | Codex 本地单会话并发 subagent 线程默认值（源码常量，V2 后端实际 3 个 spawn） |
+| 58.6k / 41.7k | 头部双雄 CrewAI / LangGraph 的 star 数（2026-09-15） |
+| 25+ | 本报告逐仓库直查的框架与协议项目数 |
+
+## 一、格局总览：按 star 排序的主线全景（2026-09-15 实时）
+
+| 框架 | Stars | 语言 | 定位 | 现状 |
+|------|-------|------|------|------|
+| [AutoGPT](https://github.com/Significant-Gravitas/AutoGPT) | 187.4k | Python | 早期自主 agent 先驱 | 活跃但热度远低于峰值，象征意义大于实用 |
+| [Dify](https://github.com/langgenius/dify) | 155.8k | Python | LLM 应用 / agent 低代码平台 | 平台型，非纯编排框架 |
+| [Claude Code](https://github.com/anthropics/claude-code) | 145.1k | TS | 编码 agent（含 subagent 机制） | 事实上的单机集群编排标杆 |
+| [Codex](https://github.com/openai/codex) | 124.3k | Rust/TS | 编码 agent | 与 Claude Code 双雄并立 |
+| [OpenHands](https://github.com/OpenHands/OpenHands) | 88.0k | Python | 自主软件开发 agent 平台 | 活跃 |
+| [DeerFlow](https://github.com/bytedance/deer-flow) | 82.5k | Python | 字节跳动深度研究多 agent 系统 | 活跃，研究类多 agent 代表 |
+| [MetaGPT](https://github.com/FoundationAgents/MetaGPT) | 70.4k | Python | 软件公司角色扮演多 agent（已迁 FoundationAgents 组织） | 活跃 |
+| [AutoGen](https://github.com/microsoft/autogen) | 61.0k | Python | 微软多 agent 对话框架 | ⚠️ **维护模式**，官方引导迁移 |
+| [CrewAI](https://github.com/crewAIInc/crewAI) | 58.6k | Python | 高层抽象多 agent（Crews + Flows） | 🟢 头部，v1.15.21 高频发版 |
+| [Flowise](https://github.com/FlowiseAI/Flowise) | 55.5k | TS | 低代码 agent 编排 | 活跃 |
+| [ChatDev](https://github.com/OpenBMB/ChatDev) | 34.3k | Python | 软件开发多 agent | 维持 |
+| [AgentScope](https://github.com/agentscope-ai/agentscope) | 31.7k | Python | 阿里系多 agent 框架，v2.0 内置 A2A | 🟢 活跃（2026-09 仍发 News） |
+| [OpenAI Agents SDK](https://github.com/openai/openai-agents-python) | 29.5k | Python | Swarm 的生产级演进 | 🟢 v0.22.2 高频发版 |
+| [smolagents](https://github.com/huggingface/smolagents) | 29.3k | Python | HF 极简 CodeAgent（核心约 1000 行） | 活跃 |
+| [Mastra](https://github.com/mastra-ai/mastra) | 28.1k | **TS** | TypeScript 生态第一框架 | 🟢 活跃 |
+| [A2A 协议](https://github.com/a2aproject/A2A) | 25.8k | 规范 | Google 捐 Linux 基金会的跨框架互操作协议 | 🟢 标准化推进中 |
+| [Letta](https://github.com/letta-ai/letta) | 24.7k | Python | 记忆型 agent 框架（MemGPT 后身） | 活跃 |
+| [Google ADK](https://github.com/google/adk-python) | 21.5k | Python | v2.0：图工作流 + Task API + 层级多 agent | 🟢 活跃（2.0 有 breaking changes） |
+| [CAMEL](https://github.com/camel-ai/camel) | 17.7k | Python | agent society / 角色扮演研究框架 | 活跃 |
+| [SuperAGI](https://github.com/TransformerOptimus/SuperAGI) | 17.7k | Python | 早期自主 agent 平台 | 已放缓 |
+| [微软 Agent Framework](https://github.com/microsoft/agent-framework) | 13.5k | Python/.NET/Go | AutoGen + Semantic Kernel 官方合体继任者 | 🟢 生产就绪，非常活跃 |
+| [Swarms](https://github.com/kyegomez/swarms) | 7.2k | Python | 企业级 swarm 编排 | 活跃 |
+| [AG2](https://github.com/ag2ai/ag2) | 4.9k | Python | AutoGen 社区分叉，v1.0 转 protocol-driven | 活跃 |
+| [agentUniverse](https://github.com/agentuniverse-ai/agentUniverse) | 2.4k | Python | 蚂蚁集团多 agent 框架 | 维持 |
+
+> 低代码平台（Dify 155.8k / Langflow 154.8k / Flowise 55.5k）star 很高但属于应用搭建层，与「集群编排框架」是两个生态位；编码 agent（Claude Code / Codex）则是集群思想在垂直领域的成熟落地。
+
+## 二、技术演进脉络：五个关键转变
+
+### 2.1 编排范式：从对话到图
+
+- **早期**（AutoGen / ChatDev / MetaGPT，2023–2024）：多 agent 对话 + 角色扮演，涌现行为多但难控，适合 demo 与研究。
+- **现在**（LangGraph / Google ADK 2.0 / MAF / Mastra，2025–2026）：**显式图工作流**——sequential / concurrent / handoff / group collaboration 模式；支持 fan-out / fan-in、循环、重试、动态节点、human-in-the-loop、嵌套子图。LangGraph 官方定位即「低层编排框架」（low-level orchestration framework），只提供状态机原语不预设高层语义；Google ADK 2.0 的 Workflow Runtime 与 Task API 把「agent 间委派」也结构化成 API。
+
+### 2.2 大规模集群的共识架构：orchestrator-worker
+
+Anthropic 官方工程文章《How we built our multi-agent research system》是当前规模化集群的标杆参考：<Cite n={1} />
+
+<figure className="my-6">
+  <img src="./fig-orchestrator-worker.svg" alt="orchestrator-worker 架构:主 agent(Opus 级)分析任务并制定策略,并行 spawn 专业化 subagent(Sonnet 级),各自在独立上下文窗口做压缩式检索,把精华回传主 agent 汇总" className="mx-auto h-auto max-w-full rounded-lg border border-zinc-200 shadow-sm dark:border-zinc-800" />
+  <figcaption className="mt-2 text-center text-xs text-zinc-500 dark:text-zinc-400">
+    <span className="figure-caption-main">orchestrator-worker 模式：主 agent 制定策略并行 spawn 专业化 subagent，各自独立上下文做「压缩式检索」，精华回传主 agent——本质是「搜索即压缩」</span>
+    <span className="figure-caption-source">图源：本站整理（依据 Anthropic Engineering 多智能体研究系统一文绘制）</span>
+  </figcaption>
+</figure>
+
+- 主 agent（Opus 级）分析任务 → 制定策略 → **并行 spawn 专业化 subagent**（Sonnet 级），各自独立上下文窗口，做「压缩式检索」后把精华回传主 agent；
+- 本质：「搜索即压缩」——subagent 并行探索广阔语料，各自蒸馏出最重要 token；
+- **关键数据**：多 agent 系统 token 消耗约为普通对话 **15 倍**（单 agent 约 4 倍）；token 使用量单独解释 80% 的性能方差（加上工具调用数与模型选择共 95%）。<Cite n={1} />
+- 工程含义：规模化集群 = 并行烧 token 换吞吐；适用 breadth-first（多独立方向）任务，不适用 depth-first 单线深挖。
+
+### 2.3 状态持久化成为标配
+
+2026 年所有头部框架的共同关键词是「long-running, stateful agent」：
+
+| 能力 | 代表 |
+|------|------|
+| durable execution / 断点恢复 | LangGraph（失败后从精确断点自动恢复）、MAF（checkpointing + time-travel） |
+| 挂起-恢复 | Mastra（suspend → 等用户输入 → resume，可无限期暂停） |
+| 短期 + 长期记忆 | LangGraph（工作记忆 + 跨会话持久记忆）、Letta（长期记忆专项） |
+
+### 2.4 互操作协议层兴起（2025–2026 最大结构性变化）
+
+- **MCP**（Model Context Protocol，Anthropic 发起，9.2k⭐）：agent ↔ 工具 / 数据源的标准接口，已成事实标准，各框架全部原生支持。
+- **A2A**（Agent2Agent Protocol，Google 发起后捐赠 Linux 基金会，25.8k⭐）：agent ↔ agent 的发现、能力协商、长任务协作协议——**不暴露内部状态、记忆或工具**。<Cite n={4} /> AgentScope 2.0 已内置 A2AAgent 可直接对话远端 A2A agent。
+- 含义：「集群」正从单框架内部编排走向**跨框架、跨组织的分布式 agent 网络**；框架竞争上移到协议层，谁的 agent 都能作为网络节点被编排。
+
+### 2.5 框架整合与换代（淘汰已发生）
+
+- **AutoGen**（61.0k⭐）README 挂出维护模式公告：不再有新特性，社区托管；新用户直接引导至 **Microsoft Agent Framework（MAF）**——AutoGen + Semantic Kernel 的官方合体继任者，Python / .NET / Go 三语言，主打生产就绪（稳定 API + 长期支持承诺）。<Cite n={2} />
+- **OpenAI Swarm**（教育实验项目）归档，被 **OpenAI Agents SDK**（29.5k⭐，v0.22.2）取代：provider-agnostic、100+ LLM、handoffs / guardrails / sessions / tracing 全套生产件。<Cite n={3} />
+- **AG2**：AutoGen 社区分叉独立演进，v1.0 转向 protocol-driven 架构（经典 ConversableAgent / GroupChat 移到独立仓库）。
+- 国内格局：阿里 **AgentScope**（31.7k⭐，v2.0）、字节 **DeerFlow**（82.5k⭐，深度研究）与 CAMEL（17.7k⭐，学术）、蚂蚁 agentUniverse（2.4k⭐）多线并行。
+
+## 三、值得注意的实现细节（一手页面核实）
+
+- **CrewAI** 双层抽象：Crews（角色自治协作）+ Flows（事件驱动精确控制），官方称 10 万+ 开发者完成社区课程认证；商业化走 AMP 套件（托管部署 / 可观测 / 治理 / 安全），甚至为 AI 编码 agent 发布了官方 Claude Code 插件市场 skill 包。
+- **LangGraph**：41.7k⭐，Klarna / Replit / Elastic 生产采用；自我定位刻意「低层」，与 LangChain 解耦可独立使用。
+- **Mastra**：TS 生态事实标准（28.1k⭐），workflow 语法即代码直觉（`.then()` / `.branch()` / `.parallel()`），40+ provider 单一接口。
+- **Google ADK 2.0**：Workflow Runtime（路由 / fan-out / 循环 / 重试 / 动态节点 / HITL / 嵌套）+ Task API（结构化 agent 间委派）+ 模块化多 agent 层级；⚠️ 2.0 对 agent API、事件模型、session schema 有 breaking changes。
+- **MAF**：Foundry Hosted Agents（两行代码把 agent 托管到 Foundry）、OpenTelemetry 内建、YAML 声明式 agent、DevUI 调试界面。
+- **smolagents**：极简主义路线，核心逻辑约 1000 行；特色 CodeAgent（agent 写代码作为动作而非被用来写代码），沙箱执行。
+- **Swarms**：主打企业级预置多 agent 架构（sequential / concurrent / hierarchical……）开箱即用。
+
+## 四、选型速查
+
+| 需求 | 推荐 | 理由 |
+|------|------|------|
+| 生产级多 agent，Python，要控制力 | **LangGraph** | 低层图编排、durable、生态成熟 |
+| 快速上手，高层抽象 | **CrewAI** | Crews / Flows 双模式、迭代最快 |
+| .NET / Go / 多语言企业栈 | **Microsoft Agent Framework** | 三语言一致 API、长期支持 |
+| TypeScript 全栈 | **Mastra** | TS 生态第一、语法直觉 |
+| 跟随 Google 生态 | **ADK 2.0** | Workflow Runtime + Task API |
+| 极简 / 研究原型 | **smolagents** | 千行核心、CodeAgent |
+| 单机集群 / 编码任务 | **Claude Code subagents** / **Codex** | 自带 orchestrator-worker |
+| 跨框架 agent 互联 | **A2A** + **MCP** | 协议层标准 |
+| 深度研究类多 agent | **DeerFlow** | 字节开源参考实现 |
+| 国内生态 / 钉钉集成 | **AgentScope 2.0** | A2A 内置、DingTalk channel |
+
+## 五、趋势判断
+
+1. **收敛而非继续发散**：框架数量增长已停滞，star 与社区向头部（CrewAI / LangGraph）与大厂继任者（MAF / Agents SDK / ADK）集中；AutoGen→MAF、Swarm→Agents SDK 的换代标志着「实验框架→生产 SDK」周期完成。
+2. **协议层成为新战场**：MCP（工具互操作）+ A2A（agent 互操作）把「集群」的定义从框架内部扩展到跨组织网络；框架价值从「编排语法」下移为「协议实现质量 + 运维能力」。
+3. **规模化经济学被量化**：Anthropic 的 15× token / 80% 方差数据给行业定了调——集群编排的工程优化空间（并行度、压缩率、subagent 数量预算）成为新的研究热点。<Cite n={1} />
+4. **状态与持久化是生产分水岭**：无 checkpoint / 恢复能力的框架正被挤出生产场景。
+5. **编码 agent 是集群思想最成熟的落地**：Claude Code（145.1k⭐）与 Codex（124.3k⭐）的 subagent 机制证明 orchestrator-worker 在垂直领域已大规模可用。
+
+## 六、增补：Claude Code / Codex 在 coding 之外的领域与案例
+
+**核心发现**：两个「编码 agent」实际上已经溢出到远超 coding 的领域——法律文书、金融运营、医疗信息化、营销运营、数据处理、个人知识管理，而且 Anthropic 已经把这条路径产品化（Cowork，「Claude Code for non-coding tasks」）。它们能跨界的根本原因是：Claude Code 的本质是「**文件夹 + 终端 + 浏览器 + MCP 的通用 agent 运行时**」，代码只是它操作的一种文件类型。
+
+### 6.1 官方背书的跨界案例（claude.com/customers 案例库，均为一手案例页）<Cite n={8} />
+
+| 公司 | 领域 | 用途 | 量化结果 |
+|------|------|------|---------|
+| **EvenUp** | 法律（人身伤害索赔） | 将医疗记录、警方报告等汇总为索赔文书 | 单案文书起草从 **8–15 小时 → 分钟级**；客户律所和解金额提升 300%，需求文书产出量翻 3 倍 |
+| **Spellbook** | 法律（合同审查） | Claude 驱动的合同审查 agent | 每月约 **53 万份合同**审查；协议完成时间 **10 小时 → 1 小时**（10×）；月处理律师咨询消息 70 万+ |
+| **Qonto** | 金融（中小企业银行） | 15 人 AI Lab 用 agent 接管工资转账准备、发票起草、账务问答 | 转账操作 **2×** 提速、发票创建 **3×** 提速（人工确认后执行） |
+| **Rocket Money** | 个人金融 | 短信入口的金融 agent Rowan（账单谈判、订阅取消、储蓄自动化） | Beta 期**接近零幻觉**；配套 Claude Code 使用使月代码提交 11 → 128（11×） |
+| **Pictet** | 私人银行 | 25 场 Claude Code 工作坊培训 500+ 员工，业务线做原型 | 原型交付从 **2 周 → 2 小时**（数据留在欧盟 / 瑞士） |
+| **DXC** | 保险科技 | Assure 编排平台接入 Claude 处理保险核心业务 | **80% 任务首轮即正确**；平台承载年保费 5–7 万亿美元的保单体系 |
+| **Notion** | 协作办公 | Claude 驱动全产品 AI 能力（写、搜、数据录入自动化） | 企业客户信息检索时间 -35%；prompt caching 省成本 90% |
+| **Carvana** | 电商运维 | Claude Tag 把 Slack 告警变成生产修复 | 运维闭环自动化 |
+
+> 识别要点：这些案例的共同结构是「**长文档理解 + 规则化操作 + 高价值人工审核**」——与 coding 的「读库→改文件→跑测试」同构，所以能直接复用。
+
+### 6.2 Anthropic 官方的产品化路径：Cowork
+
+Anthropic 已把「Claude Code 用于非编码工作」直接产品化为 **Cowork**（[claude.com/product/cowork](https://claude.com/product/cowork)）：给一个目标，Claude 跨文件与工具自主工作，用户回来验收。<Cite n={9} />官方演示场景即为**营销周报**（每周一自动从 Amplitude 拉流量 / 注册数、从 Drive 的 Channel-tracker 拉邮件 / 社交 / 网络研讨会数据、环比对比后生成 PPTX）。内置浏览器（agent 专用、与用户浏览器隔离），支持 Chrome / Edge / Firefox cookie 导入保持登录。官方文档同时明确 Claude Code 本身「works in any directory」——notes vault、文档文件夹、任何 markdown 集合都能像代码一样搜索 / 编辑 / 重组。
+
+### 6.3 社区一手用例（r/ClaudeAI，2026 年实际运行中的工作流）<Cite n={13} />
+
+来自营销从业者的 Cowork 重度用户帖（其自建 meta-skill 自动沉淀可复用模式并开源到 GitHub）：
+
+- **批量素材运营**：分析数百张 banner 图像内容，自动生成 AWIN 联盟网络所需的全部元数据字段与导入 CSV；
+- **数据管道**：25 个产品源（每个约 10 万 SKU）做质量分析——缺列、错值、源间不一致；
+- **跨平台迁移**：用 Chrome 扩展抓取 Twitter 互关列表，每日定时任务产出 20 条 LinkedIn 加好友建议；
+- **SEO 运营**：为数千张图片生成 alt 文本（爬虫数据 + Chrome 扩展验证页面上下文结合）；分析 Shopify 自动翻译 app 的漏翻并给出修复建议；
+- **销售对账**：对比商城系统与 web 分析平台的交易导出，按支付渠道 / 国家定位差异根因；
+- **每周经营复盘**：接入时间跟踪、战略目标、iOS 提醒、日历，每周五自动生成进度复盘。
+
+另一个广为传播的案例：一位**神经麻醉医师**（非程序员）用 Claude + Claude Design 周末重建了本科室停摆 2 年的 fellowship 网站，3 个月流量提升约 14 倍。
+
+### 6.4 Codex 侧的深度用例与跨界
+
+OpenAI 官方口径（introducing-upgrades-to-codex 公告）：<Cite n={11} />
+
+- **代码评审作为独立产品能力**：Codex 被训练专门做 PR 评审——对照 PR 声明的意图与实际 diff、推理全库依赖、运行代码与测试验证。**OpenAI 内部 Codex 已评审其绝大多数 PR，每天抓住数百个问题**；Cisco Meraki / Duolingo / Ramp / Vanta 均有公开评价（Ramp：「找出了其他代码审查工具遗漏的真正活跃漏洞」；Duolingo：「后端 Python 评审基准最佳，唯一能抓到向后兼容性问题的工具」）；
+- **自主前端**：Codex 能自起浏览器、查看自己构建的产物、迭代并附截图——「agent 验证自己的输出」已超出纯 coding 范畴；
+- 云端环境缓存使新任务中位完成时间降低 90%。
+
+**Codex 与 Claude Code 跨界能力差异**：Codex 更聚焦开发工作流（CLI / IDE / GitHub 深度集成）；Claude Code 因 MCP 生态 + Cowork 产品化 + Chrome 扩展，跨界面明显更宽。
+
+## 七、增补：各框架优缺点与适用领域对照
+
+| 框架 | 优点 | 缺点 | 最适用 |
+|------|------|------|--------|
+| **LangGraph** | 低层原语控制力最强；durable execution / 断点恢复；检查点 + time-travel；Klarna / Replit / Elastic 生产验证；可视化调试 | 学习曲线陡（图思维）；样板代码多；虽可脱离 LangChain 但周边文档混用 | 需要精确控制流转 / 回滚 / 人审的生产级 Python 系统 |
+| **CrewAI** | 上手最快（角色隐喻直觉）；Crews + Flows 双模式覆盖自治与确定性；发版极快；企业 AMP 控制面 | 高层抽象碰到边界要下沉底层 API；复杂图逻辑表达力弱于 LangGraph；生产规模化案例少于 LangGraph | 快速原型、角色分工明确的业务流（研究 / 内容 / 运营流水线） |
+| **AutoGen** | 对话式多 agent 开创者；学术引用多；GroupChat 语义成熟 | **官方维护模式**，无新特性；社区托管；README 明确引导迁移 MAF | 遗留系统维护、复现旧论文 |
+| **MS Agent Framework** | AutoGen + SK 官方继任；Python / .NET / Go 三语言；稳定 API + 长期支持；OpenTelemetry / DevUI / YAML 声明式；Foundry 托管 | 生态年轻（13.5k⭐）；周边集成与社区内容少于前辈；概念面积大 | 微软技术栈企业、需要 .NET / Go 的团队 |
+| **OpenAI Agents SDK** | 极简（Swarm 血统）；provider-agnostic 100+ LLM；handoffs / guardrails / sessions / tracing 全套；voice agent 支持 | 编排原语较少（无完整图引擎）；深度功能偏向 OpenAI 自家服务 | 轻量多 agent 快速落地、从 Swarm 迁移 |
+| **Google ADK 2.0** | Workflow Runtime 全功能（fan-out / 循环 / 重试 / HITL / 嵌套）；Task API 结构化委派；与 Vertex 对齐 | 2.0 breaking changes（session schema / API）；1.x 生态存量割裂 | Google Cloud 用户、声明式多云部署 |
+| **Mastra** | TS 原生最佳（`.then` / `.branch` / `.parallel`）；40+ provider 单接口；suspend / resume 无限期挂起；React / Next.js 集成顺滑 | 仅 TypeScript；Python 生态模型工具复用弱；企业级案例较少 | 前后端一体的 TS 全栈团队 |
+| **AgentScope 2.0** | 国产生态适配（DashScope / 钉钉 channel）；v2.0 内置 A2A；RealtimeAgent 语音；中文文档 | 国际社区较小；「跟随模型能力」哲学约束少，需自控 | 国内业务、A2A 试点、语音 agent |
+| **smolagents** | 极简（约 1000 行核心）；CodeAgent 写代码即动作表达力强；HF 生态 | 抽象少——复杂编排 / 持久化 / 多 agent 治理需自建；沙箱依赖 | 研究原型、教学、轻工具型 agent |
+| **MetaGPT / CAMEL** | 学术开创性（SOP / 角色 / 社会模拟）；论文复现标准 | 工程化程度低；生产可用性弱 | 学术研究、思想实验 |
+| **DeerFlow** | 深度研究场景打磨完善（多源检索 + 汇报）；字节开源；UI 完整 | 场景特化，通用编排能力有限 | 深度研究 / 情报汇总类产品 |
+| **Swarms** | 预置大量多 agent 架构开箱即用 | 社区规模小；文档质量参差 | 快速拼装固定模式的 swarm |
+
+## 八、增补：「有没有一个最优的通用框架适用于所有领域？」——没有，且短期不会有
+
+这是本轮调研最值得正面回答的问题。**答案是明确的否定**，且有结构性的原因。
+
+### 8.1 设计空间本身存在张力（不可能三角）
+
+<figure className="my-6">
+  <img src="./fig-impossible-triangle.svg" alt="框架选型不可能三角:控制力(精确图编排,LangGraph)、上手速度(高层抽象,CrewAI/smolagents)、通用性(把决策留给模型)三个顶点,三者不可能同时最优" className="mx-auto h-auto max-w-xl rounded-lg border border-zinc-200 shadow-sm dark:border-zinc-800" />
+  <figcaption className="mt-2 text-center text-xs text-zinc-500 dark:text-zinc-400">
+    <span className="figure-caption-main">框架选型的不可能三角：控制力（LangGraph 式显式图）、上手速度（CrewAI / smolagents 式高层抽象）、通用性（把决策留给模型）不可同时最优——微软 MAF 试图「既要又要」的代价是概念面积大</span>
+    <span className="figure-caption-source">图源：本站整理</span>
+  </figcaption>
+</figure>
+
+- 要**生产可控**（LangGraph 式显式图、检查点、人审）就必然牺牲「开箱即用的直觉」；
+- 要**上手快**（CrewAI 角色隐喻、smolagents 极简）就必然在复杂流转上碰到抽象天花板；
+- 要**通用**就要把决策留给模型，那就失去了企业要的确定性；
+- 微软 MAF 试图「既要又要」（图模式 + 声明式 + 多语言），代价是概念面积大、学习成本不低——这本身就是该张力的体现。
+
+### 8.2 任务形态差异太大，没有单一编排原语能覆盖
+
+- 深度研究（DeerFlow）：breadth-first、并行探索、压缩回传——orchestrator-worker 最优；
+- 软件工程（Claude Code / Codex）：长会话、文件系统、验证循环——单 agent + subagent 按需扇出最优；
+- 客服 / 业务流（Qonto / Spellbook）：规则化、高吞吐、人工门控——显式工作流引擎最优；
+- 实时语音（AgentScope RealtimeAgent）：流式、低延迟——pipeline 最优；
+- Anthropic 自己都按场景拆产品（Claude Code / Cowork / Managed Agents），而非做一个「万能 agent 框架」。
+
+### 8.3 行业正用「分层 + 协议」替代「统一框架」
+
+2025–2026 的实际收敛方向不是「一个框架吃所有」，而是分层：
+
+<figure className="my-6">
+  <img src="./fig-layered-protocol.svg" alt="分层加协议架构:应用层(Claude Code/Codex/Cowork/Dify)通过 A2A(agent 间互操作)与 MCP(工具互操作)连接编排层(LangGraph/CrewAI/MAF/ADK/Mastra),编排层之下是可替换的模型层(Opus/GPT/Gemini/Qwen)" className="mx-auto h-auto max-w-full rounded-lg border border-zinc-200 shadow-sm dark:border-zinc-800" />
+  <figcaption className="mt-2 text-center text-xs text-zinc-500 dark:text-zinc-400">
+    <span className="figure-caption-main">「分层 + 协议」替代「统一框架」：应用层按场景选择，编排层按技术栈选择，模型层可替换——通用性由中间的 A2A（agent 互操作）与 MCP（工具互操作）承担</span>
+    <span className="figure-caption-source">图源：本站整理</span>
+  </figcaption>
+</figure>
+
+框架的价值正在从「编排语法」降为「协议实现质量 + 运维能力」——**通用性由协议层（A2A / MCP）承担，而不是由某一个框架承担**。这类似 Web 历史：没有一个「最优 Web 框架」，但 HTTP / HTML 通用。
+
+### 8.4 选型的正确姿势：先问三个问题
+
+1. 任务是 breadth-first 还是 depth-first？（决定 orchestrator-worker 还是长会话单 agent）
+2. 交付物要确定性流程还是自主探索？（决定图引擎还是角色自治）
+3. 团队技术栈与合规边界？（Python → LangGraph / CrewAI；.NET / Go → MAF；TS → Mastra；国内 → AgentScope；要跨组织互联就上 A2A + MCP）
+
+> 一句话：**「通用性」的载体是协议（A2A / MCP）与模型能力的提升，不是某一个框架。框架选型本质是在「控制力 × 上手速度 × 生态匹配」三角里为自己的团队找位置。**
+
+## 九、增补：Claude Code / Codex 能稳定编排的 Agent 集群规模上限（2026-09-16 调研）
+
+**调研方式**：browser-skill 直查一手来源——Claude Code 官方文档（code.claude.com/docs 的 sub-agents / agent-teams / workflows / agent-view / agents / costs / env-vars / desktop / best-practices 九页）、Codex 官方文档（learn.chatgpt.com/docs 的 subagents / cloud / pricing / codex-sdk / git-worktrees 五页）、openai/codex 源码常量（GitHub code search 直查 `codex-rs/core/src/config/mod.rs`）、claude.com/pricing 定价页。所有数字均为当日实时核实。
+
+**结论一句话**：两家都**不存在单一的「集群规模上限」**——真实约束是分层的：Claude Code 单会话并发 subagent 默认 **20**（可调，ultracode 豁免）、dynamic workflow 单次 run 总量 **1,000 个 agent**（并发 16）、agent teams **无硬上限**（官方建议 3–5）；Codex 本地单会话并发 subagent 默认仅 **4–6**（源码常量）；而两者共同的真正天花板是**订阅 / API 用量额度**（5 小时滚动窗口 + 周额度），不是 agent 数量——官方原文明确警告「一次大型 workflow 扇出可以在会话窗口重置前耗尽周额度」。<Cite n={10} />
+
+### 9.1 Claude Code：分层的规模上限（逐项核实）
+
+| 机制 | 并发上限 | 总量 / 深度上限 | 可调性 |
+|------|---------|-------------|--------|
+| **Subagent**（Agent 工具） | 默认 **20** 个 / 会话，到限后再 spawn 报 `Concurrent subagent limit reached` | 会话累计 spawn 数**无上限**（旧变量 `CLAUDE_CODE_MAX_SUBAGENTS_PER_SESSION` 默认 200，v2.1.224 已移除为 no-op） | `CLAUDE_CODE_MAX_CONCURRENT_SUBAGENTS` 任意正整数（v2.1.217+）；**ultracode 会话完全豁免** |
+| **嵌套深度** | — | 默认 **3 层**（主对话之下） | `CLAUDE_CODE_MAX_SUBAGENT_SPAWN_DEPTH`，设 1 关闭嵌套 |
+| **工具级并行** | `CLAUDE_CODE_MAX_TOOL_USE_CONCURRENCY` 默认 **10**（只读工具与 subagent 的并行执行数） | — | 环境变量；官方 429 处置建议即「调低它、避免大量并行 subagent」 |
+| **Dynamic workflows**（ultracode / Workflow 工具） | **16 个并发 agent**（CPU 少时自动更少，含 CPU 受限容器） | 单次 run **1,000 个 agent 总量**（防失控）；单次 `parallel()` / `pipeline()` 最多 **4,096 项** | 规模指引（advisory 非硬帽）：small 5 个以内、medium 10 个以内（Pro 计划 v2.1.271+ 默认）、large 50 个以内、unrestricted 无指引 |
+| **Agent teams**（实验性，默认关闭 `CLAUDE_CODE_EXPERIMENTAL_AGENT_TEAMS=1`） | **无硬上限**；官方建议 **3–5** 起步（「三个专注的 teammates 常胜过五个分散的」） | 每会话仅 1 个 team；无嵌套 team；lead 固定 | — |
+| **Agent view**（`claude agents`，研究预览） | 无文档化数量上限；每个后台会话是完整 Claude Code 会话 | — | 官方明示「10 个并行 ≈ 10 倍配额消耗」 |
+| **/batch skill** | 一次大改动拆 **5–30** 个 worktree 隔离 subagent，各自开 PR | — | — |
+| **跨会话视野** | Desktop 跨会话消息默认见**最近 20 个**活跃会话 | — | — |
+
+**官方口径的「稳定」规模**：四个并行机制的官方定位对比表写明——subagents「每回合几个委派任务」、agent teams「一小撮长时运行的 peers」、dynamic workflows「**每 run 数十到数百个 agent**」。超过 25 个 agent 或预计 150 万 token 的 workflow 会触发 "Large workflow" 警告（advisory，不暂停）。
+
+### 9.2 真正卡住规模的是用量额度，不是 agent 数
+
+- **订阅（Pro / Max）**：**5 小时滚动 session 窗口 + 每周 weekly limit**，跨所有模型共享（切 `/model` 不能恢复）；Opus / Sonnet 另有家族级限额。官方原文：**「用量同时计入 session 与 weekly 两个窗口。一次重型活动爆发（如大型 workflow 扇出）可以在 session 窗口重置之前耗尽 weekly 额度」**——这是大规模集群的第一稳定性约束。
+- **v2.1.199+ 的失败语义**：被 rate limit / 超载 / 服务器错误打断的 subagent 会把失败如实上报给主 agent（部分输出标记为 cut-off），而不是把错误文本伪装成调查结论——集群稳定性在「诚实失败」层面有官方保障。
+- **API key 用户**：429 由 TPM / RPM 决定。官方团队部署建议：1–5 人团队每用户 200k–300k TPM / 5–7 RPM；500+ 人团队降到 10k–15k TPM / 0.25–0.35 RPM（限额按组织级共享）。企业实测均值 **$13 / 开发者 / 活跃日**，90% 用户低于 $30 / 日。
+- **Claude Agent SDK**（TS v0.3.219 / Python v0.2.127+，捆绑 Claude Code v2.1.219）：默认与 CLI 相同（depth 3 / 并发 20）；spend 上限 `maxBudgetUsd` **默认无**，可设美元帽（到帽拒绝新 spawn、停后台 subagent、以 `error_max_budget_usd` 结束查询）。SDK 文档明言「一个 prompt 可以长成一棵 agent 树，每个 subagent 各自发 API 请求」。
+- 降并发是官方 429 处置路径：调低 `CLAUDE_CODE_MAX_TOOL_USE_CONCURRENCY`、避免大量并行 subagent、或切小模型。
+
+### 9.3 Codex：并发明显更保守
+
+- **本地 subagents**（CLI / IDE / 桌面，`agents.enabled` 默认 true）：并发由 `agents.max_concurrent_threads_per_session` 配置（官方示例 6 与 8），**未设置时由后端选默认——源码常量**（`codex-rs/core/src/config/mod.rs`）：<Cite n={12} />
+  - V1 collab 后端：`DEFAULT_AGENT_MAX_THREADS = 6` 并发线程；**V1 嵌套深度默认 1**（`DEFAULT_AGENT_MAX_DEPTH = 1`，即 subagent 不能再 spawn）；
+  - V2 multi-agent-v2 后端：`DEFAULT_MULTI_AGENT_V2_MAX_CONCURRENT_THREADS_PER_SESSION = 4`（**含主线程**，即 3 个并发 spawn）。
+- 内置 agent 仅三种：`default` / `worker` / `explorer`；官方建议 worker 用 `gpt-5.6-terra` / `gpt-5.6-luna` 等轻量模型。
+- **Codex cloud**：可从 web / GitHub / GitLab / Linear / Slack 并行派发多个任务，**未公布硬性并行任务数上限**，受 ChatGPT 套餐额度约束（5 小时窗口消息估算：GPT-5.6 Sol 在 Plus 10–100 条 → Pro 20x 200–2,000 条；Luna Plus 250–2,000 条 → Pro 20x 5,000–40,000 条；cloud chats 用 Sol 且比本地消息更耗额度）。
+- **Worktrees**：桌面端默认保留**最近 15 个** Codex-managed worktrees（并行 chats 的隔离载体，可配置）。
+- **Codex SDK**（TS `@openai/codex-sdk` / Python `openai_codex`）：thread 模型（`startThread` / `thread.run`），无文档化并发上限——程序化扇出的天花板是账号级 rate limit。
+- **勘误**：「Agent Network」并非 Codex 官方功能——官方文档全站索引（llms.txt）与源码中均不存在该产品（源码中 "agent network" 仅出现在网络权限管理语境）；社区 issue #35586 是关于 human-agent 网络效应的 RFC 讨论，非已发布能力。
+
+### 9.4 对照结论
+
+| 维度 | Claude Code | Codex |
+|------|-------------|-------|
+| 单会话并发 subagent 默认 | **20**（可调；ultracode 豁免） | **4–6**（源码默认，V2 实际 3 个 spawn；可调） |
+| 集群总量机制 | workflow 单 run **1,000** agents / 单次扇出 4,096 项 | 未公布（云端多任务并行） |
+| 官方建议的稳定区间 | teams **3–5**；workflow「**数十到数百**」；/batch **5–30** | 每会话**个位数** subagent；云端多任务 |
+| 并发 agent 硬帽 | workflow **16**（受 CPU） | V2 **4** 线程 / 会话（含主线程） |
+| 真实天花板 | 5h session + weekly 额度；API 则 TPM / RPM | ChatGPT 套餐 5h 窗口额度 |
+| 集群无硬上限的层 | agent teams、agent view、多会话 / 多 worktree | cloud 并行任务、SDK 多 thread |
+
+**工程含义**：若目标是「单机稳定编排几百个 agent」，Claude Code 是两者中唯一官方支持的路径——但形态是 **dynamic workflow（16 并发 × 1,000 总量，ultracode 触发）** 而非裸 subagent 堆叠；Codex 的本地多 agent 明显走保守路线（个位数并发、V1 默认禁嵌套），大规模并行要靠 Codex cloud 的多任务派发。两家的共同事实是：**集群规模的分水岭在额度经济学（第二节 Anthropic 15× token 定律），软件层的「上限」都可以调大或绕开**。规模化集群前先用官方建议的 RPM / TPM 估算扇出预算，并用 SDK 的 `maxBudgetUsd` 或 workflow 规模指引设硬帽。
+
+## 小结
+
+> 一句话结论：框架「百框大战」已收官，选型在「控制力 × 上手速度 × 生态匹配」三角里做减法即可；真正的集群工程问题不在「用哪个框架」，而在**额度经济学与上下文经济学**——15× token 定律决定了扇出预算，编排质量取决于压缩回传的效率。
+
+如果只从这篇报告带走三件事，带这三条：
+
+1. **架构选 orchestrator-worker 不会错**：它是 Anthropic 生产验证、Claude Code / Codex 内置、框架层（LangGraph / ADK / MAF）全都收敛到的同一个模式——但记住它只适用 breadth-first 任务；
+2. **预算先于规模**：集群的第一约束是 5 小时窗口 + 周额度（或 API 的 TPM / RPM），「能跑多少 agent」是伪问题，「这次扇出愿意花多少 token」才是真问题——用 `maxBudgetUsd` 或 workflow 规模指引把预算显式化；
+3. **通用性买不来，只能协议化**：跨框架、跨组织的集群互联走 A2A + MCP，不要赌任何一个「万能框架」。
+
+与《[推理与任务规划调研](/frontier/model-reasoning-planning)》对照着读：那篇的结论是「模型侧把多轮能力做进权重、harness 侧堵失败模式」——本篇的 orchestrator-worker、状态持久化、验证闭环正是 harness 侧答案在「多 agent」维度的延伸。
+
+## 参考资料
+
+<References>
+1. Anthropic Engineering（2025）. *How we built our multi-agent research system*. [anthropic.com/engineering/multi-agent-research-system](https://www.anthropic.com/engineering/multi-agent-research-system). —— orchestrator-worker 架构、15× token、80% 方差等关键数据的一手来源。
+2. Microsoft（2026）. *AutoGen* 仓库 README 维护模式公告. [github.com/microsoft/autogen](https://github.com/microsoft/autogen). —— AutoGen 维护模式与 MAF 迁移引导的一手来源。
+3. OpenAI（2025）. *Swarm* 仓库归档公告与 *OpenAI Agents SDK*. [github.com/openai/swarm](https://github.com/openai/swarm) · [github.com/openai/openai-agents-python](https://github.com/openai/openai-agents-python). —— Swarm→Agents SDK 换代的一手来源。
+4. A2A Project / Linux 基金会（2026）. *Agent2Agent Protocol*. [github.com/a2aproject/A2A](https://github.com/a2aproject/A2A). —— A2A 协议定位（不暴露内部状态）与标准化进展的一手来源。
+5. Anthropic（2024–）. *Model Context Protocol*. [github.com/modelcontextprotocol](https://github.com/modelcontextprotocol). —— MCP 作为工具互操作事实标准的来源。
+6. crewAIInc（2026）. *crewAI* 仓库. [github.com/crewAIInc/crewAI](https://github.com/crewAIInc/crewAI). —— Crews / Flows 双模式与 AMP 商业化描述的一手来源。
+7. LangChain（2026）. *LangGraph* 仓库. [github.com/langchain-ai/langgraph](https://github.com/langchain-ai/langgraph). —— 「低层编排框架」定位与生产采用方的一手来源。
+8. Anthropic（2026）. *claude.com/customers* 案例库——EvenUp / Spellbook / Qonto / Rocket Money / Pictet / DXC / Notion / Carvana 各案例页. [claude.com/customers](https://claude.com/customers). —— 第六节跨界案例量化数据的一手来源。
+9. Anthropic（2026）. *Claude Cowork* 产品页. [claude.com/product/cowork](https://claude.com/product/cowork). —— Cowork 产品化路径（内置浏览器、营销周报演示）的一手来源。
+10. Anthropic（2026）. *Claude Code 官方文档*——code.claude.com/docs 的 sub-agents / agent-teams / workflows / agent-view / agent-sdk / env-vars / costs / errors / desktop / best-practices 各页. [code.claude.com/docs](https://code.claude.com/docs). —— 第九节 Claude Code 规模上限（并发 20 / workflow 1,000 / teams 3–5 建议 / 双窗口额度）的一手来源。
+11. OpenAI（2026）. *Introducing upgrades to Codex*. [openai.com/index/introducing-upgrades-to-codex](https://openai.com/index/introducing-upgrades-to-codex). —— PR 评审能力、Cisco Meraki / Duolingo / Ramp / Vanta 评价的一手来源。
+12. OpenAI（2026）. *Codex 官方文档*（learn.chatgpt.com/docs 的 subagents / cloud / pricing / codex-sdk / git-worktrees）与 openai/codex 源码 `codex-rs/core/src/config/mod.rs`. [github.com/openai/codex](https://github.com/openai/codex). —— Codex 并发默认值（6 / 4 / 深度 1）与云端额度的一手来源。
+13. r/ClaudeAI 社区（2026）. Cowork 重度用户工作流帖、非编码用例汇总帖、神经麻醉医师建站帖. [reddit.com/r/ClaudeAI](https://www.reddit.com/r/ClaudeAI/). —— 第三节社区一手用例的来源。
+14. 其余框架仓库直查（2026-09-15 browser-skill 实时数据）：AutoGPT · Dify · OpenHands · DeerFlow · MetaGPT · Flowise · ChatDev · AgentScope · Mastra · Letta · Google ADK · CAMEL · SuperAGI · Microsoft Agent Framework · smolagents · Swarms · AG2 · agentUniverse. —— 第一节 star 数与现状描述的来源。
+</References>

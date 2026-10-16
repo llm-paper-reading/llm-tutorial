@@ -1,0 +1,51 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="960" height="430" viewBox="0 0 960 430" role="img" aria-labelledby="title desc">
+  <title id="title">orchestrator-worker 架构</title>
+  <desc id="desc">主 agent（Opus 级）分析任务并制定策略，并行 spawn 专业化 subagent（Sonnet 级），各自在独立上下文窗口做压缩式检索，把精华回传主 agent 汇总。</desc>
+  <rect width="960" height="430" fill="#fafafa"/>
+  <text x="480" y="38" text-anchor="middle" font-family="Arial, sans-serif" font-size="22" font-weight="700" fill="#111827">orchestrator-worker：大规模集群的共识架构</text>
+
+  <defs>
+    <marker id="arrOW" markerWidth="10" markerHeight="10" refX="8" refY="5" orient="auto">
+      <path d="M1,1 L9,5 L1,9 Z" fill="#0f766e"/>
+    </marker>
+  </defs>
+
+  <!-- 主 agent -->
+  <rect x="355" y="70" width="250" height="88" rx="14" fill="#ecfdf5" stroke="#059669" stroke-width="2"/>
+  <text x="480" y="104" text-anchor="middle" font-family="Arial, sans-serif" font-size="16.5" font-weight="700" fill="#065f46">主 agent（orchestrator）</text>
+  <text x="480" y="128" text-anchor="middle" font-family="Arial, sans-serif" font-size="12" fill="#047857">Opus 级 · 分析任务 · 制定策略</text>
+  <text x="480" y="146" text-anchor="middle" font-family="Arial, sans-serif" font-size="12" fill="#047857">并行 spawn 专业化 subagent</text>
+
+  <!-- 扇出箭头 -->
+  <path d="M420 158 C420 200 200 190 170 228" stroke="#0f766e" stroke-width="2.5" fill="none" marker-end="url(#arrOW)"/>
+  <path d="M480 158 L480 226" stroke="#0f766e" stroke-width="2.5" fill="none" marker-end="url(#arrOW)"/>
+  <path d="M540 158 C540 200 760 190 790 228" stroke="#0f766e" stroke-width="2.5" fill="none" marker-end="url(#arrOW)"/>
+
+  <!-- subagent 们 -->
+  <g font-family="Arial, sans-serif">
+    <rect x="70" y="232" width="200" height="92" rx="14" fill="#eff6ff" stroke="#2563eb" stroke-width="2"/>
+    <text x="170" y="262" text-anchor="middle" font-size="14.5" font-weight="700" fill="#1d4ed8">subagent ①（Sonnet）</text>
+    <text x="170" y="284" text-anchor="middle" font-size="11.5" fill="#2563eb">独立上下文窗口</text>
+    <text x="170" y="302" text-anchor="middle" font-size="11.5" fill="#2563eb">压缩式检索 · 蒸馏精华</text>
+
+    <rect x="380" y="232" width="200" height="92" rx="14" fill="#eff6ff" stroke="#2563eb" stroke-width="2"/>
+    <text x="480" y="262" text-anchor="middle" font-size="14.5" font-weight="700" fill="#1d4ed8">subagent ②（Sonnet）</text>
+    <text x="480" y="284" text-anchor="middle" font-size="11.5" fill="#2563eb">独立上下文窗口</text>
+    <text x="480" y="302" text-anchor="middle" font-size="11.5" fill="#2563eb">压缩式检索 · 蒸馏精华</text>
+
+    <rect x="690" y="232" width="200" height="92" rx="14" fill="#eff6ff" stroke="#2563eb" stroke-width="2"/>
+    <text x="790" y="262" text-anchor="middle" font-size="14.5" font-weight="700" fill="#1d4ed8">subagent ③（Sonnet）</text>
+    <text x="790" y="284" text-anchor="middle" font-size="11.5" fill="#2563eb">独立上下文窗口</text>
+    <text x="790" y="302" text-anchor="middle" font-size="11.5" fill="#2563eb">压缩式检索 · 蒸馏精华</text>
+  </g>
+
+  <!-- 回传箭头 -->
+  <path d="M170 328 C170 370 420 376 452 160" stroke="#d97706" stroke-width="2" stroke-dasharray="7 5" fill="none" marker-end="url(#arrOW)"/>
+  <path d="M480 328 L480 162" stroke="#d97706" stroke-width="2" stroke-dasharray="7 5" fill="none" marker-end="url(#arrOW)"/>
+  <path d="M790 328 C790 370 540 376 508 160" stroke="#d97706" stroke-width="2" stroke-dasharray="7 5" fill="none" marker-end="url(#arrOW)"/>
+
+  <!-- 底部经济学注记 -->
+  <rect x="130" y="352" width="700" height="56" rx="12" fill="#fef3c7" stroke="#d97706" stroke-width="2"/>
+  <text x="480" y="376" text-anchor="middle" font-family="Arial, sans-serif" font-size="13.5" font-weight="700" fill="#92400e">经济学：搜索即压缩——并行烧 token 换吞吐</text>
+  <text x="480" y="396" text-anchor="middle" font-family="Arial, sans-serif" font-size="12" fill="#b45309">token 消耗约为普通对话 15 倍 · token 使用量解释 80% 性能方差 · 适用 breadth-first 任务</text>
+</svg>

@@ -71,6 +71,16 @@ export const reports: Report[] = [
     date: "2026-09",
     scope: "arXiv 150+ 篇论文线索 + 开源仓库 + 官方文档",
   },
+  {
+    slug: "agent-cluster",
+    title: "大规模 Agent 集群控制技术调研报告",
+    navTitle: "Agent 集群调研",
+    desc: "多智能体框架「百框大战」后进入收敛期:CrewAI/LangGraph 头部确立、AutoGen→MAF 换代、A2A/MCP 协议层兴起;orchestrator-worker 成为共识架构(token 约 15 倍);并实测核实 Claude Code / Codex 的集群规模上限与跨界用例。",
+    tags: ["技术趋势"],
+    icon: "🐜",
+    date: "2026-09",
+    scope: "25+ 框架仓库 + 官方文档与源码直查",
+  },
 ];
 
 /** 所有出现过的关键词(保持注册表中的出现顺序)。 */

@@ -1,0 +1,39 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="720" height="560" viewBox="0 0 720 560" role="img" aria-labelledby="title desc">
+  <title id="title">框架选型的不可能三角</title>
+  <desc id="desc">控制力、上手速度、通用性三个顶点构成不可能三角：LangGraph 取控制力、CrewAI 与 smolagents 取上手速度、把决策留给模型取通用性，三者不可同时最优。</desc>
+  <rect width="720" height="560" fill="#fafafa"/>
+  <text x="360" y="38" text-anchor="middle" font-family="Arial, sans-serif" font-size="22" font-weight="700" fill="#111827">框架选型的不可能三角</text>
+
+  <!-- 三角形 -->
+  <path d="M360 100 L120 400 L600 400 Z" fill="#ffffff" stroke="#6b7280" stroke-width="2.5"/>
+
+  <!-- 三个顶点 -->
+  <g font-family="Arial, sans-serif" text-anchor="middle">
+    <rect x="250" y="70" width="220" height="62" rx="12" fill="#ecfdf5" stroke="#059669" stroke-width="2"/>
+    <text x="360" y="96" font-size="15.5" font-weight="700" fill="#065f46">控制力</text>
+    <text x="360" y="118" font-size="11.5" fill="#047857">精确图编排（LangGraph）</text>
+
+    <rect x="30" y="370" width="200" height="62" rx="12" fill="#eff6ff" stroke="#2563eb" stroke-width="2"/>
+    <text x="130" y="396" font-size="15.5" font-weight="700" fill="#1d4ed8">上手速度</text>
+    <text x="130" y="418" font-size="11.5" fill="#2563eb">高层抽象（CrewAI / smolagents）</text>
+
+    <rect x="490" y="370" width="200" height="62" rx="12" fill="#f5f3ff" stroke="#7c3aed" stroke-width="2"/>
+    <text x="590" y="396" font-size="15.5" font-weight="700" fill="#5b21b6">通用性</text>
+    <text x="590" y="418" font-size="11.5" fill="#6d28d9">把决策留给模型</text>
+  </g>
+
+  <!-- 中心 -->
+  <text x="360" y="270" text-anchor="middle" font-family="Arial, sans-serif" font-size="15" font-weight="700" fill="#374151">不可能</text>
+  <text x="360" y="292" text-anchor="middle" font-family="Arial, sans-serif" font-size="15" font-weight="700" fill="#374151">同时最优</text>
+  <text x="360" y="318" text-anchor="middle" font-family="Arial, sans-serif" font-size="11" font-style="italic" fill="#6b7280">MS MAF 试图「都要」</text>
+  <text x="360" y="334" text-anchor="middle" font-family="Arial, sans-serif" font-size="11" font-style="italic" fill="#6b7280">代价是概念面积大</text>
+
+  <!-- 边上的张力说明 -->
+  <text x="195" y="225" text-anchor="middle" font-family="Arial, sans-serif" font-size="11.5" fill="#92400e" transform="rotate(-56 195 225)">要可控就牺牲直觉</text>
+  <text x="525" y="225" text-anchor="middle" font-family="Arial, sans-serif" font-size="11.5" fill="#92400e" transform="rotate(56 525 225)">要通用就失去确定性</text>
+  <text x="360" y="426" text-anchor="middle" font-family="Arial, sans-serif" font-size="11.5" fill="#92400e">要快就碰抽象天花板</text>
+
+  <!-- 底部结论 -->
+  <text x="360" y="480" text-anchor="middle" font-family="Arial, sans-serif" font-size="12.5" fill="#374151">框架选型 = 在三角里为自己的团队找位置</text>
+  <text x="360" y="504" text-anchor="middle" font-family="Arial, sans-serif" font-size="12.5" fill="#374151">「通用性」的真正载体是协议层（A2A / MCP），不是某一个框架</text>
+</svg>
