@@ -1,5 +1,10 @@
 # 项目内容规范
 
+## 构建与开发服务器
+
+- 运行 `npm run build` 前先停掉 dev server（`lsof -ti:3742 | xargs kill`）：build 与 dev 同时跑会双份编译，内存峰值翻倍。
+- dev server 的 Turbopack 缓存（`.next/dev/`）会随文件改动持续膨胀，超过 2–3GB 时停掉 dev server 后 `rm -rf .next/dev` 再重启；该目录不影响 `out/` 静态产物，重启后增量重建。
+
 ## 教程与论文图片规范
 
 - 教程和论文页面应尽量包含关键图片或图表，尤其是能帮助理解模型架构、训练流程、算法机制、实验对比的核心图。

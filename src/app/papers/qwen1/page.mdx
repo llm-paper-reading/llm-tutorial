@@ -1,0 +1,107 @@
+import paper from "./meta";
+import { paperMetadata } from "@/lib/papers";
+
+export const metadata = paperMetadata(paper);
+
+<PaperHeader slug={paper.slug} />
+
+# Qwen：千问起点的数据与 tokenizer 账
+
+2023 年 8 月，阿里通义千问团队发布 Qwen——这个名字取自「千问」（qianwen，数千个提示）。这是 Qwen 系列的第一份技术报告<Cite n={1} />：1.8B / 7B / 14B 三档 dense 模型、约 3T token 的多语言预训练、152K 词表的 BBPE tokenizer，以及一条完整的 SFT → RLHF（PPO）对齐流水线。放到 2023 年的语境里，它的对标对象是 Llama2 与 GPT-3.5：Qwen-14B 在 MMLU 拿到 66.3、C-Eval 72.1，多个任务上超过 Llama2-70B<Cite n={1} />。
+
+> 📌 前置：建议先读 [Attention Is All You Need](/papers/attention-transformer) 与 [PPO](/papers/ppo-schulman)。Qwen1 的架构几乎是 Llama 配方的直接继承者，对齐部分则是 PPO 范式的完整工业化实现。
+
+## 一、动机：开源模型的三块短板
+
+报告开篇没有讲宏大的 AGI 叙事，而是把 2023 年开源 LLM 的短板列得很具体<Cite n={1} />：
+
+1. **多语言失衡**：主流开源模型以英文为主，中文任务表现与服务成本都不理想；
+2. **只有 base 没有 chat**：多数开源模型没有做完偏好对齐，不能直接当助手用；
+3. **tokenizer 压缩率差**：同样的中文语料，Llama 词表切出的 token 数远多于闭源模型，服务成本直接翻倍。
+
+Qwen 的回应是一套「账算得很细」的组合拳：数据端做多语言配比与清洗，词表端做高压缩 BBPE，对齐端做 SFT + 奖励模型 + PPO 全流程。理解 Qwen1 的最好方式，是把它看成一份数据与工程的决策清单，而非架构创新论文——它的模型结构几乎是当时开源最佳实践的汇总。
+
+模型家族的组织方式如下（这份谱系图后来成为每一代 Qwen 报告的开篇惯例）：
+
+<figure className="my-6">
+  <img src="./fig-1-lineage.png" alt="Qwen 系列模型谱系：预训练的 Qwen base 经过 SFT 得到 Qwen-Chat，再经 RLHF 得到 Qwen-Chat-RLHF；Code-Qwen 与 Math-Qwen 两条专业化支线同样从 Qwen base 出发做继续预训练与 SFT" className="mx-auto h-auto max-w-full rounded-lg border border-zinc-200 shadow-sm dark:border-zinc-800" />
+  <figcaption className="mt-2 text-center text-xs text-zinc-500 dark:text-zinc-400">
+    <span className="figure-caption-main">Qwen 系列模型谱系：预训练的 Qwen base 经过 SFT 得到 Qwen-Chat，再经 RLHF 得到 Qwen-Chat-RLHF；Code-Qwen 与 Math-Qwen 两条专业化支线同样从 Qwen base 出发做继续预训练与 SFT</span>
+    <span className="figure-caption-source">图源：Bai et al., <em>Qwen Technical Report</em>（arXiv:2309.16609）Figure 1</span>
+  </figcaption>
+</figure>
+
+## 二、数据：3T token 的清洗流水线
+
+预训练数据「最多 3T token」，由公开网页、百科、书籍、代码组成，中英文占主体<Cite n={1} />。清洗流程是报告写得最细的部分：
+
+- **去重**：归一化后的精确去重 + MinHash/LSH 模糊去重；
+- **过滤**：规则方法与模型方法并用——语言模型打分、文本质量模型打分、敏感内容识别；
+- **人工抽检**：从各来源抽样人工审阅，校准过滤阈值；
+- **上采样**：对高质量来源选择性上采样，保证数据多样性；
+- **防泄漏**：对评测任务做 13-gram 重叠剔除，指令数据同样过一遍。
+
+一个值得注意的细节：Qwen1 从第一代起就把**多任务指令数据混入预训练**，理由是文献表明这能提升 zero-shot / few-shot 表现<Cite n={1} />。这个做法在 Qwen2、Qwen3 里延续至今。
+
+## 三、Tokenizer：152K 词表的压缩率账
+
+这是 Qwen1 报告里最有长期影响的一节。tokenizer 选择的逻辑链条是：BPE（跟随 GPT-3.5/4）→ tiktoken 的 cl100k 做起点 → 扩充中文字词与其他语言词条 → 数字拆成单数字 → 最终词表约 152K<Cite n={1} />。
+
+报告用一张压缩率对比图说明了这笔账的价值——同样 100 万文档的语料，Qwen tokenizer 在中文、英文、代码以及 th/he/ar/ko/vi/ja 等多数语言上的压缩率都优于 LLaMA、Baichuan、InternLM 的词表（以支持 100 语言的 XLM-R 为基准 1.0）：
+
+<figure className="my-6">
+  <img src="./fig-3-tokenizer.png" alt="不同模型 tokenizer 的编码压缩率对比：以 XLM-R 为基准 1.0，Qwen 在中文、英文、代码以及泰语、希伯来语、阿拉伯语、韩语、越南语、日语、土耳其语、印尼语、波兰语、俄语等语言上的压缩率均高于 LLaMA、Baichuan、ChatGLM2、InternLM 的词表" className="mx-auto h-auto max-w-full rounded-lg border border-zinc-200 shadow-sm dark:border-zinc-800" />
+  <figcaption className="mt-2 text-center text-xs text-zinc-500 dark:text-zinc-400">
+    <span className="figure-caption-main">不同模型 tokenizer 的编码压缩率对比：以 XLM-R 为基准 1.0，Qwen 在中文、英文、代码以及泰语、希伯来语、阿拉伯语、韩语、越南语、日语、土耳其语、印尼语、波兰语、俄语等语言上的压缩率均高于 LLaMA、Baichuan、ChatGLM2、InternLM 的词表</span>
+    <span className="figure-caption-source">图源：Bai et al., <em>Qwen Technical Report</em>（arXiv:2309.16609）Figure 3</span>
+  </figcaption>
+</figure>
+
+压缩率为什么重要？token 是成本单位：上下文长度限制、按 token 计费、KV cache 大小全都挂在它上面。中文压缩率每差一倍，同样的对话就多花一倍 token。这份词表（151,643 常规 token + 3 控制 token）从 Qwen1 一路沿用到 Qwen2.5（控制 token 扩到 22 个），是整个系列最稳定的资产之一。
+
+架构层面的改动反而很少：不绑定输入输出嵌入（untied embedding）、RoPE 逆频率矩阵用 FP32、QKV 层加 bias 增强外推、pre-norm + RMSNorm、SwiGLU 激活（FFN 维度从 4 倍隐藏维降到 8/3 倍）<Cite n={1} />——每一项都标注了出处，本质是当时开源社区最佳实践的汇编。
+
+## 四、长上下文：免训练的推理期技巧
+
+Qwen1 训练上下文只有 2048，但报告用三层推理期技巧把可用长度推到 8K 以上<Cite n={1} />：
+
+1. **NTK-aware 插值**：与均匀缩放所有维度的位置插值（PI）不同，NTK 通过调整 RoPE 基座避免高频信息丢失；动态版本按块自适应缩放；
+2. **LogN-Scaling**：按「当前上下文长度 / 训练长度」的比值缩放 query 与 value 的点积，保持注意力熵稳定；
+3. **分层窗口注意力**：低层用短窗口、高层用长窗口——报告观察到低层对长度外推更敏感。
+
+效果在 arXiv 论文语料的困惑度上验证：Qwen-7B 裸模型在 8192 长度困惑度爆到 39.35，16K 长度到 2645；三层技巧叠满后 8192 降到 3.49、16384 降到 4.32<Cite n={1} />。这套「训练不动、推理补救」的思路与 Qwen2 起的原生长上下文训练形成鲜明对照——后者直接在预训练末期把序列拉到 32K。
+
+## 五、对齐：PPO 时代的完整记录
+
+Qwen1 的对齐部分是三段式：SFT → 奖励模型 → PPO<Cite n={1} />。
+
+**SFT** 用 ChatML 风格格式（这套格式沿用至今），人工标注多风格对话，包含安全类目；对 system/user 输入做 loss mask。**奖励模型**先做偏好模型预训练（PMP）：从大规模对比数据开始，再用高质量标注数据精调。为了覆盖多样性，团队建了约 6600 个细粒度标签的分类体系做均衡采样，用不同尺寸模型和采样策略生成候选回答。**PPO** 阶段四模型并行（policy/value/reference/reward），先单独更新 value 模型 50 步，KL 系数 0.04，并用预训练梯度缓解对齐税。
+
+人工评测（300 条中文指令）显示 RLHF 版本稳定优于 SFT 版本，但与 GPT-4 仍有差距<Cite n={1} />——报告对此非常坦率。这段 PPO 细节是整个 Qwen 家族里最完整的一份：Qwen2 转向 DPO，Qwen2.5 引入 GRPO，之后再没有回到四模型 PPO 的配置。
+
+## 六、专业化支线：Code-Qwen 与 Math-Qwen
+
+Qwen1 同时发布两条支线，奠定了「通用基座 → 继续预训练 → 专业 SFT」的模式<Cite n={1} />：
+
+- **Code-Qwen（7B/14B）**：从 Qwen base 出发，在约 90B 代码 token 上继续预训练，上下文 8192（工具使用与代码解释需要长上下文）。Code-Qwen-14B-Chat 在 HumanEval 拿到 66.4 pass@1，超过同级的 CodeLlama-34B-Instruct（41.5）；
+- **Math-Qwen-Chat（7B/14B）**：不做继续预训练，直接在增强的数学指令数据上 SFT，序列长度缩短到 1024 加速训练。
+
+值得注意的是 Code-Qwen 的一个论断：**只在代码上预训练会显著损失通用助手能力**，所以他们选择从混合了文本与代码的 base 模型出发<Cite n={1} />。这个判断在两年后的 Qwen2.5-Coder 上被反复验证——后者宁可混入 20% 文本 + 10% 数学，也不做纯代码模型。
+
+## 七、Agent 能力：self-instruct 的低成本注入
+
+报告第 3.4 节展示了三类 agent 评测：ReAct 工具调用、Python 代码解释器、Hugging Face Agent。做法出人意料地轻<Cite n={1} />：用 Qwen 自己的 in-context learning 做 self-instruction，生成 ReAct 格式样本，规则 + 人工过滤，迭代多轮后**只保留约 2000 条高质量样本**，混入通用 SFT 数据（不加独立训练阶段）。
+
+结果：Qwen-14B-Chat 工具选择准确率 98%（GPT-4 为 95%），Hugging Face Agent 的工具选择 97.9、代码正确性 95.5（GPT-4 为 100 / 97.4）<Cite n={1} />。两千条格式正确的数据就能把 agent 能力拉到接近 GPT-4——「格式即能力」这个观察，解释了为什么后来开源模型的 agent 化如此迅速。
+
+## 小结
+
+Qwen1 的历史地位在于定下了三件事：**高压缩多语言 tokenizer**（沿用四代）、**ChatML + SFT + 偏好优化的对齐骨架**（PPO → DPO → GRPO 只是替换了优化器层）、**通用基座加专业化支线的发布结构**。它的很多数字已经过时，但决策逻辑——中文成本账、代码与文本的配比、长上下文的工程折中——在后续每一代报告里都能看到回声。
+
+## 参考资料
+
+<References>
+1. Jinze Bai et al. (2023). *Qwen Technical Report*. arXiv: [2309.16609](https://arxiv.org/abs/2309.16609). —— 本文主报告：模型家族、数据流水线、tokenizer 压缩率、SFT+RLHF 对齐、Code-Qwen / Math-Qwen 支线与 agent 评测。
+2. An Yang et al. (2024). *Qwen2 Technical Report*. arXiv: [2407.10671](https://arxiv.org/abs/2407.10671). —— 架构升级（GQA、MoE、DCA+YARN）与 7T token 预训练，本文多处对照。
+3. Junyang Lin et al. (2024). *Qwen2.5 Technical Report*（Qwen Team）. arXiv: [2412.15115](https://arxiv.org/abs/2412.15115). —— 18T token 预训练与 GRPO 后训练，对齐范式迁移的对照版本。
+</References>

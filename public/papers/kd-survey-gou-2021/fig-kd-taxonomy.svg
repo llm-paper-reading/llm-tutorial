@@ -1,0 +1,61 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 980 520" role="img" aria-labelledby="title desc">
+  <title id="title">经典知识蒸馏分类地图</title>
+  <desc id="desc">以老师到学生为中心，将知识蒸馏拆成知识类型、训练方式、师生结构和算法族四个维度。</desc>
+  <style>
+    :root { --bg:#fcfcfb; --panel:#ffffff; --ink:#0b0b0b; --muted:#52514e; --grid:#e1e0d9; --blue:#2a78d6; --green:#1baf7a; --yellow:#eda100; --violet:#4a3aa7; }
+    @media (prefers-color-scheme: dark) { :root { --bg:#1a1a19; --panel:#242421; --ink:#ffffff; --muted:#c3c2b7; --grid:#383835; --blue:#3987e5; --green:#199e70; --yellow:#c98500; --violet:#9085e9; } }
+    .bg{fill:var(--bg)} .panel{fill:var(--panel);stroke:var(--grid);stroke-width:1.5} .ink{fill:var(--ink)} .muted{fill:var(--muted)} .line{fill:none;stroke:var(--grid);stroke-width:2;stroke-linecap:round;stroke-dasharray:7 7} .axis{fill:none;stroke:var(--muted);stroke-width:2;stroke-linecap:round} .tag{fill:var(--panel);stroke-width:2} text{font-family:system-ui,-apple-system,"Segoe UI",sans-serif}
+  </style>
+  <rect class="bg" width="980" height="520" rx="28"/>
+  <text x="490" y="48" text-anchor="middle" class="ink" font-size="28" font-weight="700">Knowledge Distillation: A Survey</text>
+  <text x="490" y="78" text-anchor="middle" class="muted" font-size="15">一张经典 KD 分类地图：蒸什么、怎么蒸、谁教谁、用什么方法</text>
+
+  <g transform="translate(345 118)">
+    <rect class="panel" width="290" height="120" rx="24"/>
+    <text x="72" y="44" class="muted" font-size="13">teacher</text>
+    <text x="72" y="76" class="ink" font-size="22" font-weight="700">强老师</text>
+    <text x="218" y="44" class="muted" font-size="13">student</text>
+    <text x="218" y="76" text-anchor="end" class="ink" font-size="22" font-weight="700">小学生</text>
+    <path class="axis" d="M112 61 C142 36 168 36 198 61" marker-end="url(#arrow)"/>
+  </g>
+
+  <defs><marker id="arrow" viewBox="0 0 10 10" refX="8" refY="5" markerWidth="7" markerHeight="7" orient="auto-start-reverse"><path d="M0 0 L10 5 L0 10Z" fill="var(--muted)"/></marker></defs>
+
+  <g transform="translate(54 286)">
+    <rect class="panel" width="200" height="164" rx="22"/>
+    <circle cx="28" cy="28" r="10" fill="var(--blue)"/>
+    <text x="50" y="34" class="ink" font-size="18" font-weight="700">知识类型</text>
+    <text x="28" y="72" class="muted" font-size="14">Response-based</text>
+    <text x="28" y="103" class="muted" font-size="14">Feature-based</text>
+    <text x="28" y="134" class="muted" font-size="14">Relation-based</text>
+  </g>
+  <g transform="translate(286 286)">
+    <rect class="panel" width="200" height="164" rx="22"/>
+    <circle cx="28" cy="28" r="10" fill="var(--green)"/>
+    <text x="50" y="34" class="ink" font-size="18" font-weight="700">训练方式</text>
+    <text x="28" y="72" class="muted" font-size="14">Offline</text>
+    <text x="28" y="103" class="muted" font-size="14">Online</text>
+    <text x="28" y="134" class="muted" font-size="14">Self-distillation</text>
+  </g>
+  <g transform="translate(518 286)">
+    <rect class="panel" width="200" height="164" rx="22"/>
+    <circle cx="28" cy="28" r="10" fill="var(--yellow)"/>
+    <text x="50" y="34" class="ink" font-size="18" font-weight="700">师生结构</text>
+    <text x="28" y="72" class="muted" font-size="14">Same / different</text>
+    <text x="28" y="103" class="muted" font-size="14">Teacher assistant</text>
+    <text x="28" y="134" class="muted" font-size="14">Multi-teacher</text>
+  </g>
+  <g transform="translate(750 286)">
+    <rect class="panel" width="176" height="164" rx="22"/>
+    <circle cx="28" cy="28" r="10" fill="var(--violet)"/>
+    <text x="50" y="34" class="ink" font-size="18" font-weight="700">算法族</text>
+    <text x="28" y="72" class="muted" font-size="14">Logit / KL</text>
+    <text x="28" y="103" class="muted" font-size="14">Hint / Feature</text>
+    <text x="28" y="134" class="muted" font-size="14">Attention / Relation</text>
+  </g>
+
+  <path class="line" d="M490 238 C490 260 154 260 154 286"/>
+  <path class="line" d="M490 238 C490 260 386 260 386 286"/>
+  <path class="line" d="M490 238 C490 260 618 260 618 286"/>
+  <path class="line" d="M490 238 C490 260 838 260 838 286"/>
+</svg>

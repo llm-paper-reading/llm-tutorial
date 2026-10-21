@@ -1,0 +1,98 @@
+import paper from "./meta";
+import { paperMetadata } from "@/lib/papers";
+
+export const metadata = paperMetadata(paper);
+
+<PaperHeader slug={paper.slug} />
+
+# DeepSeek-R1：纯 RL 涌现推理与蒸馏
+
+2025 年 1 月，DeepSeek 发布 R1 论文，给出了一个此前没有完整公开证据的答案：<Cite n={1} />**推理能力可以不靠人类标注的推理轨迹，直接用大规模强化学习从基座里激发出来**。R1-Zero 在 DeepSeek-V3-Base 上跳过 SFT 直接跑 GRPO，奖励只有「答案对不对 + 格式对不对」两条规则，AIME 2024 的 pass@1 从 15.6% 涨到 77.9%，自洽解码 cons@16 到 86.7%——超过人类参赛者平均水平<Cite n={1} />。更关键的是行为层面的涌现：验证、反思、策略切换没有被显式教过，却在训练中自然出现。R1 本体再把这些能力用多阶段管线做成人人可用的模型，并蒸馏出 1.5B–70B 六个小模型开源。
+
+> 📌 前置：GRPO 的算法细节（组内相对优势、去 value model）站内已有 [GRPO 与 DeepSeek-R1](/papers/grpo-deepseek-r1) 精读；基座是 [DeepSeek-V3](/papers/deepseek-v3)；蒸馏思路可对照 [知识蒸馏总览](/papers/distilling-knowledge) 与 [Qwen3 的 OPD](/papers/qwen3)。
+
+## 一、动机：人类示范的天花板
+
+论文开篇把现有推理训练的路线归为两条，并指出共同缺陷<Cite n={1} />：
+
+1. **预训练 scaling**——推理作为涌现能力随规模出现，但算力代价巨大；
+2. **CoT 后训练**——监督微调学习高质量多步推理轨迹，或 few-shot prompting 引导逐步思考。
+
+第二条的问题是根本性的：**人类标注的推理轨迹不可扩展且带认知偏差**；更重要的是，让模型复现人类思路，性能就被人类示范者封顶——模型没有机会探索非人类风格的、可能更优的推理路径<Cite n={1} />。R1 的假设是：预训练基座（DeepSeek-V3-Base）已经蕴含相当推理潜力，缺的只是「正确方向的激励」——足够难的题、可靠的验证器、足够的算力。
+
+## 二、R1-Zero：纯 RL 的最小设置
+
+R1-Zero 的设计哲学是**把一切非必需约束拿掉**<Cite n={1} />：
+
+- **无 SFT 冷启动**——直接从 V3-Base 开始 RL；
+- **提示模板只管格式**——要求先输出  `...` 再输出 `<answer>...</answer>`，不预设内容；
+- **奖励只用规则**——准确性奖励（数学题对答案、代码题跑测试）+ 格式奖励（think/answer 标签合规），同权相加；
+- **明确不用神经奖励模型**（无论 outcome 还是 process）——大规模 RL 下神经 RM 容易被 reward hacking，且重训成本高。
+
+训练配置：GRPO 学习率 3×10⁻⁶、KL 系数 0.001、温度 1，每题采 16 个响应（8.2k 步前上限 32,768 token、之后 65,536），共 10,400 步；每 400 步把参考模型替换为最新策略<Cite n={1} />。
+
+## 三、涌现：数字与行为两条证据线
+
+**数字线**：AIME 2024 的 pass@1 在训练曲线上从 15.6% 爬到 77.9%；同一训练步数轴上，平均响应长度从约 2,000 token 稳定增长到约 15,000+——模型学会**用更多思考时间换正确率**，这个趋势没有外部干预<Cite n={1} />。
+
+<figure className="my-6">
+  <img src="./fig-1-aime.png" alt="DeepSeek-R1-Zero 训练过程双图：左为 AIME 准确率随训练步数的曲线（pass@1 从 15.6% 升至 77.9%，cons@16 达 86.7%，虚线为人类参赛者平均水平）；右为训练集上的平均响应长度随步数稳定增长，从约 2000 token 升至约 15000 token 以上" className="mx-auto h-auto max-w-full rounded-lg border border-zinc-200 shadow-sm dark:border-zinc-800" />
+  <figcaption className="mt-2 text-center text-xs text-zinc-500 dark:text-zinc-400">
+    <span className="figure-caption-main">DeepSeek-R1-Zero 训练过程双图：左为 AIME 准确率随训练步数的曲线（pass@1 从 15.6% 升至 77.9%，cons@16 达 86.7%，虚线为人类参赛者平均水平）；右为训练集上的平均响应长度随步数稳定增长，从约 2000 token 升至约 15000 token 以上</span>
+    <span className="figure-caption-source">图源：DeepSeek-AI, <em>DeepSeek-R1: Incentivizing Reasoning Capability in LLMs via Reinforcement Learning</em>（arXiv:2501.12948）Figure 1</span>
+  </figcaption>
+</figure>
+
+**行为线**：训练中的模型开始自发进行「重新评价」——论文 Table 2 记录了一个中间版本解方程时突然输出「Wait, wait. Wait. That's an aha moment I can flag here.」然后推翻重来并解出。作者把它称为「aha moment」：反思词（wait 等）的频率在训练中突然上升，推理模式发生明显转变<Cite n={1} />。诚实地讲，「涌现」在单样本上难以严格证明，但两条证据线的组合——正确率跳变 + 行为频率跳变 + 响应长度增长——是当时公开资料里最强的「RL 自发产生推理行为」的证据。
+
+值得一提的还有 reward hacking 的反面教训：论文在第二阶段 RL 里观察到 helpful 奖励模型的分数上升但 benchmark 性能下降，于是把模型偏好奖励严格限制在最后 400 步<Cite n={1} />——规则奖励的可靠性不是教条，是被对照实验逼出来的。
+
+## 四、R1：把涌现做成产品
+
+R1-Zero 的两个硬伤——可读性差、中英混杂（基座双语训练的后遗症）——决定了它不能直接发布。R1 的管线分四步<Cite n={1} />：
+
+1. **冷启动 SFT**：数千条对话式、人类对齐的长 CoT 数据做 SFT——目的不是教推理，是给推理一个可读的载体；
+2. **推理 RL**：沿用 R1-Zero 的规则奖励，**加语言一致性奖励**（目标语言词占比）——消融显示会轻微损失性能，但换来可读性，是明确的取舍；
+3. **拒绝采样 + 全能力 SFT**：从 RL 检查点采样推理轨迹、按准确性 + 格式过滤，加上非推理数据（写作、问答、自我认知等），共约 80 万样本做 SFT（数学 39.5 万、代码 21 万、通用 17.8 万，平均 5,355 token）<Cite n={1} />;
+4. **第二轮 RL**：推理数据继续用规则奖励，通用数据用 helpful + safety 奖励模型（helpful 只评最终总结、不干扰推理过程；safety 评全程），温度降到 0.7，偏好奖励只放最后 400 步。
+
+<figure className="my-6">
+  <img src="./fig-2-pipeline.png" alt="DeepSeek-R1 多阶段训练管线：V3-Base 经冷启动长 CoT SFT 与推理 RL 得到 Dev-1；对推理提示采样、过滤、精修后构造 SFT 数据，混合非推理数据训练得 Dev-3；再经规则奖励 + 语言一致性与偏好奖励的第二轮 RL 得到最终 R1；右上支线为跳过冷启动的 R1-Zero" className="mx-auto h-auto max-w-full rounded-lg border border-zinc-200 shadow-sm dark:border-zinc-800" />
+  <figcaption className="mt-2 text-center text-xs text-zinc-500 dark:text-zinc-400">
+    <span className="figure-caption-main">DeepSeek-R1 多阶段训练管线：V3-Base 经冷启动长 CoT SFT 与推理 RL 得到 Dev-1；对推理提示采样、过滤、精修后构造 SFT 数据，混合非推理数据训练得 Dev-3；再经规则奖励 + 语言一致性与偏好奖励的第二轮 RL 得到最终 R1；右上支线为跳过冷启动的 R1-Zero</span>
+    <span className="figure-caption-source">图源：DeepSeek-AI, <em>DeepSeek-R1: Incentivizing Reasoning Capability in LLMs via Reinforcement Learning</em>（arXiv:2501.12948）Figure 2</span>
+  </figcaption>
+</figure>
+
+奖励模型的构建也有值得记的细节：偏好对由 DeepSeek-V3 做 judge 生成，**每对查询四次、随机轮换 A/B 位置**消除位置偏差，分差 Δ>1 才保留，chosen/rejected 长度可比消除长度偏差——共 6.6 万对训练 helpful RM；安全 RM 用 10.6 万条 point-wise 标注<Cite n={1} />。
+
+## 五、蒸馏：把大模型的策略搬进小模型
+
+论文最有实践价值的部分之一是蒸馏实验的对照结论<Cite n={1} />：用 R1 的 80 万样本直接 SFT 六个基座（Qwen2.5-Math-1.5B/7B、Qwen2.5-14B/32B、Llama-3.1-8B、Llama-3.3-70B-Instruct），每个 2–3 epoch、上下文 32,768；**同时给 Qwen-32B 直接跑同款 RL 做对照——蒸馏版全面胜出**。作者的解读：大模型已经把推理模式显式化在输出分布里，蒸馏是直接迁移；小模型自己 RL 的探索空间不足以发现这些模式<Cite n={1} />。
+
+结果上，蒸馏 14B 在 AIME 2024 拿到 69.7，超过此前的 QwQ-32B-Preview；蒸馏 70B 达到 70.0<Cite n={1} />。这个结论与站内 [Rethinking OPD](/papers/rethinking-opd) 的分析互相印证：蒸馏成功的关键是教师提供了学生可吸收的新信息——而 R1 恰好是「教师本身经由 RL 获得新信息」的机器。它也解释了 2025 年行业的分工：**旗舰模型上做 RL 探索，小模型靠蒸馏继承**（Qwen3 的 OPD、Kimi 系列的蒸馏管线都是这个模式）。
+
+成本侧的参考数字：R1-Zero 用 64×8 H800 约 198 小时，R1 约 80 小时，SFT 数据准备约 5K GPU 时（H800 按 $2/卡时计）<Cite n={1} />。
+
+## 六、局限：论文自己写的 roadmap
+
+第 6 节的局限清单值得整段读，因为它准确预言了后续半年的工作方向<Cite n={1} />：
+
+- **结构化输出与工具使用**：不能调搜索引擎、计算器——「构建 RL 环境并不难，下个版本解决」（后来 R1-0528 与 V3.2 部分兑现）；
+- **token 效率**：会按问题复杂度动态分配算力（简单题少想、难题多想），但简单问题仍观察到过度思考；
+- **语言混杂**：只优化了中英，其他语言的 query 可能用英文思考——根因在基座本身以中英为主；
+- **prompt 敏感**：评测对提示词工程敏感，few-shot 反而降性能。
+
+## 小结
+
+R1 论文的历史地位有两层。方法层：**把推理能力的来源从「数据」搬到「奖励」**——只要验证器可靠，RL 就能激发基座的潜力，人类示范不是必需品。工程层：**确立了「旗舰 RL 探索 + 蒸馏小模型继承」的产业分工**，并给出了完整的成本结构。它与站内几篇论文构成闭环：GRPO 给了算法载体（[GRPO 精读](/papers/grpo-deepseek-r1)），Qwen3 的 OPD 给了蒸馏的在线版本（[Qwen3](/papers/qwen3)），Rethinking OPD 解释了为什么蒸馏有效（[Rethinking OPD](/papers/rethinking-opd)）。
+
+## 参考资料
+
+<References>
+1. DeepSeek-AI (2025). *DeepSeek-R1: Incentivizing Reasoning Capability in LLMs via Reinforcement Learning*. arXiv: [2501.12948](https://arxiv.org/abs/2501.12948). —— 本文主论文：R1-Zero 纯 RL 设置与涌现证据、R1 多阶段管线、奖励模型构建、蒸馏对照实验、成本与局限。
+2. DeepSeek-AI (2024). *DeepSeek-V3 Technical Report*. arXiv: [2412.19437](https://arxiv.org/abs/2412.19437). —— 基座模型，站内精读见 [DeepSeek-V3](/papers/deepseek-v3)。
+3. Zhihong Shao et al. (2024). *DeepSeekMath: Pushing the Limits of Mathematical Reasoning in Open Language Models*. arXiv: [2402.03300](https://arxiv.org/abs/2402.03300). —— GRPO 算法来源，站内精读见 [GRPO 与 DeepSeek-R1](/papers/grpo-deepseek-r1)。
+4. An Yang et al. (2025). *Qwen3 Technical Report*. arXiv: [2505.09388](https://arxiv.org/abs/2505.09388). —— 「旗舰 RL + 蒸馏小模型」产业分工的后续实践，站内精读见 [Qwen3](/papers/qwen3)。
+5. Rishabh Agarwal et al. (2024). *On-policy Distillation of Language Models*. ICLR 2024, arXiv: [2306.13649](https://arxiv.org/abs/2306.13649). —— 蒸馏有效性的信息视角分析，站内精读见 [Rethinking OPD](/papers/rethinking-opd)。
+</References>

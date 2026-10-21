@@ -1,17 +1,25 @@
 // 论文注册表 —— 每篇论文的元信息放在对应目录的 meta.ts 中。
-// 本文件只负责按阅读顺序聚合，并为导航栏、落地页、上一篇/下一篇提供统一 API。
+// 本文件负责聚合论文，并为导航栏、落地页、上一篇/下一篇提供统一 API；展示顺序使用显式时间排序。
 // 论文是多维的：一篇大模型论文往往同时涉及架构、数据、训练、RL、推理……
 // 单一「方向 → 主题」分组装不下，所以改用 tags 多标签模型——
 // 每篇论文可打多个 tag，点击 tag 展示同 tag 的所有论文。
 
 import { SITE_URL } from "@/lib/site";
 import distillingKnowledge from "@/app/papers/distilling-knowledge/meta";
+import knowledgeDistillationSurvey from "@/app/papers/kd-survey-gou-2021/meta";
+import kdComprehensiveSurvey from "@/app/papers/kd-survey-mansourian-2025/meta";
+import llmKdSurvey from "@/app/papers/llm-kd-survey-xu-2024/meta";
 import ppoSchulman from "@/app/papers/ppo-schulman/meta";
 import grpoDeepseekR1 from "@/app/papers/grpo-deepseek-r1/meta";
 import opdAgarwal from "@/app/papers/opd-agarwal/meta";
 import minillmGu from "@/app/papers/minillm-gu/meta";
 import tmlOpd from "@/app/papers/tml-opd/meta";
 import qwen3 from "@/app/papers/qwen3/meta";
+import qwen1 from "@/app/papers/qwen1/meta";
+import qwen2 from "@/app/papers/qwen2/meta";
+import qwen25 from "@/app/papers/qwen2-5/meta";
+import qwen25Coder from "@/app/papers/qwen2-5-coder/meta";
+import qwen25Vl from "@/app/papers/qwen2-5-vl/meta";
 import mimoV2Flash from "@/app/papers/mimo-v2-flash/meta";
 import nemotronCascade2 from "@/app/papers/nemotron-cascade-2/meta";
 import rethinkingOpd from "@/app/papers/rethinking-opd/meta";
@@ -21,6 +29,10 @@ import kimiK2 from "@/app/papers/kimi-k2/meta";
 import glm45 from "@/app/papers/glm-45/meta";
 import glm5 from "@/app/papers/glm-5/meta";
 import attentionTransformer from "@/app/papers/attention-transformer/meta";
+import llama3 from "@/app/papers/llama3/meta";
+import gpt3 from "@/app/papers/gpt3/meta";
+import instructgpt from "@/app/papers/instructgpt/meta";
+import deepseekR1 from "@/app/papers/deepseek-r1/meta";
 import deepseekV3 from "@/app/papers/deepseek-v3/meta";
 import deepseekV32 from "@/app/papers/deepseek-v3-2/meta";
 import deepseekV4 from "@/app/papers/deepseek-v4/meta";
@@ -60,14 +72,22 @@ export interface Paper {
   pdfUrl: string;
   codeUrl?: string;
 }
-// 顺序即阅读顺序；同时决定上一篇 / 下一篇。
+// 仅作为注册表；页面展示、tag 分组和上一篇/下一篇都应使用显式排序函数，避免依赖注册顺序。
 export const papers: Paper[] = [
   distillingKnowledge,
+  knowledgeDistillationSurvey,
+  kdComprehensiveSurvey,
+  llmKdSurvey,
   ppoSchulman,
   grpoDeepseekR1,
   opdAgarwal,
   minillmGu,
   tmlOpd,
+  qwen1,
+  qwen2,
+  qwen25,
+  qwen25Coder,
+  qwen25Vl,
   qwen3,
   mimoV2Flash,
   nemotronCascade2,
@@ -78,6 +98,10 @@ export const papers: Paper[] = [
   glm45,
   glm5,
   attentionTransformer,
+  gpt3,
+  instructgpt,
+  llama3,
+  deepseekR1,
   deepseekV3,
   deepseekV32,
   deepseekV4,
@@ -100,14 +124,19 @@ export function getAllTags(): string[] {
   return seen;
 }
 
-/** 按发表时间倒序的论文列表（年份相同按注册表顺序）。 */
+/** 按发表时间正序的论文列表。 */
 export function getPapersByDate(): Paper[] {
-  return [...papers].sort((a, b) => b.year - a.year);
+  return getPapersByDateAsc();
 }
 
-/** 某 tag 下的论文（注册表顺序）。tag 不存在时返回空数组。 */
+/** 按发表时间正序的论文列表。 */
+export function getPapersByDateAsc(): Paper[] {
+  return [...papers].sort((a, b) => paperDate(a).localeCompare(paperDate(b)));
+}
+
+/** 某 tag 下的论文（按发表时间正序）。tag 不存在时返回空数组。 */
 export function getPapersByTag(tag: string): Paper[] {
-  return papers.filter((p) => p.tags.includes(tag));
+  return getPapersByDate().filter((p) => p.tags.includes(tag));
 }
 
 /** 从 arXiv abs/pdf URL 中提取论文编号。 */
@@ -142,7 +171,7 @@ export function getPapersNav() {
   ];
 }
 
-/** 侧边栏导航树之二：按发表年份分组（新→旧），年内按时间倒序。 */
+/** 侧边栏导航树之二：按发表年份分组（旧→新），年内按时间正序。 */
 export function getPapersNavByDate() {
   const byYear = new Map<string, Paper[]>();
   for (const p of getPapersByDate()) {
@@ -171,9 +200,7 @@ export function getPapersNavFlat() {
       topics: [
         {
           name: null,
-          leaves: [...papers]
-            .sort((a, b) => paperDate(a).localeCompare(paperDate(b)))
-            .map(withHint),
+          leaves: getPapersByDateAsc().map(withHint),
         },
       ],
     },
@@ -201,19 +228,20 @@ export function getPaper(slug: string): Paper | undefined {
 
 /** 第一篇，用于「开始阅读」入口与导航栏「论文」链接 */
 export function getFirstPaper(): Paper {
-  return papers[0];
+  return getPapersByDate()[0];
 }
 
-/** 返回上一篇 / 下一篇，用于论文底部导航 */
+/** 返回上一篇 / 下一篇，用于论文底部导航（按发表时间正序：旧 → 新） */
 export function getPaperNeighbors(slug: string): {
   prev: Paper | null;
   next: Paper | null;
 } {
-  const i = papers.findIndex((p) => p.slug === slug);
+  const ordered = getPapersByDate();
+  const i = ordered.findIndex((p) => p.slug === slug);
   if (i === -1) return { prev: null, next: null };
   return {
-    prev: i > 0 ? papers[i - 1] : null,
-    next: i < papers.length - 1 ? papers[i + 1] : null,
+    prev: i > 0 ? ordered[i - 1] : null,
+    next: i < ordered.length - 1 ? ordered[i + 1] : null,
   };
 }
 

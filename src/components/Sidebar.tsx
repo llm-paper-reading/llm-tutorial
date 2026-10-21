@@ -223,6 +223,7 @@ export default function Sidebar<L extends NavLeaf>({
   showLeafIcons = true,
 }: SidebarProps<L>) {
   const pathname = normalizePath(usePathname());
+  const [activeTag, setActiveTag] = useState<string | null>(null);
   const [which, setWhich] = useState<string>("main");
 
   const trees = new Map<string, NavTree<L>[]>([["main", tree]]);
@@ -240,6 +241,29 @@ export default function Sidebar<L extends NavLeaf>({
   useEffect(() => {
     setWhich("main");
   }, [basePath]);
+
+  useEffect(() => {
+    if (basePath !== "/papers") {
+      setActiveTag(null);
+      return;
+    }
+    const readTag = () => {
+      setActiveTag(new URLSearchParams(window.location.search).get("tag"));
+    };
+    readTag();
+    const timer = window.setInterval(readTag, 250);
+    window.addEventListener("popstate", readTag);
+    return () => {
+      window.clearInterval(timer);
+      window.removeEventListener("popstate", readTag);
+    };
+  }, [basePath, pathname]);
+
+  useEffect(() => {
+    if (basePath === "/papers" && activeTag && altTree) {
+      setWhich("alt");
+    }
+  }, [activeTag, altTree, basePath]);
 
   return (
     <nav className="text-sm">
@@ -265,8 +289,9 @@ export default function Sidebar<L extends NavLeaf>({
                     (leaf) => pathname === normalizePath(`${basePath}/${leaf.slug}`),
                   ),
                 );
-                const activeHere =
-                  dir.topics.indexOf(topic) === firstActiveTopicIdx;
+                const activeHere = activeTag && which === "alt"
+                  ? topic.name === activeTag
+                  : dir.topics.indexOf(topic) === firstActiveTopicIdx;
                 if (topic.name === null) {
                   return (
                     <ul key="__flat__" className="space-y-0.5">

@@ -1,0 +1,100 @@
+import paper from "./meta";
+import { paperMetadata } from "@/lib/papers";
+
+export const metadata = paperMetadata(paper);
+
+<PaperHeader slug={paper.slug} />
+
+# Qwen2.5-VL：原生动态分辨率、绝对时间与 GUI Agent
+
+2025 年 1 月发布、3 月定稿的 Qwen2.5-VL，是 Qwen 视觉语言线从「能看」走向「能干活」的一代<Cite n={1} />。3B / 7B / 72B 三档，全部以 Qwen2.5 LLM 为语言底座；预训练语料从 Qwen2-VL 的 1.2T 扩到约 4.1T token。旗舰 72B 在文档与图表理解上对标 GPT-4o 与 Claude 3.5 Sonnet，并第一次把 **GUI Agent**（操作手机与电脑）作为一等公民写进训练与评测<Cite n={1} />。报告用「三明治」比喻定位自己：细粒度感知是底层、多模态推理是顶层，这一代专攻底层——上层留给下一代的 [Qwen3-VL](/papers/qwen3-vl)。
+
+> 📌 前置：语言底座是 [Qwen2.5](/papers/qwen2-5)；MRoPE 与 QKV bias 等机制源自 Qwen2-VL；GUI Agent 部分可与 [UI-TARS 2](/papers/ui-tars-2) 的纯视觉 Agent 路线对照。
+
+## 一、动机：固定分辨率的原罪
+
+报告的出发点是视觉编码的「失真链条」<Cite n={1} />：主流 VLM 把任意图像 resize 到固定分辨率（如 448×448）——文档上的小字、表格里的细线、UI 里的图标在缩放中直接丢失；更根本的是，模型从此无法感知**真实尺度**：一辆近处的车和远处一模一样大的车，在固定分辨率里没有区别。
+
+Qwen2.5-VL 的解法是**原生动态分辨率**：图像按 28 的倍数缩放后直接进 ViT，patch 14×14，token 数随图像尺寸变化。四项配套机制让这套方案在工程上成立<Cite n={1} />：
+
+- **ViT 重构**：RMSNorm、SwiGLU、2D-RoPE，与 LLM 设计原则对齐；
+- **窗口注意力**：仅 4 层全注意力（ViT 第 7/15/23/31 层），其余层用 112×112 窗口（8×8 patch），计算量随 patch 数线性而非二次增长；
+- **压缩合并器**：空间相邻的 4 个 patch 特征拼接后过两层 MLP 投到 LLM 维度，token 数先减 4 倍再进语言模型；
+- **动态打包**：训练时按输入序列长度动态组 batch，均衡各 GPU 的 LLM 计算负载。
+
+整体架构一图总览：
+
+<figure className="my-6">
+  <img src="./fig-1-framework.png" alt="Qwen2.5-VL 架构总览：原生分辨率的图像与视频经动态 FPS 采样进入视觉编码器（2D-RoPE、窗口注意力、SwiGLU、RMSNorm），patch 特征按 2×2 分组压缩后经 MLP 合并器投影到语言模型维度；MRoPE 的三个分量中时间维与绝对时间对齐，支持不同 FPS 视频的节奏感知与时间定位" className="mx-auto h-auto max-w-full rounded-lg border border-zinc-200 shadow-sm dark:border-zinc-800" />
+  <figcaption className="mt-2 text-center text-xs text-zinc-500 dark:text-zinc-400">
+    <span className="figure-caption-main">Qwen2.5-VL 架构总览：原生分辨率的图像与视频经动态 FPS 采样进入视觉编码器（2D-RoPE、窗口注意力、SwiGLU、RMSNorm），patch 特征按 2×2 分组压缩后经 MLP 合并器投影到语言模型维度；MRoPE 的三个分量中时间维与绝对时间对齐，支持不同 FPS 视频的节奏感知与时间定位</span>
+    <span className="figure-caption-source">图源：Qwen Team, <em>Qwen2.5-VL Technical Report</em>（arXiv:2502.13923）Figure 1</span>
+  </figcaption>
+</figure>
+
+## 二、时间与空间都要「绝对」的
+
+**动态 FPS 采样**把动态分辨率从空间推广到时间：训练时对视频随机采样不同帧率，让 FPS 在数据里均匀分布——模型不再绑定某个固定采样率<Cite n={1} />。
+
+**MRoPE 对齐绝对时间**是位置编码层面的对应改动。多模态 RoPE（MRoPE，源自 Qwen2-VL）把频率维拆给时间/高/宽三个轴；Qwen2.5-VL 进一步让时间轴的 ID **与视频的绝对时间戳对齐**<Cite n={1} />。效果是双重的：不同 FPS 的视频里，「第 10 秒」的时间 ID 相同（跨采样率可比）；事件定位可以精确到秒（配合秒与 hmsf 两种时间戳格式的时间 grounding 数据）。视频理解从「按顺序看帧」变成「在绝对时间轴上定位事件」——理解一小时视频时定位第 5 分钟的异常，靠的就是这个。
+
+**绝对坐标 grounding** 是空间侧的对应决策：bounding box 与点的坐标直接用图像**真实尺寸**表示（而非归一化到 [0,1]），配合 XML / JSON 等多种输出格式训练，模型因此能感知物体的真实大小与位置<Cite n={1} />。检测类别扩到一万以上，还合成「不存在的物体」负样本训练拒绝误检。
+
+## 三、文档全能解析：用 HTML 统一版式
+
+Qwen2.5-VL 把文档理解重新定义为「全能解析」（omni-parsing）：版面、文本、表格、图表、公式、配图、甚至乐谱与化学式，统一输出为带坐标的 HTML<Cite n={1} />：
+
+```html
+<p data-bbox="x1 y1 x2 y2"> 段落文本 </p>
+<table data-bbox="x1 y1 x2 y2" class="table1"> 表格内容 </table>
+<div class="chart" data-bbox="x1 y1 x2 y2">
+  <img data-bbox="x1 y1 x2 y2" /><table> 图表数据 </table>
+</div>
+<div class="formula" data-bbox="x1 y1 x2 y2">
+  <img data-bbox="x1 y1 x2 y2" /> <div> 公式内容 </div>
+</div>
+```
+
+每种元素自带 `data-bbox` 坐标，阅读顺序按版式编排。这个设计的本质是**用一个通用模型替代「版面分析 + 文本抽取 + 图表理解」的多模型流水线**——发票、表单、表格的结构化抽取从工程组装变成模型的直接输出。图表数据用 matplotlib / seaborn / plotly 合成 100 万样本，表格用端到端识别模型处理 600 万真实样本再过滤<Cite n={1} />。
+
+## 四、三阶段预训练与数据配比
+
+预训练从 Qwen2-VL 的 1.2T 扩到约 4.1T token，分三阶段推进<Cite n={1} />：
+
+| 阶段 | 数据 | token | 序列长 | 训练对象 |
+|---|---|---|---|---|
+| 视觉预训练 | 图像描述、视觉知识、OCR | 1.5T | 8,192 | 只训 ViT（对齐语言模型） |
+| 多模态预训练 | 交错数据、VQA、视频、grounding、agent、纯文本 | 2T | 8,192 | 全参数 |
+| 长上下文预训练 | 长视频、长 agent、长文档 | 0.6T | 32,768 | 全参数 |
+
+ViT 从零训练（DataComp + 内部数据初始化），LLM 用 Qwen2.5 预训练权重初始化。数据侧几个值得注意的工程点：交错图文数据用四维评分系统过滤（文本质量、图文相关性、信息互补性、信息密度平衡）<Cite n={1} />；agent 数据的构建方式下一节展开。
+
+## 五、GUI Agent：感知与决策的数据工程
+
+GUI Agent 能力是这份报告最有前瞻性的部分，数据建设分感知与决策两侧<Cite n={1} />：
+
+**感知侧**：收集手机、网页、桌面三端截图；合成引擎生成截图描述（caption，理解界面）与 UI 元素 grounding 标注（对齐元素外观与功能）。
+
+**决策侧**：三端操作统一为**函数调用格式**、共享动作空间（这是「一套模型管三端」的关键）；多步轨迹来自开源数据与虚拟环境上的 agent 框架合成，重排为函数序列。最有意思的是**推理过程标注**：给定正确操作，在截图上高亮它，把全局 query 与操作前后的截图交给标注者，写出「为什么这么操作」的推理内容，再用模型过滤低质量样本——这防止模型过拟合到 ground-truth 操作本身，提升真实环境的鲁棒性<Cite n={1} />。
+
+结果上，72B 在 ScreenSpot 87.1（Gemini 2.0 为 84.0）、ScreenSpot Pro 43.6（上一代 Qwen2-VL-72B 仅 1.6，专用模型 Aguvis-72B 为 23.6），AndroidWorld 35%、OSWorld 8.83<Cite n={1} />。注意在线评测的口径：GPT-4o 与 Gemini 2.0 部分结果带 SoM（Set-of-Mark）辅助标注，Qwen2.5-VL 不用辅助直接可比或更好；而 OSWorld 上仍明显低于 Claude 的 14.90——桌面级长程操作是这代模型公认的保留短板。
+
+## 六、SFT 与 DPO
+
+后训练是 SFT + DPO 两段<Cite n={1} />。SFT 数据约 200 万条，纯文本与多模态各占 50%（多模态消耗的 token 与算力远大于条目占比）；ChatML 格式；数据过滤用两阶段流水线：Qwen2-VL-Instag 分类模型先按 8 个主域 30 个子域分层归类，再按域定制规则 + 模型过滤。DPO 在 SFT 之后做偏好对齐。
+
+纯文本能力是这份报告的一个隐藏亮点：Qwen2.5-VL-72B 在 MMLU-Pro 71.2、LiveBench 57.0、IFEval 86.3，多项超过 Qwen2.5-72B-Instruct 本身<Cite n={1} />——多模态训练不仅没有牺牲语言能力，反而因为海量纯文本与交错数据的共同训练略有增益。这与 Qwen3-VL 后来「文本能力与语言底座打平」的路线一致。
+
+## 小结
+
+Qwen2.5-VL 的贡献可以概括为三组「原生」：**原生分辨率**（不 resize、绝对坐标、窗口注意力兜底效率）、**原生时间**（MRoPE 对齐绝对时间、动态 FPS、秒级定位）、**原生行动**（三端统一动作空间、带推理的轨迹标注、GUI Agent 进评测主线）。它在 ScreenSpot Pro 上对上一代 1.6 → 43.6 的跃迁说明：GUI Agent 的瓶颈在感知 grounding 而非决策——这个判断被 [Qwen3-VL](/papers/qwen3-vl) 与 UI-TARS 系列反复验证。
+
+## 参考资料
+
+<References>
+1. Qwen Team, Alibaba Group (2025). *Qwen2.5-VL Technical Report*. arXiv: [2502.13923](https://arxiv.org/abs/2502.13923). —— 本文主报告：动态分辨率 ViT、绝对时间 MRoPE、HTML 文档解析、三阶段预训练、GUI Agent 数据与评测。
+2. Qwen Team (2024). *Qwen2.5 Technical Report*. arXiv: [2412.15115](https://arxiv.org/abs/2412.15115). —— 语言底座及其数据工程。
+3. Peng Wang et al. (2024). *Qwen2-VL: Enhancing Vision-Language Model's Perception of the World at Any Resolution*. arXiv: [2409.12191](https://arxiv.org/abs/2409.12191). —— MRoPE 与原生动态分辨率的先行版本。
+4. Qwen Team (2025). *Qwen3-VL*（官方博客）. [qwen.ai/blog?id=qwen3-vl](https://qwen.ai/blog?id=qwen3-vl). —— 下一代对本文机制的三项升级（Interleaved-MRoPE、DeepStack、文本时间戳对齐），站内精读见 [Qwen3-VL](/papers/qwen3-vl)。
+5. Tianyu Xie et al. (2025). *OSWorld: Benchmarking Multimodal Agents for Open-Ended Tasks in Real Computer Environments*. NeurIPS 2024, arXiv: [2404.07972](https://arxiv.org/abs/2404.07972). —— 桌面级 GUI Agent 在线评测基准。
+</References>

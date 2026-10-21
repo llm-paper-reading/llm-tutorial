@@ -2,6 +2,7 @@
 
 import Link from "next/link";
 import { usePathname } from "next/navigation";
+import { SITE_LOGO_MARK_SRC } from "@/lib/site";
 import { getSiteLinks, isSiteLinkActive } from "@/lib/site-nav";
 import ThemeToggle from "./ThemeToggle";
 import MobileNav from "./MobileNav";
@@ -30,7 +31,12 @@ export default function NavBar() {
       <div className="mx-auto flex h-14 max-w-6xl items-center gap-2 px-4">
         <MobileNav />
         <Link href="/" className="mr-2 flex items-center gap-2 font-semibold">
-          <span className="text-xl">🤖</span>
+          <img
+            src={SITE_LOGO_MARK_SRC}
+            alt=""
+            aria-hidden="true"
+            className="h-6 w-6 rounded-sm"
+          />
           <span>大模型与机器学习教程</span>
         </Link>
         <nav className="ml-auto hidden items-center gap-1 lg:flex">

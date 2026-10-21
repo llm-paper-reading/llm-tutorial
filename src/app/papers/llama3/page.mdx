@@ -1,0 +1,140 @@
+import paper from "./meta";
+import { paperMetadata } from "@/lib/papers";
+
+export const metadata = paperMetadata(paper);
+
+<PaperHeader slug={paper.slug} />
+
+# Llama 3：15T token 与计算最优的 405B
+
+2024 年 7 月，Meta 发布 Llama 3（正式名称 Llama 3.1）系列：8B / 70B / 405B 三档 dense Transformer，旗舰 405B 用 128K 上下文窗口，报告称其与 GPT-4 在大量任务上质量相当<Cite n={1} />。预训练数据从 Llama 2 的 1.8T 涨到 **15T** token，训练算力 3.8×10²⁵ FLOPs——约为 Llama 2 旗舰的 50 倍<Cite n={1} />。这份报告的特别之处在于**每个环节都给数字**：scaling law 怎么外推出 402B、4D 并行怎么在 16K H100 上跑出 38–43% MFU、六轮后训练怎么迭代。它是「资源充足的团队把已知 best practice 全部拉满」的范本，也是 2024 年 dense 模型训练的双参照系之一（另一个是 [Qwen2.5](/papers/qwen2-5)）。
+
+> 📌 前置：建议先读 [Attention Is All You Need](/papers/attention-transformer)；GQA 在 [Qwen2](/papers/qwen2) 里有对照；DPO 部分接 [DPO 原论文](/papers/dpo-rafailov)；多轮 SFT+DPO 的思路与 [Qwen2.5](/papers/qwen2-5) 的后训练互为印证。
+
+## 一、动机：三个杠杆
+
+报告开篇明确列出高质量基础模型的三个杠杆：<Cite n={1} />
+
+1. **数据（Data）**——预训练与后训练数据的数量与质量同时提升；
+2. **规模（Scale）**——在远超上一代的算力上训练；
+3. **管理复杂度（Managing complexity）**——保持架构简单，把工程复杂度放在基础设施与流程上。
+
+第三条是理解整份报告的钥匙：Llama 3 的架构相对 Llama 2 只有四个小改动（GQA、文档间注意力 mask、128K 词表、RoPE 基频 500,000）<Cite n={1} />，性能增益几乎全部来自数据与规模。这与同期在架构上做文章的 MoE 路线（[DeepSeek-V3](/papers/deepseek-v3)、Qwen2-57B-A14B）形成鲜明对比。
+
+整体训练流程：
+
+<figure className="my-6">
+  <img src="./fig-1-architecture.png" alt="Llama 3 总体架构与训练流程：大规模多语言语料经 tokenizer 离散化后预训练 405B Transformer（8K 上下文），继续预训练扩展到 128K；随后进入多轮后训练（拒绝采样、SFT、DPO）对齐人类偏好并加入工具使用等能力；图中同时示意图像与语音编码器经 adapter 组合接入的多模态扩展" className="mx-auto h-auto max-w-full rounded-lg border border-zinc-200 shadow-sm dark:border-zinc-800" />
+  <figcaption className="mt-2 text-center text-xs text-zinc-500 dark:text-zinc-400">
+    <span className="figure-caption-main">Llama 3 总体架构与训练流程：大规模多语言语料经 tokenizer 离散化后预训练 405B Transformer（8K 上下文），继续预训练扩展到 128K；随后进入多轮后训练（拒绝采样、SFT、DPO）对齐人类偏好并加入工具使用等能力；图中同时示意图像与语音编码器经 adapter 组合接入的多模态扩展</span>
+    <span className="figure-caption-source">图源：Llama Team, AI @ Meta, <em>The Llama 3 Herd of Models</em>（arXiv:2407.21783）Figure 1</span>
+  </figcaption>
+</figure>
+
+## 二、预训练数据：15T token 的清洗账
+
+数据来自截至 2023 年底的知识来源，清洗流水线值得逐环看<Cite n={1} />：
+
+- **PII 与安全过滤**：按域名移除含大量个人隐私信息与成人内容的站点；
+- **文本抽取**：自研 HTML 解析器优化「去样板」的精度与正文召回，数学与代码页保留结构（数学公式的 alt 文本保留）；实测发现 **markdown 标记对以网页为主的训练有害**，全部移除；
+- **三级去重**：URL 级（同 URL 保留最新版）→ 文档级（全局 MinHash 近重复）→ 行级（30M 文档桶内出现超过 6 次的行删除）——行级去重虽然会误删高频的高质量文本，但实测收益为正；
+- **启发式过滤**：重复 n-gram 覆盖率（删日志类长行）、「脏词」计数、token 分布 KL 散度（删离群文档）；
+- **模型过滤**：fastText（维基引用判别）与 DistilRoberta（Llama 2 标注质量要求）双管线；**代码与数学走独立管线**（Llama 2 标注 + prompt tuning 定向抽取），因为 token 分布与自然语言差异太大；
+- **多语言**：fastText 语言识别分 176 种语言，语言内去重 + 语言专属过滤器，多语言 Llama 2 分类器做质量排序。
+
+最终数据配比：**50% 通用知识、25% 数学与推理、17% 代码、8% 多语言**<Cite n={1} />——「过半通用 + 四分之一推理」的配比与 Qwen2.5 的领域注入策略思路一致但更粗粒度。
+
+## 三、Scaling Law：先算清再开训
+
+Llama 3 的 scaling law 部分是「先算清再开训」的教科书<Cite n={1} />。实验设计：在 6×10¹⁸ 到 10²² FLOPs 的十档算力上，各训一组 40M–16B 的小模型，画出 **IsoFLOPs 曲线**（每个算力档上，参数量从小到大损失先降后升的抛物线），抛物线底部即该算力的计算最优模型：
+
+<figure className="my-6">
+  <img src="./fig-2-scaling-laws.png" alt="Llama 3 scaling law 实验两图：左为 IsoFLOPs 曲线（横轴训练 token 数、纵轴验证损失，六档算力各一条 U 形曲线，底部即计算最优模型）；右为计算最优模型的训练 token 数随算力预算的幂律拟合（α=0.53，A=0.29），外推到 3.8×10²⁵ FLOPs 给出 402B 参数 / 16.55T token" className="mx-auto h-auto max-w-full rounded-lg border border-zinc-200 shadow-sm dark:border-zinc-800" />
+  <figcaption className="mt-2 text-center text-xs text-zinc-500 dark:text-zinc-400">
+    <span className="figure-caption-main">Llama 3 scaling law 实验两图：左为 IsoFLOPs 曲线（横轴训练 token 数、纵轴验证损失，六档算力各一条 U 形曲线，底部即计算最优模型）；右为计算最优模型的训练 token 数随算力预算的幂律拟合（α=0.53，A=0.29），外推到 3.8×10²⁵ FLOPs 给出 402B 参数 / 16.55T token</span>
+    <span className="figure-caption-source">图源：Llama Team, AI @ Meta, <em>The Llama 3 Herd of Models</em>（arXiv:2407.21783）Figure 2–3</span>
+  </figcaption>
+</figure>
+
+拟合 $N^\star(C) = AC^\alpha$ 得 $(\alpha, A)=(0.53, 0.29)$，外推到旗舰算力 3.8×10²⁵ FLOPs 建议训 **402B 参数 / 16.55T token**<Cite n={1} />。一个重要的工程观察：IsoFLOPs 抛物线底部随算力增大而变平——旗舰模型对「参数 vs token」的微小偏移是稳健的，所以选了 405B。
+
+更实用的是**两步下游性能预测**：先把计算最优模型在下游任务上的负对数似然与训练 FLOPs 线性关联，再用 Llama 2 家族把 NLL 与任务准确率关联成 sigmoid——可以在开训前预测 405B 在 ARC Challenge 这类 benchmark 上的分数，外推四个数量级仍然准确（略低估）<Cite n={1} />。
+
+## 四、基础设施：16K H100 与 4D 并行
+
+405B 预训练最多用到 **16K 张 H100**（700W、80GB HBM3），Meta 生产集群的 RoCE 网络：24K GPU 三层 Clos 拓扑（pod 内全二分带宽、跨 pod 1:7 超额订阅），用 16 流拆分 + E-ECMP 哈希做负载均衡，深缓冲 spine 交换机吸收突发拥塞——跑满 24K GPU 集群而没有用传统 DCQCN 拥塞控制<Cite n={1} />。
+
+模型切分用 **4D 并行**：
+
+| 维度 | 切什么 | 放哪里 |
+|---|---|---|
+| TP（张量并行） | 单个权重矩阵 | 机内 NVLink |
+| CP（上下文并行） | 输入序列 | 机内/近距 |
+| PP（流水线并行） | 模型按层分段 | 跨机 |
+| DP（FSDP） | 数据/优化器状态/梯度 | 跨 pod（容忍高延迟） |
+
+顺序 [TP, CP, PP, DP] 按网络带宽需求排布——最内层要最低延迟，最外层可用异步预取容忍长延迟<Cite n={1} />。三个值得记的工程细节：
+
+1. **流水线调度改造**：把连续微批数 N 做成可调（DFS 要求 N=PP、BFS 要求 N=M 都太死板），首尾阶段各减一层平衡显存，交错调度压气泡率到 (PP−1)/(V·M)，异步点对点通信——8K 序列**不开激活检查点**；
+2. **CP 用 all-gather 而非环形**：暴露的 all-gather 延迟可接受（GQA 让 K/V 远小于 Q，$O(S)$ 对 $O(S^2)$），换来对文档 mask 等各类注意力 mask 的灵活性；
+3. **数值稳定**：FP32 梯度累加与 FP32 reduce-scatter，跨并行配置对齐训练损失。
+
+最终 8K 阶段 43% MFU、128K 阶段 38% MFU<Cite n={1} />。
+
+<figure className="my-6">
+  <img src="./fig-5-4d-parallelism.png" alt="Llama 3 4D 并行示意：16 张 GPU 按 [TP=2, CP=2, PP=2, DP=2] 分组，每张 GPU 的位置用四维向量表示；同一 TP 组的 GPU0 与 GPU1 在机内，同一 CP 组跨序列切块，同一 PP 组跑相邻层段，同一 DP 组（FSDP）分片优化器状态" className="mx-auto h-auto max-w-full rounded-lg border border-zinc-200 shadow-sm dark:border-zinc-800" />
+  <figcaption className="mt-2 text-center text-xs text-zinc-500 dark:text-zinc-400">
+    <span className="figure-caption-main">Llama 3 4D 并行示意：16 张 GPU 按 [TP=2, CP=2, PP=2, DP=2] 分组，每张 GPU 的位置用四维向量表示；同一 TP 组的 GPU0 与 GPU1 在机内，同一 CP 组跨序列切块，同一 PP 组跑相邻层段，同一 DP 组（FSDP）分片优化器状态</span>
+    <span className="figure-caption-source">图源：Llama Team, AI @ Meta, <em>The Llama 3 Herd of Models</em>（arXiv:2407.21783）Figure 5</span>
+  </figcaption>
+</figure>
+
+## 五、预训练 recipe：分段拉长与退火
+
+主体预训练用 AdamW、峰值学习率 8×10⁻⁵、cosine 退火到 8×10⁻⁷、共 120 万步。**batch size 分三段翻倍**：4M token（序列 4,096）→ 8M（8,192）→ 16M（训到 2.87T 后）——早期小 batch 求稳，后期大 batch 求效率；报告称全程几乎没有 loss spike，无需干预发散<Cite n={1} />。训练中还能**动态调整数据配比**：后期加非英文数据、上采样数学、加新鲜网页推进知识截止线。
+
+**长上下文渐进**：主体训完 8K 后，末段分 **六个阶段**把上下文从 8K 翻到 128K（约 800B token）。每个阶段通过两条验收标准才升级：短上下文评测完全恢复、该长度的大海捞针全解<Cite n={1} />。这个「先短后长、每步验收」的方案与 Qwen2.5-Turbo 的四阶段渐进同构，是长上下文训练的行业共识。
+
+**退火**：最后 40M token 线性退火到 0，同步上采样高质量数据源；GSM8K/MATH 训练集进退火能让 8B 的对应验证集提升 24.0% / 6.4%，但 **405B 上收益消失**——旗舰模型的 in-context learning 已经足够强，不需要领域内样本<Cite n={1} />。退火还兼职「数据估价器」：给 50% 训练度的 8B 模型喂候选数据集做退火，看损失变化就能判断小数据集的价值，比跑完整 scaling law 实验便宜得多。最后对退火段的 checkpoint 做 Polyak 平均产出最终预训练模型。
+
+## 六、后训练：六轮「拒绝采样 + SFT + DPO」
+
+后训练的骨架是奖励模型 + 多轮迭代，每轮四步<Cite n={1} />：
+
+<figure className="my-6">
+  <img src="./fig-7-post-training.png" alt="Llama 3 后训练流程：人工标注提示与偏好数据训练奖励模型；用奖励模型对每条提示做拒绝采样（采 10–30 个响应选最优）构造 SFT 数据；SFT 后再用最新模型采样的偏好对做 DPO；如此迭代六轮" className="mx-auto h-auto max-w-full rounded-lg border border-zinc-200 shadow-sm dark:border-zinc-800" />
+  <figcaption className="mt-2 text-center text-xs text-zinc-500 dark:text-zinc-400">
+    <span className="figure-caption-main">Llama 3 后训练流程：人工标注提示与偏好数据训练奖励模型；用奖励模型对每条提示做拒绝采样（采 10–30 个响应选最优）构造 SFT 数据；SFT 后再用最新模型采样的偏好对做 DPO；如此迭代六轮</span>
+    <span className="figure-caption-source">图源：Llama Team, AI @ Meta, <em>The Llama 3 Herd of Models</em>（arXiv:2407.21783）Figure 7</span>
+  </figcaption>
+</figure>
+
+**奖励模型**沿 Llama 2 目标但去掉 margin 项；偏好标注带「编辑响应」第三档（edited > chosen > rejected），多响应拼一行训练提效率。**拒绝采样**：每条人工提示从最新策略采 10–30 个响应，RM 选优——PagedAttention 共享 prompt 的 KV cache 页，吞吐翻倍。**SFT** 用拒绝采样数据 + 针对能力的合成数据。**DPO** 学习率 10⁻⁵、β=0.1，两个稳定性补丁值得抄：mask 掉格式 token（防止 DPO 的对比性损失在公共 token 上自相矛盾导致尾重复/突然终止）、加 0.2 系数的 NLL 正则保住 chosen 序列的对数概率<Cite n={1} />。报告明确说试过 PPO，DPO 更省算力且 IFEval 更好——与 Qwen2 的结论一致。最后对每阶段做多实验的模型平均。
+
+**数据质量四件套**（针对模型生成的数据）<Cite n={1} />：主题分类（Llama 3 8B 微调成粗细两级分类器）、质量打分（RM 分位与 LLM 三点打分**取并集**——两者分歧大，并集召回最好）、难度打分（Instag 意图数 + LLM 难度）、语义去重（RoBERTa 聚类内按质量×难度排序，贪心保留低于相似度阈值的样本）。
+
+## 七、能力专项：代码、数学与工具
+
+报告第 4.3 节按能力拆解专项工作，三个最有代表性<Cite n={1} />：
+
+- **代码专家**：从预训练主分支岔出，在 1T token（>85% 代码）上继续预训练 + 16K 长上下文微调 + 代码定向后训练——用于收集高质量代码标注与拒绝采样。合成数据走「执行反馈」：生成问题 → 生成解法 → 跑测试 → 错误修正循环，约百万级对话；
+- **数学与推理**：对五大痛点（缺 prompt、缺真值 CoT、中间步错误、工具使用、训推不一致）逐一给方案——预训练数学语料转 QA、生成多解按答案过滤 + 自验证、outcome/stepwise RM 过滤错误推理链、MCTS + 步骤 RM 生成难题轨迹、代码-文本交错推理、从错误中学习；
+- **工具使用**：搜索引擎 / Python 解释器 / Wolfram Alpha 三个核心工具实现为 Python 对象，零样本工具只看函数签名与 docstring；多步工具数据用 ReAct 式合成 + 人工按消息级标注；工具对话框**不做拒绝采样**（实测无收益）。
+
+## 八、结果与定位
+
+405B-Instruct 的对比对象是 GPT-4 与 Nemotron-4 340B：MMLU 88.6（5-shot）级别与 GPT-4 持平，Claude 3.5 Sonnet 在多数项上领先——报告对此并不回避<Cite n={1} />。值得注意的定位差异：**多模态不在这代的主线里**——图像/视频/语音用「组合式 adapter」（独立编码器 + 交叉注意力 adapter，语言模型冻结）做实验性集成，识别任务有竞争力但未随 405B 发布<Cite n={1} />。这与 Qwen3-VL、InternVL 系列的原生多模态路线是两个世界：Llama 3 的全部筹码押在语言、代码与工具上。
+
+## 小结
+
+Llama 3 的方法论可以压缩成三句话：**先算后训**（IsoFLOPs 外推 + 下游性能预测，开训前就知道 405B 能到多少分）；**架构不动、工程拉满**（4D 并行 38–43% MFU、无激活检查点、24K GPU 无 DCQCN）；**后训练是流程不是算法**（六轮迭代 + 质量四件套 + 两个 DPO 补丁）。它证明 2024 年的 dense 路线仍有明确收益，也把「数据与流程」而非「架构创新」确立为开源阵营的主战场。
+
+## 参考资料
+
+<References>
+1. Llama Team, AI @ Meta (2024). *The Llama 3 Herd of Models*. arXiv: [2407.21783](https://arxiv.org/abs/2407.21783). —— 本文主报告：数据流水线、scaling law、4D 并行、长上下文渐进、多轮后训练与能力专项。
+2. Hugo Touvron et al. (2023). *Llama 2: Open Foundation and Fine-Tuned Chat Models*. arXiv: [2307.09288](https://arxiv.org/abs/2307.09288). —— 上一代基线与安全对齐方法。
+3. Rafael Rafailov et al. (2023). *Direct Preference Optimization*. NeurIPS 2023, arXiv: [2305.18290](https://arxiv.org/abs/2305.18290). —— 后训练采用的 DPO 算法。
+4. Qwen Team (2024). *Qwen2.5 Technical Report*. arXiv: [2412.15115](https://arxiv.org/abs/2412.15115). —— 同期数据优先路线的对照，站内精读见 [Qwen2.5](/papers/qwen2-5)。
+5. Jordan Hoffmann et al. (2022). *Training Compute-Optimal Large Language Models*. arXiv: [2203.15556](https://arxiv.org/abs/2203.15556). —— IsoFLOPs 与计算最优训练的奠基工作（Chinchilla）。
+</References>

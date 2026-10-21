@@ -1,0 +1,135 @@
+import paper from "./meta";
+import { paperMetadata } from "@/lib/papers";
+
+export const metadata = paperMetadata(paper);
+
+<PaperHeader slug={paper.slug} />
+
+# A Comprehensive Survey：知识蒸馏新全景
+
+先更正一个重要点：**A Comprehensive Survey on Knowledge Distillation** 是 Mansourian 等人在 2025 年发布的独立综述，arXiv:2503.12067；它不是 Gou 等人的 *Knowledge Distillation: A Survey*。<Cite n={[1,2]} />Gou 2021 更像经典 KD 的基础分类地图，而这篇 2025 综述覆盖范围更晚、更宽，把大型神经网络、Transformer、视觉语言模型、语言模型、diffusion models 和 3D data 等现代模型也纳入知识蒸馏讨论。<Cite n={1} />
+
+> 📌 前置：建议先读 [Hinton KD](/papers/distilling-knowledge) 和 [KD Survey · Gou 2021](/papers/kd-survey-gou-2021)。如果重点关心大语言模型，可以继续对照 [LLM KD Survey](/papers/llm-kd-survey-xu-2024)。
+
+## 一、这篇和 Gou 2021 的区别
+
+两篇都叫 KD survey，但定位不同：
+
+| 论文 | 关注范围 | 更适合回答的问题 |
+|---|---|---|
+| [Knowledge Distillation: A Survey](/papers/kd-survey-gou-2021) | 经典 KD 分类体系：knowledge types、training schemes、teacher-student architectures | KD 的基本坐标系是什么？ |
+| *A Comprehensive Survey on Knowledge Distillation* | 更广的现代 KD 全景：大型神经网络、Transformer、VLM、LLM、diffusion、3D data | KD 在现代基础模型和多模态场景里如何扩展？ |
+| [A Survey on Knowledge Distillation of Large Language Models](/papers/llm-kd-survey-xu-2024) | LLM 专项：算法、技能迁移、领域适配、数据增强、自我提升 | LLM 蒸馏和后训练怎么读？ |
+
+Mansourian 等人的核心动机，是让大型 neural、transformer、vision-language 和 language models 在受限部署条件下更实用。<Cite n={1} />这意味着它不只关心“学生模型更小”，还关心不同模型类型、不同模态和不同应用场景中，知识到底如何转移。
+
+<figure className="my-6">
+  <img src="./fig-modern-kd-map.svg" alt="现代知识蒸馏全景图：围绕 Modern KD 展示 sources、schemes、algorithms、modalities、applications 和 challenges 六个方向" className="mx-auto h-auto max-w-full rounded-lg border border-zinc-200 shadow-sm dark:border-zinc-800" />
+  <figcaption>
+    <span className="figure-caption-main">现代知识蒸馏全景图：KD 从经典模型压缩扩展到来源、方案、算法、模态、应用和挑战的系统设计问题</span>
+    <span className="figure-caption-source">图源：根据 Mansourian et al., <em>A Comprehensive Survey on Knowledge Distillation</em> 的综述结构整理绘制</span>
+  </figcaption>
+</figure>
+
+<figure className="my-6">
+  <img src="./fig-2-paper-organization.png" alt="Mansourian 等人综述的论文组织图：从 KD 基本框架出发，分支出蒸馏来源、方案、算法、模态专用蒸馏、应用与挑战等部分" className="mx-auto h-auto max-w-full rounded-lg border border-zinc-200 shadow-sm dark:border-zinc-800" />
+  <figcaption>
+    <span className="figure-caption-main">综述原文的论文组织图：从 KD 基本框架分支出蒸馏来源、方案、算法、模态专用蒸馏、应用与挑战等部分</span>
+    <span className="figure-caption-source">图源：Mansourian et al., <em>A Comprehensive Survey on Knowledge Distillation</em>（arXiv:2503.12067）Figure 2</span>
+  </figcaption>
+</figure>
+
+## 二、为什么现代 KD 不只是模型压缩
+
+经典 KD 经常从模型压缩切入：让小学生复现大老师或模型集成的行为。<Cite n={3} />但现代 KD 已经变成更广泛的能力迁移框架：它可以服务于部署压缩、领域适配、多模态对齐、生成模型加速、基础模型微调和数据增强。<Cite n={1} />
+
+| 现代 KD 场景 | 蒸馏目标 | 典型难点 |
+|---|---|---|
+| Transformer / LLM | 回答质量、推理链、指令遵循 | 长程生成、黑盒 teacher、token-level 信号 |
+| Vision-Language Models | 跨模态对齐、视觉 grounding、OCR | 视觉 token 成本、图文关系迁移 |
+| Diffusion Models | 生成过程、采样步骤、去噪轨迹 | 多步生成过程压缩 |
+| 3D Data | 几何结构、点云 / 网格关系 | 空间关系和表示对齐 |
+| 受限部署 | 低延迟、低显存、低能耗 | 能力保持与成本压缩的权衡 |
+
+这张表说明：KD 的共同形式仍然是 teacher-student training，但 teacher signal 的形态已经从 soft logits 扩展到生成过程、跨模态表示、几何关系和领域行为。<Cite n={1} />
+
+## 三、蒸馏来源、方案和算法
+
+论文摘要指出，它系统覆盖 distillation sources、schemes、algorithms、modality-specific distillation、applications、method comparisons、open challenges 和 future directions。<Cite n={1} />这几个词可以拆成一套读法：
+
+- **distillation sources**：老师知识来自输出分布、中间特征、注意力、关系结构、生成轨迹还是多模态表示；
+- **schemes**：老师是固定的、在线共同训练的，还是来自模型自身；
+- **algorithms**：用 KL / CE、feature matching、attention transfer、relation loss、contrastive loss，还是专门为生成模型设计的过程蒸馏；
+- **modality-specific distillation**：针对视觉、语言、视觉语言、3D 或 diffusion 的结构差异设计蒸馏方法；
+- **applications**：压缩、加速、迁移、鲁棒性、领域部署、边缘设备等。
+
+这和 Gou 2021 的 taxonomy 一脉相承，但 Mansourian 2025 的新意在于把更多现代模型族放进同一个综述框架中。<Cite n={[1,2]} />
+
+<figure className="my-6">
+  <img src="./fig-3-distillation-sources.png" alt="蒸馏来源示意图：老师模型可以提供 logits、中间特征和相似度等不同形式的蒸馏信号" className="mx-auto h-auto max-w-full rounded-lg border border-zinc-200 shadow-sm dark:border-zinc-800" />
+  <figcaption>
+    <span className="figure-caption-main">蒸馏来源示意图：老师模型可以提供 logits、中间特征和相似度等不同形式的蒸馏信号</span>
+    <span className="figure-caption-source">图源：Mansourian et al., <em>A Comprehensive Survey on Knowledge Distillation</em>（arXiv:2503.12067）Figure 3</span>
+  </figcaption>
+</figure>
+
+## 四、多模态和基础模型让 KD 变复杂
+
+在 CNN 分类器时代，KD 常常可以简化成“老师输出概率，学生拟合概率”。但现代基础模型往往是跨模态、长上下文、生成式或多阶段系统：
+
+- VLM 里，老师知识可能是图文对齐、视觉 grounding、OCR 结构或跨模态 attention；
+- LLM 里，老师知识可能是指令遵循、推理链、工具调用和偏好边界；
+- diffusion 里，老师知识可能体现在多步去噪轨迹和采样路径；
+- 3D 数据里，老师知识可能是几何关系和空间结构。
+
+因此，“蒸什么”必须和模型结构绑定。<Cite n={1} />同一个 response-based recipe 很难同时解决文本生成、图像生成、点云理解和图文对齐问题。
+
+## 五、和 LLM KD Survey 的关系
+
+[A Survey on Knowledge Distillation of Large Language Models](/papers/llm-kd-survey-xu-2024) 更专注 LLM：算法、技能迁移、垂直化、数据增强、模型压缩、自我提升和未来方向。<Cite n={4} />Mansourian 2025 则把 LLM 放在更大的现代 KD 全景里，与 VLM、diffusion、3D data、Transformer 等方向并列。<Cite n={1} />
+
+换句话说：
+
+- 如果你想理解 KD 经典坐标系，读 [Gou 2021](/papers/kd-survey-gou-2021)；
+- 如果你想理解 KD 在现代模型族中的整体扩展，读 Mansourian 2025；
+- 如果你只关心大语言模型蒸馏，读 [LLM KD Survey](/papers/llm-kd-survey-xu-2024)；
+- 如果你想看具体算法落地，继续读 [MiniLLM](/papers/minillm-gu)、[OPD](/papers/opd-agarwal)、[TML OPD](/papers/tml-opd)、[Rethinking OPD](/papers/rethinking-opd)。
+
+## 六、方法比较的工程意义
+
+综合性 survey 的价值不只是列举论文，还在于比较方法。<Cite n={1} />工程上选择 KD 方法时，至少要同时看五件事：
+
+| 维度 | 为什么重要 |
+|---|---|
+| 老师可访问性 | 能否拿到 logits、hidden states、attention，还是只有文本输出？ |
+| 学生容量 | 学生是否能表达老师知识？是否需要 assistant teacher？ |
+| 模态结构 | 图像、文本、3D、diffusion 的信号结构完全不同 |
+| 部署目标 | 追求延迟、显存、能耗、私有化，还是领域能力？ |
+| 评估口径 | 分类准确率、生成质量、推理能力、安全性和鲁棒性不能混为一谈 |
+
+这也是为什么现代 KD 很难有“一招通吃”的最佳方法。最好的方法往往是给定 teacher 接口、学生容量、数据来源和部署约束后的折中。
+
+## 七、开放挑战：从单模型压缩到系统级权衡
+
+论文把 open challenges 和 future directions 作为综述的重要部分。<Cite n={1} />现代 KD 的挑战已经明显系统化：老师选择、师生容量差距、跨模态对齐、黑盒 API、数据质量、鲁棒性、安全性、评估口径、训练成本和部署效率都会影响最终效果。
+
+对 LLM 和多模态模型来说，这些挑战更明显：老师可能只通过 API 暴露文本；学生可能只学到风格而没有学到能力；合成数据可能放大幻觉；生成任务的真实质量也很难用单一 benchmark 评估。<Cite n={1} />
+
+因此，读这篇 survey 时可以把 KD 看成一个系统设计问题，而不是单个 loss：你需要决定老师是谁、学生多大、知识从哪里来、在哪些数据上教、用什么目标函数，以及最终部署环境真正需要什么。
+
+## 小结
+
+*A Comprehensive Survey on Knowledge Distillation* 的价值，是把 KD 放到现代深度学习生态里重新展开：从大型神经网络到 Transformer，从 VLM 到 LLM，从 diffusion 到 3D data，从模型压缩到领域部署。<Cite n={1} />它和 Gou 2021 的关系不是替代，而是更新和扩展；和 LLM KD Survey 的关系也不是重复，而是更宽的总览。
+
+如果说 Hinton KD 是“暗知识”的起点，Gou 2021 是“经典 KD 地图”，那么 Mansourian 2025 更像“现代 KD 全景图”：它提醒我们，今天的蒸馏已经不只是把模型变小，而是在各种现代模型、模态和部署约束之间迁移能力。
+
+## 参考资料
+
+<References>
+1. Amir M. Mansourian et al. (2025). *A Comprehensive Survey on Knowledge Distillation*. arXiv: [2503.12067](https://arxiv.org/abs/2503.12067). —— 本文主论文，支撑现代 KD 全景、覆盖范围、应用、挑战和未来方向。
+2. Jianping Gou, Baosheng Yu, Stephen J. Maybank, Dacheng Tao (2021). *Knowledge Distillation: A Survey*. International Journal of Computer Vision; arXiv: [2006.05525](https://arxiv.org/abs/2006.05525). —— 经典 KD 分类体系对照来源。
+3. Geoffrey Hinton, Oriol Vinyals, Jeff Dean (2015). *Distilling the Knowledge in a Neural Network*. arXiv: [1503.02531](https://arxiv.org/abs/1503.02531). —— 经典 soft targets、temperature 和 dark knowledge 来源。
+4. Xiaohan Xu, Ming Li, Chongyang Tao, Tao Shen, Reynold Cheng, Jinyang Li, Can Xu, Dacheng Tao, Tianyi Zhou (2024). *A Survey on Knowledge Distillation of Large Language Models*. arXiv: [2402.13116](https://arxiv.org/abs/2402.13116). —— LLM 专项 KD 综述对照来源。
+5. Yuxian Gu, Li Dong, Furu Wei, Minlie Huang (2024). *MiniLLM: On-Policy Distillation of Large Language Models*. ICLR 2024, arXiv: [2306.08543](https://arxiv.org/abs/2306.08543). —— LLM on-policy distillation 代表工作。
+6. Rishabh Agarwal et al. (2024). *On-policy Distillation of Language Models: Learning from Self-Generated Mistakes*. ICLR 2024, arXiv: [2306.13649](https://arxiv.org/abs/2306.13649). —— OPD / GKD 代表工作。
+</References>

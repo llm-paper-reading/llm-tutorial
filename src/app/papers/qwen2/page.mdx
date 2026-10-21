@@ -1,0 +1,104 @@
+import paper from "./meta";
+import { paperMetadata } from "@/lib/papers";
+
+export const metadata = paperMetadata(paper);
+
+<PaperHeader slug={paper.slug} />
+
+# Qwen2：GQA、细粒度 MoE 与对齐范式切换
+
+2024 年 6 月，Qwen 团队发布 Qwen2 系列：0.5B / 1.5B / 7B / 72B 四档 dense 加一款 57B-A14B MoE 模型，全部在超过 7T token 的新数据集上预训练<Cite n={1} />。旗舰 Qwen2-72B base 在 MMLU 拿到 84.2、GSM8K 89.5、HumanEval 64.6；Instruct 版 MT-Bench 9.1、Arena-Hard 48.1<Cite n={1} />。但这份报告真正值得精读的不是分数，而是三个架构决策与一次范式切换：**GQA 替换 MHA、细粒度 MoE 的工程细节、DCA+YARN 长上下文，以及后训练从 PPO 全面转向 DPO**。
+
+> 📌 前置：建议先读 [Qwen](/papers/qwen1) 了解 tokenizer 与对齐骨架的来历；MoE 部分可与 [DeepSeek-V3](/papers/deepseek-v3) 的路由设计对照，DPO 部分可接 [DPO 原论文](/papers/dpo-rafailov)。
+
+## 一、动机：换掉 Qwen1 的三处工程债
+
+Qwen1 留下的三个结构性问题，Qwen2 一一回应<Cite n={1} />：
+
+1. **KV cache 太贵**：Qwen1 全系 MHA，长上下文推理内存随头数线性增长；
+2. **长上下文是「推理期补丁」**：NTK 插值和窗口注意力把 2K 训练长度硬撑到 8K+，但终究不是原生能力；
+3. **PPO 太重**：四模型并行的对齐流水线在 0.5B–72B 全家族铺开，算力和工程成本都不划算。
+
+Qwen2 的答案分别是 GQA、预训练末期的长上下文阶段、以及 SFT+DPO。同时它把 Qwen1 的「家族化」思路推到新高度：小模型（0.5B/1.5B）面向手机、耳机、眼镜等端侧设备，大模型面向各级 GPU——报告明确写了「0.5B 和 1.5B 为便携设备设计」<Cite n={1} />。
+
+## 二、架构：GQA 与细节继承
+
+Qwen2 dense 模型相对 Qwen1 的改动清单其实很短<Cite n={1} />：
+
+| 组件 | Qwen1 | Qwen2 | 收益 |
+|---|---|---|---|
+| 注意力 | MHA（各尺寸 Q=KV 头数） | **GQA**（如 72B：64 Q 头 / 8 KV 头） | KV cache 缩为 1/8 |
+| 位置编码 | RoPE（base 10000） | RoPE + **DCA** + **YARN** | 128K 外推 |
+| 其余 | SwiGLU、RMSNorm、pre-norm、QKV bias | 同左 | 稳定不动 |
+
+tokenizer 完全沿用 Qwen1：151,643 常规 token + 3 控制 token，BBPE。报告特别指出 Qwen2 各尺寸的每 token KV 开销显著低于 Qwen1.5 同级，在长上下文推理里直接转化为吞吐优势<Cite n={1} />。
+
+各尺寸配置（MoE 行的「激活专家数」不含共享专家）：
+
+| 配置 | 0.5B | 1.5B | 7B | 72B | 57B-A14B |
+|---|---|---|---|---|---|
+| 隐藏维 | 896 | 1,536 | 3,584 | 8,192 | 3,584 |
+| 层数 | 24 | 28 | 28 | 80 | 28 |
+| Q / KV 头 | 14/2 | 12/2 | 28/4 | 64/8 | 28/4 |
+| 路由/激活/共享专家 | — | — | — | — | 64/8/8 |
+| 训练 token | 12T | 7T | 7T | 7T | +4.5T |
+
+注意 0.5B 用了 12T token——这是下文数据实验的伏笔。
+
+## 三、MoE：细粒度专家的三个工程决策
+
+Qwen2-57B-A14B 是这个系列第一款公开的 MoE 模型，报告给了三个值得细读的设计决策<Cite n={1} />。
+
+**决策一：细粒度专家。** 从 dense 到 MoE 的常规做法是「专家数少、每个专家大」（Mixtral 8x7B：8 个专家激活 2 个，每个专家与 Mistral-7B 的 FFN 同构）。Qwen2 反其道：**64 个小专家（中间维 2,560）激活 8 个**。在总参数与激活参数相同的约束下，细粒度专家提供的组合数远多于粗粒度——$C_{64}^{8}$ 对 $C_8^2$——路由的表达空间大得多。
+
+**决策二：共享专家 + 路由专家。** 每层除 64 个路由专家外还有 8 个（按报告口径为共享专家配置）始终激活的共享专家，承接跨任务的公共知识，路由专家只学特异性分工<Cite n={1} />。
+
+**决策三：upcycling 初始化带随机重置。** MoE 从 Qwen2-7B 上采样（upcycling）而来，但不是简单复制：给定专家中间维 $h_E$、专家数 $n$、原 FFN 中间维 $h_{FFN}$，FFN 被复制 $\lceil n \times h_E / h_{FFN} \rceil$ 次；复制时**沿中间维打乱参数**保证每个细粒度专家的差异性；最后**每个专家随机重置 50% 参数**，给训练期探索注入随机性<Cite n={1} />。这套初始化把「冷启动的专家同质化」问题直接在设计层面解决。
+
+这三条决策的生命周期远超 Qwen2 本身：Qwen3-30B-A3B 与 235B-A22B 的「细粒度 + 共享专家」配置、乃至 2025 年主流开源 MoE 的粒度选择，都能追溯到这里。
+
+## 四、预训练：7T 与 12T 的取舍
+
+数据侧的改进集中在质量与配比：用 Qwen 模型本身做质量过滤与数据合成、大幅扩充代码/数学/多语言数据（约 30 种语言）、用缩小规模实验优化数据混合比例，从 Qwen1.5 的 3T 扩到 **7T**<Cite n={1} />。
+
+报告里最有信息量的一段是 12T 实验的失败：放宽质量阈值得到 12T 数据集，但 12T 模型相对 7T 没有明显提升；团队怀疑继续堆量对预训练收益有限，最终只在 0.5B 上用了 12T（小模型容量小，多吃数据有边际收益），大模型全部用 7T 高质量集<Cite n={1} />。这是「数据规模边际递减」在工业报告里少见的坦率记录——下一代的 Qwen2.5 把质量过滤换成 Qwen2-Instruct 模型后，数据才又翻到 18T。
+
+长上下文训练正式成为预训练末期阶段：上下文从 4,096 拉到 32,768，配高质量长文档数据，RoPE 基频从 10,000 提到 1,000,000（ABF）<Cite n={1} />。推理期再叠 YARN 与 DCA，把序列处理能力推到 131,072 token。
+
+## 五、后训练：从 PPO 到 DPO 的范式切换
+
+Qwen2 的后训练是理解这个系列演进的关键节点。报告明确写道：与大量依赖人工监督的传统方法不同，Qwen2 追求**用最少人工标注做可规模化的对齐**<Cite n={1} />。数据侧两条腿：
+
+- **协作标注**：InsTag 开集标注器提取指令本体 → 人工精修 → 按标签多样性/语义丰富度/复杂度选指令 → self-evolution 提升复杂度 → 多策略多尺寸模型生成候选 → 人工排序出 demonstration 与偏好数据；
+- **自动合成**：数学用拒绝采样（保留答对的推理路径，对错路径构成偏好对）；代码用执行反馈（编译跑测试）；指令遵循用「LLM 生成 Python 验证函数」核对约束；文学创作用数据重purposing（高质量公版作品反向配指令）；安全用宪法式反馈。
+
+对齐算法上，Qwen1 的四模型 PPO 被替换为**两阶段 DPO**<Cite n={1} />：离线阶段用预编译偏好集做 DPO；在线阶段从当前策略采样多个响应，奖励模型选最好与最差构成偏好对，逐 episode 做在线 DPO，并用 Online Merging Optimizer 缓解对齐税。SFT 阶段 50 万条样本、两个 epoch、序列长 32,768。
+
+这个切换的行业背景是 2023–2024 年 DPO 的迅速普及（[DPO 原论文](/papers/dpo-rafailov)），但 Qwen2 的贡献在于把它工程化到全家族尺寸，并保留了「在线采样 + 奖励模型造偏好对」的在线成分——这个骨架在 Qwen2.5 换成 GRPO 后依然清晰可辨。
+
+## 六、结果：128K 大海捞针
+
+指令模型的长上下文验证用的是大海捞针（Needle in a Haystack）测试。Qwen2-72B-Instruct 在 128K 窗口内全深度保持高准确率：<Cite n={1} />
+
+<figure className="my-6">
+  <img src="./fig-1-haystack-128k.png" alt="Qwen2-72B-Instruct 在 128K token 上下文的大海捞针测试：横轴为上下文长度（至 131,072 token），纵轴为线索插入的文档深度，颜色表示检索准确率，整个 128K 区域基本全绿" className="mx-auto h-auto max-w-full rounded-lg border border-zinc-200 shadow-sm dark:border-zinc-800" />
+  <figcaption className="mt-2 text-center text-xs text-zinc-500 dark:text-zinc-400">
+    <span className="figure-caption-main">Qwen2-72B-Instruct 在 128K token 上下文的大海捞针测试：横轴为上下文长度（至 131,072 token），纵轴为线索插入的文档深度，颜色表示检索准确率，整个 128K 区域基本全绿</span>
+    <span className="figure-caption-source">图源：Yang et al., <em>Qwen2 Technical Report</em>（arXiv:2407.10671）Figure 1</span>
+  </figcaption>
+</figure>
+
+值得注意的是评测口径的局限：大海捞针验证的是「存得住、找得到」，不等于长文档推理能力。真正的长上下文压力测试（RULER、LV-Eval、LongBench-Chat）要到 Qwen2.5 报告才系统展开——那里的结论（YARN+DCA 不改变短文本行为、1M 需要 progressive 训练）反过来印证了 Qwen2 这套机制的有效边界。
+
+## 小结
+
+Qwen2 是整个系列的技术分水岭：GQA 与细粒度 MoE 定义了后续所有版本的架构语言，DCA+YARN 把长上下文从推理技巧变成训练流程的一部分，DPO 替换 PPO 则把对齐成本砍到家族全尺寸可负担。它与 Qwen2.5 的关系几乎是「架构 / 数据」分工：Qwen2.5 报告通篇沿用 Qwen2 架构，只把数据与后训练再推一档。读 Qwen2，读的是这条路线的骨架。
+
+## 参考资料
+
+<References>
+1. An Yang et al. (2024). *Qwen2 Technical Report*. arXiv: [2407.10671](https://arxiv.org/abs/2407.10671). —— 本文主报告：GQA、细粒度 MoE 与 upcycling、7T/12T 数据实验、DCA+YARN 长上下文、SFT+DPO 后训练与评测。
+2. Jinze Bai et al. (2023). *Qwen Technical Report*. arXiv: [2309.16609](https://arxiv.org/abs/2309.16609). —— 上一代基线：tokenizer、PPO 对齐与推理期长上下文技巧。
+3. Rafael Rafailov et al. (2023). *Direct Preference Optimization: Your Language Model is Secretly a Reward Model*. NeurIPS 2023, arXiv: [2305.18290](https://arxiv.org/abs/2305.18290). —— Qwen2 后训练切换到的 DPO 算法原文。
+4. Qwen Team (2024). *Qwen1.5-MoE-A2.7B*（模型卡与博客）. —— Qwen2 MoE 架构（细粒度专家 + 共享专家）的直接前身。
+</References>

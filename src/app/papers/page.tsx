@@ -11,7 +11,25 @@ import {
   papers,
   type Paper,
 } from "@/lib/papers";
-import { getTagHint, getTagIcon } from "@/lib/paper-tags";
+import PaperTagIcon from "@/components/PaperTagIcon";
+import { getTagHint } from "@/lib/paper-tags";
+
+const SERIES_TAGS = [
+  "DeepSeek 系列",
+  "GLM 系列",
+  "MiniMax 系列",
+  "Qwen 系列",
+  "Llama 系列",
+  "GPT 系列",
+];
+
+function PaperIcon({ p, className }: { p: Paper; className: string }) {
+  const seriesTag = SERIES_TAGS.find((tag) => p.tags.includes(tag));
+  if (seriesTag) {
+    return <PaperTagIcon tag={seriesTag} className={className} />;
+  }
+  return <span className={className}>{p.icon}</span>;
+}
 
 function TagChips({ p }: { p: Paper }) {
   return (
@@ -36,7 +54,7 @@ function PaperCard({ p }: { p: Paper }) {
       className="group flex h-full flex-col rounded-xl border border-zinc-200 p-5 transition hover:border-emerald-400 hover:shadow-md dark:border-zinc-800 dark:hover:border-emerald-500"
     >
       <div className="flex items-center gap-2">
-        <span className="text-2xl">{p.icon}</span>
+        <PaperIcon p={p} className="h-6 w-6 shrink-0 text-2xl" />
         <span className="font-medium text-zinc-900 group-hover:text-emerald-700 dark:text-zinc-100 dark:group-hover:text-emerald-400">
           {p.title}
         </span>
@@ -59,7 +77,7 @@ function PaperRow({ p }: { p: Paper }) {
       href={`/papers/${p.slug}`}
       className="group flex items-center gap-3 rounded-lg border border-zinc-200 px-4 py-3 transition hover:border-emerald-400 hover:shadow-sm dark:border-zinc-800 dark:hover:border-emerald-500"
     >
-      <span className="shrink-0 text-xl">{p.icon}</span>
+      <PaperIcon p={p} className="h-5 w-5 shrink-0 text-xl" />
       <div className="min-w-0 flex-1">
         <div className="flex items-baseline gap-2">
           <span className="font-medium text-zinc-900 group-hover:text-emerald-700 dark:text-zinc-100 dark:group-hover:text-emerald-400">
@@ -97,8 +115,8 @@ function PapersHomeInner() {
   const tags = getAllTags();
   const valid = selected !== undefined && tags.includes(selected);
   const first = getFirstPaper();
-  // 列表视图默认按发表时间倒序;卡片视图保持阅读顺序。
-  const base = view === "list" ? getPapersByDate() : papers;
+  // 默认按发表时间正序展示，避免依赖注册表数组顺序。
+  const base = getPapersByDate();
   const shown = valid ? base.filter((p) => p.tags.includes(selected)) : base;
   const qs = (patch: { tag?: string | null; view?: string }) => {
     const params = new URLSearchParams();
@@ -162,13 +180,17 @@ function PapersHomeInner() {
               href={qs({ tag: t })}
               title={getTagHint(t)}
               aria-current={active ? "page" : undefined}
-              className={`rounded-full px-3 py-1.5 text-sm transition ${
+              className={`inline-flex items-center rounded-full px-3 py-1.5 text-sm transition ${
                 active
                   ? "bg-emerald-600 font-medium !text-white"
                   : "bg-zinc-100 text-zinc-600 hover:bg-zinc-200 dark:bg-zinc-800 dark:text-zinc-300 dark:hover:bg-zinc-700"
               }`}
             >
-              {getTagIcon(t)} {t} {n}
+              <span className="inline-flex items-center gap-1">
+                <PaperTagIcon tag={t} />
+                <span>{t}</span>
+                <span>{n}</span>
+              </span>
             </Link>
           );
         })}
@@ -180,7 +202,7 @@ function PapersHomeInner() {
           <h2 className="flex items-center gap-2 text-xl font-semibold">
             {valid ? (
               <>
-                <span>{getTagIcon(selected)}</span>
+                <PaperTagIcon tag={selected} />
                 <span>{selected}</span>
                 <span className="text-sm font-normal text-zinc-400">
                   · {shown.length} 篇
@@ -191,7 +213,7 @@ function PapersHomeInner() {
                 <span>📖</span>
                 <span>全部论文</span>
                 <span className="text-sm font-normal text-zinc-400">
-                  · {view === "list" ? "按发表时间" : "按阅读顺序"}
+                  · 按发表时间
                 </span>
               </>
             )}

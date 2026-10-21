@@ -1,4 +1,5 @@
 import Link from "next/link";
+import { SITE_LOGO_MARK_SRC } from "@/lib/site";
 import {
   getCategoriesNested,
   getFirstTutorial,
@@ -35,7 +36,12 @@ export default function Home() {
   return (
     <main className="mx-auto w-full max-w-4xl px-5 py-16">
       <div className="text-center">
-        <div className="text-5xl">🤖</div>
+        <img
+          src={SITE_LOGO_MARK_SRC}
+          alt=""
+          aria-hidden="true"
+          className="mx-auto h-14 w-14 rounded-xl"
+        />
         <h1 className="mt-4 text-4xl font-bold tracking-tight">
           大模型与机器学习教程
         </h1>

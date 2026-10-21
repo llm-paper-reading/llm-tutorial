@@ -1,0 +1,110 @@
+import paper from "./meta";
+import { paperMetadata } from "@/lib/papers";
+
+export const metadata = paperMetadata(paper);
+
+<PaperHeader slug={paper.slug} />
+
+# Qwen2.5-Coder：代码模型的配比与仓库级预训练
+
+2024 年 9 月，Qwen 团队发布 Qwen2.5-Coder 系列：0.5B / 1.5B / 3B / 7B / 14B / 32B 六档，全部从 Qwen2.5 基座继续预训练而来，代码语料超过 5.5T token<Cite n={1} />。旗舰 Qwen2.5-Coder-32B-Instruct 成为当时的开源代码模型 SOTA，报告称其代码能力比肩 GPT-4o（2024-08 版本）<Cite n={1} />。这份报告对非代码方向的读者也有一读价值：它是「领域模型的数据配比怎么定」的最完整公开案例——从 70:20:10 的反直觉配比、到仓库级 FIM 的结构编码、再到沙箱执行反馈保证指令质量，每个环节都有消融数字。
+
+> 📌 前置：Qwen2.5-Coder 直接构建在 [Qwen2.5](/papers/qwen2-5) 基座上，建议先读其数据与后训练部分；FIM（Fill-in-the-Middle）可对照 StarCoder2 系列工作理解；DPO 部分接 [DPO 原论文](/papers/dpo-rafailov)。
+
+## 一、动机：纯代码模型的三个代价
+
+报告对前代代码模型（StarCoder、CodeLlama、DeepSeek-Coder、CodeQwen1.5）的复盘指向三个结构性问题<Cite n={1} />：
+
+1. **通用能力塌陷**：纯代码语料训练的模型，对话、数学、常识都明显退化——当 copilot 需要理解需求描述时这是硬伤；
+2. **只有文件级视野**：真实开发是仓库级的——补全要跨文件找定义、改一处要看依赖，单文件补全模型接不住；
+3. **指令数据靠人工或纯 LLM 判断**：代码对错本可以执行验证，却长期依赖人工审核或 LLM 打分，规模与可靠性都受限。
+
+Qwen2.5-Coder 的三段式流水线正好逐一回应：
+
+<figure className="my-6">
+  <img src="./fig-2-pipeline.png" alt="Qwen2.5-Coder 三阶段训练流水线：Qwen2.5 基座先做文件级预训练（5.2T token，8K 上下文），再进入仓库级预训练（300B token，上下文扩到 32K），最后经 SFT 与 DPO 对齐得到 Qwen2.5-Code-Instruct" className="mx-auto h-auto max-w-full rounded-lg border border-zinc-200 shadow-sm dark:border-zinc-800" />
+  <figcaption className="mt-2 text-center text-xs text-zinc-500 dark:text-zinc-400">
+    <span className="figure-caption-main">Qwen2.5-Coder 三阶段训练流水线：Qwen2.5 基座先做文件级预训练（5.2T token，8K 上下文），再进入仓库级预训练（300B token，上下文扩到 32K），最后经 SFT 与 DPO 对齐得到 Qwen2.5-Code-Instruct</span>
+    <span className="figure-caption-source">图源：Hui et al., <em>Qwen2.5-Coder Technical Report</em>（arXiv:2409.12186）Figure 2</span>
+  </figcaption>
+</figure>
+
+## 二、预训练数据：五类语料与四级过滤
+
+Qwen2.5-Coder-Data 由五部分组成<Cite n={1} />：
+
+| 语料 | 来源与做法 |
+|---|---|
+| 源代码 | GitHub（2024 年 2 月前）92 种语言 + PR / Commit / Jupyter / Kaggle，规则过滤；Pull Request 和 Commit 让模型见到「代码如何被修改」 |
+| Text-Code 交错 | Common Crawl 的文档、教程、博客；**粗到细四级层级过滤**（fastText 级小模型构建，天然给数据分级打分） |
+| 合成数据 | 用前代 CodeQwen1.5 生成，**配执行器验证**，只有可执行代码保留 |
+| 数学 | 直接并入 Qwen2.5-Math 预训练语料 |
+| 文本 | Qwen2.5 高质量通用语料，**剥离其中代码段**避免与源代码语料重叠 |
+
+Text-Code 交错数据的四级过滤是报告里最扎实的一段实验：每级过滤后重训 1.5B 模型验证，HumanEval+MBPP 平均分从 41.6% 一路升到 46.8%<Cite n={1} />。报告还有一个反直觉的工程观察：**用大模型替换 fastText 做过滤没有明显收益**——小模型聚焦表面特征，反而避免不必要的语义复杂性。
+
+## 三、配比实验：70% 代码为什么赢了 100%
+
+这是整份报告最有传播力的实验<Cite n={1} />。在 Qwen2.5-Coder-7B 上对比三种 Code:Text:Math 配比：
+
+| 配比（Code:Text:Math） | HumanEval | GSM8K | MMLU | C-Eval | 平均 |
+|---|---:|---:|---:|---:|---:|
+| 100 : 0 : 0 | 49.8 | 23.8 | 42.8 | 35.9 | 31.3 |
+| 85 : 15 : 5 | 43.3 | 52.5 | 56.8 | 57.1 | 48.9 |
+| **70 : 20 : 10** | **48.3** | **64.5** | **62.9** | **64.0** | **55.0** |
+
+70:20:10 不仅通用与数学能力大幅领先，**连代码能力都与纯代码打平甚至更强**（HumanEval 48.3 对 49.8 基本持平，BigCodeBench 38.3 对 40.3）<Cite n={1} />。报告的解释是：数学与文本数据对代码能力有正向贡献，但要达到特定浓度阈值才显现——纯代码反而把这部分「暗营养」切掉了。最终 5.2T 训练集按 70:20:10 配比构成。
+
+这个结论与 [Qwen1](/papers/qwen1) 时代 Code-Qwen 的观察（「只在代码上预训练会损失通用助手能力」）首尾呼应：从 Qwen1 的「混合基座 + 代码续训」到 Qwen2.5-Coder 的「配比量化」，这条线一以贯之。
+
+## 四、两级 FIM：从文件级到仓库级
+
+**文件级预训练**（第一阶段）：序列长 8,192，覆盖 5.2T token，训练目标是 next-token prediction + FIM。FIM 格式用三个特殊 token 标记挖空边界<Cite n={1} />：
+
+```
+<|fim_prefix|>{code_pre}<|fim_suffix|>{code_suf}<|fim_middle|>{code_mid}
+```
+
+**仓库级预训练**（第二阶段）：上下文从 8,192 扩到 32,768，RoPE 基频 10,000 → 1,000,000，配约 300B 高质量长上下文代码数据；推理期叠 YARN 外推到 131,072 token<Cite n={1} />。关键改动是 FIM 格式升级为仓库级：
+
+```
+<|repo_name|>{repo_name}
+<|file_sep|>{file_path1}
+{file_content1}
+<|file_sep|>{file_path2}
+{file_content2}
+<|file_sep|>{file_path3}
+<|fim_prefix|>{code_pre}<|fim_suffix|>{code_suf}<|fim_middle|>{code_fim}
+```
+
+`<|repo_name|>` 与 `<|file_sep|>` 把「哪个仓库、哪个文件」显式编码进 token 流，模型在前几个文件的完整内容里学会找定义与依赖，再在后面的文件里做挖空补全。这不是简单的「窗口更长」，而是**把文件系统的结构变成训练格式的语法**——与 Qwen2.5-VL 把文档版式编码成 HTML 的思路同构。
+
+## 五、指令数据：合成、九维打分与多语言沙箱
+
+指令数据的建设链条值得逐环看<Cite n={1} />：
+
+1. **语言识别**：微调 CodeBERT 做近 100 种语言的编程语言分类，保留主流语言、随机丢弃长尾；
+2. **GitHub 反向合成**：LLM 从 1,024 token 内的代码片段生成指令，代码 LLM 生成响应，LLM 打分过滤低质量对；
+3. **多语言多 agent 协作合成**：每种编程语言一个专用 agent，带自适应记忆（避免生成重复样本）与跨语言知识蒸馏，协作产出多语言指令——覆盖从主流到冷门的语言谱系；
+4. **checklist 九维打分**：问答一致性、相关性、难度、代码存在性、正确性、命名缩进规范、清晰度、注释、教育价值，加权求总分；
+5. **多语言沙箱验证**：AST 静态检查筛语法错误；自包含代码（算法题类）自动生成单元测试并在隔离环境执行，跑通才保留。
+
+训练策略上还有两个细节：**粗到细微调**（先千万级低质量多样本，再百万级高质量样本 + 拒绝采样）与**混合调优**（用 tree-sitter 解析 AST 抽取逻辑块做 FIM 格式指令，混入标准 SFT 保持长上下文能力）<Cite n={1} />。DPO 阶段的偏好信号同样来自沙箱执行反馈（自包含代码）与 LLM-as-judge（复杂代码）。
+
+## 六、结果怎么读
+
+32B-Instruct 在 HumanEval 86.9、MBPP 83.5、MultiPL-E 多语言全面领先同尺寸竞品，报告据此称其为开源 SOTA 并比肩 GPT-4o<Cite n={1} />。读这些数字要记住口径：GPT-4o 取 2024-08-06 版本，对比基线（DeepSeek-Coder-V2、CodeStral-22B）都是 2024 年的模型。更有长期价值的是报告第 8 节「Scaling is All You Need」的观察：同代内代码推理能力随尺寸稳定上升（Figure 10），尺寸是数据配方确定后最可预测的杠杆<Cite n={1} />——这个判断直接铺垫了 2025 年 Qwen3-Coder 系列的路线。
+
+## 小结
+
+Qwen2.5-Coder 的方法论贡献可以压缩成三句话：**配比上，代码模型不吃纯粮**（70:20:10 优于 100%）；**格式上，把仓库结构编码进 token 流**（repo_name / file_sep + 仓库级 FIM）；**质量上，让执行器当最终裁判**（沙箱 + 单元测试 + DPO 偏好对）。这三条都不是代码领域独占的——任何「有结构、可验证」的领域（数学证明、SQL、GUI 操作）都在复用同样的配方。
+
+## 参考资料
+
+<References>
+1. Binyuan Hui et al. (2024). *Qwen2.5-Coder Technical Report*. arXiv: [2409.12186](https://arxiv.org/abs/2409.12186). —— 本文主报告：五类语料与四级过滤、配比实验、文件级/仓库级 FIM、指令数据流水线与评测。
+2. Qwen Team (2024). *Qwen2.5 Technical Report*. arXiv: [2412.15115](https://arxiv.org/abs/2412.15115). —— 基座模型与其数据/后训练工程，本文的起点。
+3. Anton Lozhkov et al. (2024). *StarCoder 2 and The Stack v2*. arXiv: [2402.19173](https://arxiv.org/abs/2402.19173). —— 仓库级数据与 FIM 的先行工作，本文直接对照的基线之一。
+4. Daya Guo et al. (2024). *DeepSeek-Coder: When the Large Language Model Meets Programming*. arXiv: [2401.14196](https://arxiv.org/abs/2401.14196). —— 代码模型规则过滤与仓库级预训练的另一条路线，评测基线。
+5. Rafael Rafailov et al. (2023). *Direct Preference Optimization*. NeurIPS 2023, arXiv: [2305.18290](https://arxiv.org/abs/2305.18290). —— 指令模型对齐采用的 DPO 算法。
+</References>

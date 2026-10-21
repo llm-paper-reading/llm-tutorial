@@ -1,9 +1,16 @@
 import attentionTransformerFAQ from "@/app/papers/attention-transformer/faq";
+import llama3FAQ from "@/app/papers/llama3/faq";
+import gpt3FAQ from "@/app/papers/gpt3/faq";
+import instructgptFAQ from "@/app/papers/instructgpt/faq";
+import deepseekR1FAQ from "@/app/papers/deepseek-r1/faq";
 import deepseekOcrFAQ from "@/app/papers/deepseek-ocr/faq";
 import deepseekV3FAQ from "@/app/papers/deepseek-v3/faq";
 import deepseekV32FAQ from "@/app/papers/deepseek-v3-2/faq";
 import deepseekV4FAQ from "@/app/papers/deepseek-v4/faq";
 import distillingKnowledgeFAQ from "@/app/papers/distilling-knowledge/faq";
+import knowledgeDistillationSurveyFAQ from "@/app/papers/kd-survey-gou-2021/faq";
+import kdComprehensiveSurveyFAQ from "@/app/papers/kd-survey-mansourian-2025/faq";
+import llmKdSurveyFAQ from "@/app/papers/llm-kd-survey-xu-2024/faq";
 import dpoRafailovFAQ from "@/app/papers/dpo-rafailov/faq";
 import glm45FAQ from "@/app/papers/glm-45/faq";
 import glm5FAQ from "@/app/papers/glm-5/faq";
@@ -18,6 +25,11 @@ import minimaxM3FAQ from "@/app/papers/minimax-m3/faq";
 import nemotronCascade2FAQ from "@/app/papers/nemotron-cascade-2/faq";
 import opdAgarwalFAQ from "@/app/papers/opd-agarwal/faq";
 import ppoSchulmanFAQ from "@/app/papers/ppo-schulman/faq";
+import qwen1FAQ from "@/app/papers/qwen1/faq";
+import qwen2FAQ from "@/app/papers/qwen2/faq";
+import qwen25FAQ from "@/app/papers/qwen2-5/faq";
+import qwen25CoderFAQ from "@/app/papers/qwen2-5-coder/faq";
+import qwen25VlFAQ from "@/app/papers/qwen2-5-vl/faq";
 import qwen3FAQ from "@/app/papers/qwen3/faq";
 import qwen3VlFAQ from "@/app/papers/qwen3-vl/faq";
 import rethinkingOpdFAQ from "@/app/papers/rethinking-opd/faq";
@@ -36,11 +48,18 @@ export type PaperFAQ = PaperFAQItem[];
 
 const paperFAQBySlug: Partial<Record<string, PaperFAQ>> = {
   "attention-transformer": attentionTransformerFAQ,
+  "llama3": llama3FAQ,
+  "gpt3": gpt3FAQ,
+  "instructgpt": instructgptFAQ,
+  "deepseek-r1": deepseekR1FAQ,
   "deepseek-ocr": deepseekOcrFAQ,
   "deepseek-v3": deepseekV3FAQ,
   "deepseek-v3-2": deepseekV32FAQ,
   "deepseek-v4": deepseekV4FAQ,
   "distilling-knowledge": distillingKnowledgeFAQ,
+  "kd-survey-gou-2021": knowledgeDistillationSurveyFAQ,
+  "kd-survey-mansourian-2025": kdComprehensiveSurveyFAQ,
+  "llm-kd-survey-xu-2024": llmKdSurveyFAQ,
   "dpo-rafailov": dpoRafailovFAQ,
   "glm-45": glm45FAQ,
   "glm-5": glm5FAQ,
@@ -55,6 +74,11 @@ const paperFAQBySlug: Partial<Record<string, PaperFAQ>> = {
   "nemotron-cascade-2": nemotronCascade2FAQ,
   "opd-agarwal": opdAgarwalFAQ,
   "ppo-schulman": ppoSchulmanFAQ,
+  "qwen1": qwen1FAQ,
+  "qwen2": qwen2FAQ,
+  "qwen2-5": qwen25FAQ,
+  "qwen2-5-coder": qwen25CoderFAQ,
+  "qwen2-5-vl": qwen25VlFAQ,
   "qwen3": qwen3FAQ,
   "qwen3-vl": qwen3VlFAQ,
   "rethinking-opd": rethinkingOpdFAQ,

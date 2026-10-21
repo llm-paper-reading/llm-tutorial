@@ -1,0 +1,64 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 980 540" role="img" aria-labelledby="title desc">
+  <title id="title">现代知识蒸馏全景图</title>
+  <desc id="desc">展示现代知识蒸馏从来源、方案、算法、模态、应用和挑战六个方向扩展。</desc>
+  <style>
+    :root { --bg:#fcfcfb; --panel:#ffffff; --ink:#0b0b0b; --muted:#52514e; --grid:#e1e0d9; --blue:#2a78d6; --aqua:#1baf7a; --yellow:#eda100; --green:#008300; --violet:#4a3aa7; --orange:#eb6834; }
+    @media (prefers-color-scheme: dark) { :root { --bg:#1a1a19; --panel:#242421; --ink:#ffffff; --muted:#c3c2b7; --grid:#383835; --blue:#3987e5; --aqua:#199e70; --yellow:#c98500; --green:#008300; --violet:#9085e9; --orange:#d95926; } }
+    .bg{fill:var(--bg)} .panel{fill:var(--panel);stroke:var(--grid);stroke-width:1.5} .ink{fill:var(--ink)} .muted{fill:var(--muted)} .ring{fill:none;stroke:var(--grid);stroke-width:2;stroke-dasharray:8 9;stroke-linecap:round} text{font-family:system-ui,-apple-system,"Segoe UI",sans-serif}
+  </style>
+  <rect class="bg" width="980" height="540" rx="28"/>
+  <text x="490" y="48" text-anchor="middle" class="ink" font-size="28" font-weight="700">A Comprehensive Survey on Knowledge Distillation</text>
+  <text x="490" y="78" text-anchor="middle" class="muted" font-size="15">现代 KD 从模型压缩扩展到基础模型、多模态、生成模型和部署系统</text>
+
+  <g transform="translate(372 190)">
+    <circle cx="118" cy="82" r="78" fill="var(--panel)" stroke="var(--grid)" stroke-width="2"/>
+    <text x="118" y="72" text-anchor="middle" class="ink" font-size="24" font-weight="700">Modern KD</text>
+    <text x="118" y="100" text-anchor="middle" class="muted" font-size="14">压缩 · 迁移 · 部署</text>
+  </g>
+
+  <path class="ring" d="M490 270 C330 140 170 120 110 205"/>
+  <path class="ring" d="M490 270 C490 105 620 100 716 150"/>
+  <path class="ring" d="M490 270 C700 230 800 280 850 392"/>
+  <path class="ring" d="M490 270 C360 400 220 420 130 356"/>
+  <path class="ring" d="M490 270 C520 420 650 456 760 434"/>
+  <path class="ring" d="M490 270 C320 250 220 270 126 286"/>
+
+  <g transform="translate(52 146)">
+    <rect class="panel" width="210" height="92" rx="20"/>
+    <circle cx="28" cy="29" r="9" fill="var(--blue)"/>
+    <text x="46" y="35" class="ink" font-size="17" font-weight="700">Sources</text>
+    <text x="24" y="65" class="muted" font-size="13">logits · features · relations</text>
+  </g>
+  <g transform="translate(656 108)">
+    <rect class="panel" width="230" height="96" rx="20"/>
+    <circle cx="28" cy="29" r="9" fill="var(--aqua)"/>
+    <text x="46" y="35" class="ink" font-size="17" font-weight="700">Schemes</text>
+    <text x="24" y="65" class="muted" font-size="13">offline · online · self</text>
+  </g>
+  <g transform="translate(730 354)">
+    <rect class="panel" width="208" height="108" rx="20"/>
+    <circle cx="28" cy="29" r="9" fill="var(--yellow)"/>
+    <text x="46" y="35" class="ink" font-size="17" font-weight="700">Algorithms</text>
+    <text x="24" y="65" class="muted" font-size="13">KL · feature · relation</text>
+    <text x="24" y="86" class="muted" font-size="13">contrastive · process</text>
+  </g>
+  <g transform="translate(56 322)">
+    <rect class="panel" width="236" height="118" rx="20"/>
+    <circle cx="28" cy="29" r="9" fill="var(--green)"/>
+    <text x="46" y="35" class="ink" font-size="17" font-weight="700">Modalities</text>
+    <text x="24" y="65" class="muted" font-size="13">Transformer · VLM · LLM</text>
+    <text x="24" y="88" class="muted" font-size="13">Diffusion · 3D data</text>
+  </g>
+  <g transform="translate(390 428)">
+    <rect class="panel" width="242" height="80" rx="20"/>
+    <circle cx="28" cy="29" r="9" fill="var(--violet)"/>
+    <text x="46" y="35" class="ink" font-size="17" font-weight="700">Applications</text>
+    <text x="24" y="62" class="muted" font-size="13">compression · transfer · edge</text>
+  </g>
+  <g transform="translate(80 250)">
+    <rect class="panel" width="208" height="76" rx="20"/>
+    <circle cx="28" cy="29" r="9" fill="var(--orange)"/>
+    <text x="46" y="35" class="ink" font-size="17" font-weight="700">Challenges</text>
+    <text x="24" y="61" class="muted" font-size="13">robustness · safety · cost</text>
+  </g>
+</svg>

@@ -9,6 +9,8 @@ export interface PaperTag {
   name: string;
   /** 图标（emoji），用于筛选条、卡片、侧边栏 */
   icon: string;
+  /** 可选图片图标路径；存在时优先用于页面展示 */
+  iconSrc?: string;
   /** 一句话说明，用于悬浮提示与理解词义 */
   hint?: string;
 }
@@ -36,6 +38,21 @@ export const KEYWORDS: PaperTag[] = [
     name: "MiniMax 系列",
     icon: "🪶",
     hint: "MiniMax 系列模型与稀疏注意力、多模态、长上下文路线",
+  },
+  {
+    name: "Qwen 系列",
+    icon: "🧭",
+    hint: "阿里 Qwen 系列模型与技术报告：Qwen1、Qwen2、Qwen2.5、Qwen3 等",
+  },
+  {
+    name: "Llama 系列",
+    icon: "🦙",
+    hint: "Meta Llama 系列模型与技术报告：Llama 1、Llama 2、Llama 3 等",
+  },
+  {
+    name: "GPT 系列",
+    icon: "🔄",
+    hint: "OpenAI GPT 系列与对齐源头：GPT-3、InstructGPT 等",
   },
   {
     name: "注意力机制",
@@ -115,6 +132,11 @@ export function getAllKeywords(): string[] {
 /** keyword 的图标；未注册的名称回退默认 🏷️。 */
 export function getTagIcon(tag: string): string {
   return BY_NAME.get(tag)?.icon ?? "🏷️";
+}
+
+/** keyword 的图片图标路径；未配置则返回 undefined。 */
+export function getTagIconSrc(tag: string): string | undefined {
+  return BY_NAME.get(tag)?.iconSrc;
 }
 
 /** keyword 的一句话说明；未注册返回 undefined。 */

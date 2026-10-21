@@ -1,0 +1,161 @@
+import paper from "./meta";
+import { paperMetadata } from "@/lib/papers";
+
+export const metadata = paperMetadata(paper);
+
+<PaperHeader slug={paper.slug} />
+
+# LLM KD Survey：大模型知识蒸馏路线图
+
+这篇 *A Survey on Knowledge Distillation of Large Language Models* 专门把知识蒸馏放到大模型语境里重读：它不只讨论如何把大模型压成小模型，还系统整理了 LLM 蒸馏中的算法、技能迁移、领域应用、数据增强、模型压缩、自我提升和未来方向。<Cite n={1} />如果 [Knowledge Distillation Survey](/papers/kd-survey-gou-2021) 是通用 KD 的地图，那么这篇就是 LLM 时代的蒸馏路线图。
+
+> 📌 前置：建议先读 [知识蒸馏总览](/tutorials/knowledge-distillation-overview)、[前向 / 反向 KL](/tutorials/forward-reverse-kl) 和 [在线蒸馏](/tutorials/on-policy-distillation)。如果还没读经典起点，可以先看 [Hinton KD](/papers/distilling-knowledge)。
+
+## 一、为什么 LLM 需要专门的 KD Survey
+
+传统 KD 的核心问题通常是“如何把大模型或集成模型压缩成小模型”，典型信号是 logits、soft labels 或中间特征。<Cite n={[2,3]} />但 LLM 的蒸馏对象更复杂：老师可能输出指令数据、长链推理、代码、工具轨迹、偏好判断、领域知识，甚至是多轮对话策略。<Cite n={1} />
+
+因此，LLM KD 的问题已经从“分类器压缩”扩展成一组后训练问题：
+
+<figure className="my-6">
+  <img src="./fig-llm-kd-roadmap.svg" alt="大语言模型知识蒸馏路线图：老师模型提供答案、logits、推理链等信号，经由数据生成和训练目标迁移到小型或专用学生模型" className="mx-auto h-auto max-w-full rounded-lg border border-zinc-200 shadow-sm dark:border-zinc-800" />
+  <figcaption>
+    <span className="figure-caption-main">大语言模型知识蒸馏路线图：老师信号经过数据生成、训练目标和风险控制，迁移为学生模型的推理、代码、工具使用、对齐和领域能力</span>
+    <span className="figure-caption-source">图源：根据 Xu et al., <em>A Survey on Knowledge Distillation of Large Language Models</em> 的综述结构整理绘制</span>
+  </figcaption>
+</figure>
+
+<figure className="my-6">
+  <img src="./fig-2-survey-overview.png" alt="Xu 等人综述的总体框架图：围绕 KD 在 LLM 中的角色，组织起算法、技能迁移、垂直领域、数据增强、压缩与自我提升等章节" className="mx-auto h-auto max-w-full rounded-lg border border-zinc-200 shadow-sm dark:border-zinc-800" />
+  <figcaption>
+    <span className="figure-caption-main">综述原文的总体框架图：围绕 KD 在 LLM 中的角色，组织起算法、技能迁移、垂直领域、数据增强、压缩与自我提升等章节</span>
+    <span className="figure-caption-source">图源：Xu et al., <em>A Survey on Knowledge Distillation of Large Language Models</em>（arXiv:2402.13116）Figure 2</span>
+  </figcaption>
+</figure>
+
+| 目标 | 老师提供什么 | 学生要学什么 |
+|---|---|---|
+| 模型压缩 | 高质量回答、logits / logprobs | 用更低成本复现大模型能力 |
+| 技能迁移 | 推理链、代码解法、工具轨迹 | 学会某类任务的过程模式 |
+| 领域适配 | 医疗、法律、代码等领域样本 | 获得专用知识与术语能力 |
+| 数据增强 | 合成 instruction / response | 扩大训练覆盖与任务多样性 |
+| 自我提升 | 自生成样本、反思、过滤 | 迭代改进学生自身行为 |
+
+这也是这篇 survey 和通用 KD survey 的差别：通用 KD 讲“知识类型 × 训练方式 × 师生结构”的经典坐标系；LLM KD survey 则把这些坐标放进指令学习、生成式建模、对齐和长程推理环境中。<Cite n={[1,3]} />
+
+## 二、LLM KD 的任务版图
+
+论文摘要明确把 LLM KD 的讨论范围扩展到 algorithms、skill transfer、verticalization、data augmentation、model compression、self-improvement 和 future directions。<Cite n={1} />这说明 LLM KD 的中心不再只是“把 GPT 级模型蒸成小模型”，而是把强老师的能力拆成多个可迁移对象。
+
+| 维度 | 问题 | 站内对照 |
+|---|---|---|
+| 压缩 | 小模型如何复现大模型回答质量？ | [Hinton KD](/papers/distilling-knowledge)、[KD Survey](/papers/kd-survey-gou-2021) |
+| 推理 | 老师的 reasoning path 如何迁移？ | [MiniLLM](/papers/minillm-gu)、[OPD](/papers/opd-agarwal) |
+| 对齐 | 指令遵循与偏好边界如何迁移？ | [DPO](/papers/dpo-rafailov)、[RLHF](/tutorials/rlhf) |
+| 数据 | 老师如何生成高质量 instruction / rationale？ | [知识蒸馏总览](/tutorials/knowledge-distillation-overview) |
+| 在线状态 | 学生自己生成的前缀如何被老师纠正？ | [在线蒸馏](/tutorials/on-policy-distillation)、[TML OPD](/papers/tml-opd) |
+| 多教师 | 不同领域强老师如何合并？ | [MiMo-v2-Flash](/papers/mimo-v2-flash)、[Nemotron-Cascade 2](/papers/nemotron-cascade-2) |
+
+这个版图也解释了为什么“LLM KD”经常和 SFT、RLHF、DPO、OPD、数据合成混在一起：它们都在回答同一个问题——如何把已有强能力转移到更便宜、更专用或更可控的学生模型里。
+
+## 三、算法层：从答案模仿到策略信号
+
+LLM 蒸馏的 teacher signal 可以粗略分成四层：sequence-level、token-level、representation-level 和 policy-level。
+
+| 信号层级 | 学什么 | 优点 | 限制 |
+|---|---|---|---|
+| Sequence-level | 老师完整回答 | 只需文本，适合黑盒 API | 粒度粗，容易只学表面风格 |
+| Token-level | logits / logprobs / top-k | 信号密集，可做 KL | 需要老师概率接口，成本更高 |
+| Representation-level | hidden states / attention | 可迁移内部表示 | 黑盒老师通常不可用 |
+| Policy-level | 学生 rollout 上老师评分 | 覆盖学生状态分布 | rollout 与 teacher scoring 成本高 |
+
+Sequence-level distillation 很像把老师当数据生成器：老师生成答案，学生做 SFT。<Cite n={1} />这在 API 老师不可见 logits 时尤其常见，但它难以告诉学生“为什么这个 token 比另一个 token 更好”。
+
+Token-level distillation 则更接近经典 KD：如果能拿到老师 logits 或 logprobs，就可以在每个位置上做分布匹配。<Cite n={[1,3]} />这为 [MiniLLM](/papers/minillm-gu) 和 [OPD / GKD](/papers/opd-agarwal) 这类方法奠定了基础，只是它们进一步要求信号发生在学生自己生成的状态上。<Cite n={[4,5]} />
+
+Policy-level 或 on-policy distillation 是 LLM 时代很关键的变化：学生先生成，老师再在这些学生轨迹上评分或给 logprob。<Cite n={[5,6]} />这样可以缓解离线蒸馏的状态分布偏移，但工程成本也更高。
+
+## 四、技能迁移：LLM 蒸馏蒸的不是单一能力
+
+这篇 survey 强调 LLM KD 涉及 skill transfer。<Cite n={1} />这里的 skill 不只是“会回答问题”，还包括：
+
+- **指令遵循**：理解用户意图、遵守格式和约束；
+- **推理**：数学、逻辑、多步分析、chain-of-thought；
+- **代码**：生成、补全、调试、测试驱动修复；
+- **领域知识**：医疗、法律、金融、教育等专业回答；
+- **工具使用**：调用搜索、代码执行器、浏览器、GUI 或外部 API；
+- **对齐行为**：安全拒答、偏好风格、帮助性与无害性。
+
+不同技能需要不同蒸馏信号。推理可能需要过程轨迹；代码需要测试反馈；领域知识需要专家数据；工具使用需要环境交互；对齐行为则需要偏好数据或拒答边界。<Cite n={1} />这也是为什么 LLM KD 很难被单一 loss 覆盖。
+
+## 五、数据增强：老师也是数据工厂
+
+LLM KD 中，老师模型经常不只是“被模仿的对象”，还是生成训练数据的工厂。<Cite n={1} />它可以生成 instruction、answer、rationale、chain-of-thought、代码样例、领域问答，甚至多轮对话与工具调用轨迹。
+
+但数据增强不是越多越好。老师生成数据需要经过过滤、去重、难度控制、事实核查和多样性控制，否则学生会继承老师幻觉、格式偏差或低质量模式。<Cite n={1} />这和传统 KD 的差别很大：传统 KD 常假设 transfer set 已经存在；LLM KD 中，transfer set 本身也常由老师参与构造。
+
+可以把 LLM KD 的数据流程理解成：
+
+1. 选择老师：强通用模型、领域模型、RL checkpoint 或多个专家老师；
+2. 生成样本：instruction、回答、推理链、代码、工具轨迹；
+3. 过滤样本：质量、事实性、安全性、多样性；
+4. 训练学生：SFT、KL、DPO、OPD 或混合目标；
+5. 评估与再生成：用学生错误反过来指导下一轮数据。
+
+这也解释了为什么许多现代训练报告会把“数据飞轮”写成核心能力，而不只是附录里的数据清洗步骤。
+
+## 六、专用场景：从通用模型到垂直模型
+
+论文把 LLM KD 的 verticalization / domain-specific use cases 作为重要主题。<Cite n={1} />这类场景的需求通常不是训练一个最强通用模型，而是把强老师的能力迁移到某个领域或部署约束下：
+
+| 场景 | 蒸馏目标 | 特殊要求 |
+|---|---|---|
+| 医疗 | 专业问答、病历理解、可靠解释 | 安全、合规、低幻觉 |
+| 法律 | 法条检索、案例推理、文书生成 | 引用精确、地域法系差异 |
+| 代码 | 生成、补全、修复、测试 | 可执行验证、仓库上下文 |
+| 多模态 | 图文理解、OCR、视觉推理 | 视觉 token 成本、grounding |
+| 推荐 / 搜索 | 用户意图和排序解释 | 实时性、隐私、反馈闭环 |
+
+这些场景也说明：学生模型未必总是越小越好。有时目标是更专用、更便宜、更私有化、更低延迟，或者更容易部署到本地 / 边缘环境。
+
+## 七、和 OPD / MiniLLM 的关系
+
+如果说这篇 survey 给出 LLM KD 的宏观版图，那么 [MiniLLM](/papers/minillm-gu)、[OPD / GKD](/papers/opd-agarwal)、[Thinking Machines OPD](/papers/tml-opd) 是其中 on-policy 路线的代表实现。<Cite n={[4,5,6]} />
+
+传统离线蒸馏在固定数据上学习老师；但生成模型部署时会根据自己前面生成的 token 继续生成，学生一旦偏离老师轨迹，就会进入训练中没有覆盖的状态。<Cite n={[4,5]} />OPD 的关键改动就是让学生自己 rollout，再让老师对学生到达的状态给出 token-level 或 distribution-level 信号。<Cite n={[5,6]} />
+
+| 方法 | 状态来自谁 | 老师做什么 | 解决的问题 |
+|---|---|---|---|
+| 离线 SFT / KD | 数据集或老师输出 | 生成答案 / 给 logits | 简单稳定，但覆盖学生错误有限 |
+| MiniLLM | 学生采样 | 反向 KL / 策略梯度信号 | 缓解生成退化和 forward KL 问题 |
+| GKD / OPD | 学生自生成状态 | 分布匹配或 token reward | 覆盖学生真实前缀分布 |
+| TML OPD | 学生 rollout | teacher logprob scoring | 用密集老师信号复用 RL 管线 |
+
+这条线也把 LLM KD 和 RLHF / GRPO 连接起来：一旦老师信号变成 token reward 或 advantage，蒸馏就不再只是监督学习，而是进入了策略优化的邻域。
+
+## 八、挑战：黑盒老师、长程生成和评测
+
+LLM KD 的挑战可以分成三类。
+
+第一是**老师接口问题**。很多最强老师是黑盒 API，学生拿不到完整 logits、hidden states 或训练数据，只能看到文本输出、少量 logprob 或偏好反馈。<Cite n={1} />这会限制 feature-based 或 full-distribution KD，只能转向 sequence-level data generation、preference distillation 或弱监督。
+
+第二是**长程生成问题**。LLM 的错误可能在几十步之后才显现，工具调用或 agent 任务甚至要跨越多轮环境反馈。传统单步 soft labels 很难解决这种 credit assignment，因此 on-policy、过程监督、可验证奖励和 teacher scoring 变得更重要。
+
+第三是**评测问题**。学生可能学会老师的风格，却没有学会老师的能力；也可能在常见 benchmark 上表现好，但在长尾领域、真实工具环境或安全边界上失败。<Cite n={1} />因此 LLM KD 的评估要同时看能力、成本、安全、鲁棒性和部署约束。
+
+## 小结
+
+*A Survey on Knowledge Distillation of Large Language Models* 的价值，是把 LLM 时代的蒸馏从“模型压缩技巧”重新整理成一套后训练与能力迁移框架：老师可以生成数据、提供 logits、给出过程轨迹、打分学生 rollout；学生可以学习回答、推理、代码、对齐、工具使用和领域知识。<Cite n={1} />
+
+读完它后，再看 [MiniLLM](/papers/minillm-gu)、[OPD](/papers/opd-agarwal)、[Qwen3](/papers/qwen3)、[MiMo-v2-Flash](/papers/mimo-v2-flash)、[Nemotron-Cascade 2](/papers/nemotron-cascade-2)，就能更清楚地判断：每篇论文到底是在改变 teacher signal、数据来源、学生状态分布，还是训练目标。
+
+## 参考资料
+
+<References>
+1. Xiaohan Xu, Ming Li, Chongyang Tao, Tao Shen, Reynold Cheng, Jinyang Li, Can Xu, Dacheng Tao, Tianyi Zhou (2024). *A Survey on Knowledge Distillation of Large Language Models*. arXiv: [2402.13116](https://arxiv.org/abs/2402.13116). —— 本文主论文，支撑 LLM KD 的算法、技能迁移、领域应用、数据增强、模型压缩、自我提升和未来方向综述。
+2. Geoffrey Hinton, Oriol Vinyals, Jeff Dean (2015). *Distilling the Knowledge in a Neural Network*. arXiv: [1503.02531](https://arxiv.org/abs/1503.02531). —— 经典 KD、soft targets、temperature 和 dark knowledge 来源。
+3. Jianping Gou, Baosheng Yu, Stephen J. Maybank, Dacheng Tao (2021). *Knowledge Distillation: A Survey*. International Journal of Computer Vision; arXiv: [2006.05525](https://arxiv.org/abs/2006.05525). —— 通用 KD 分类坐标系来源，用于和 LLM 专用综述对照。
+4. Yuxian Gu, Li Dong, Furu Wei, Minlie Huang (2024). *MiniLLM: On-Policy Distillation of Large Language Models*. ICLR 2024, arXiv: [2306.08543](https://arxiv.org/abs/2306.08543). —— LLM on-policy reverse-KL distillation 的代表工作。
+5. Rishabh Agarwal, Nino Vieillard, Yongchao Zhou, Piotr Stanczyk, Sabela Ramos, Matthieu Geist, Olivier Bachem (2024). *On-policy Distillation of Language Models: Learning from Self-Generated Mistakes*. ICLR 2024, arXiv: [2306.13649](https://arxiv.org/abs/2306.13649). —— GKD / OPD 与学生自生成状态上的蒸馏框架。
+6. Kevin Lu, Thinking Machines Lab (2025). *On-Policy Distillation*. [thinkingmachines.ai/blog/on-policy-distillation](https://thinkingmachines.ai/blog/on-policy-distillation/). —— OPD 工程化解释、teacher logprob scoring 和逐 token advantage 机制。
+</References>

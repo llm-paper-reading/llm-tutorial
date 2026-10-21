@@ -1,0 +1,98 @@
+import paper from "./meta";
+import { paperMetadata } from "@/lib/papers";
+
+export const metadata = paperMetadata(paper);
+
+<PaperHeader slug={paper.slug} />
+
+# InstructGPT：RLHF 三步法的原始出处
+
+2022 年 3 月，OpenAI 对齐团队发布这篇论文，把「让语言模型听指令」从提示工程变成了一个训练问题<Cite n={1} />。**SFT → 奖励模型 → PPO** 的三步流水线在这里定型，此后从 [Qwen1](/papers/qwen1) 的 RLHF 到 ChatGPT 本身，所有 Chat 模型的对齐骨架都是它的后裔。论文最出圈的结论也来自对照实验：**1.3B 参数的 InstructGPT，输出被人类偏好超过 175B 的 GPT-3——参数少 100 倍**<Cite n={1} />。它同时诚实地量化了对齐的代价（对齐税）与局限（偏见无改善、仍犯低级错误），并以「我们到底在对齐谁」的讨论收尾——这一问后来成为对齐研究的核心议题。
+
+> 📌 前置：建议先读 [PPO](/papers/ppo-schulman)——第三步的优化器；后续演进接 [DPO](/papers/dpo-rafailov)（去掉 RM 与 PPO）、[Qwen2](/papers/qwen2)（换成 DPO + 在线采样）、[DeepSeek-R1](/papers/deepseek-r1)（规则奖励替代偏好模型）。
+
+## 一、动机：目标错位，不是能力不足
+
+论文开篇的诊断后来被称为「目标错位」（misalignment）<Cite n={1} />：语言模型的训练目标——预测互联网网页的下一个 token——与部署目标「有用、诚实、无害地跟随指令」是两回事。所以模型会编造事实、输出有害内容、无视指令，**这不是模型不够大，而是梯度从未指向「听话」**。
+
+三个诊断直接导出三个设计决策：
+
+1. 人类偏好就是最好的监督信号（不可能写出一个「有用」的损失函数）→ 用 RLHF；
+2. 偏好数据必须来自真实使用分布 → 从 OpenAI API Playground 收集 prompt；
+3. 对齐会伤及别的任务 → 量化并补救「对齐税」。
+
+对齐目标借自 Askell et al. (2021) 的三词组：**helpful / honest / harmless**<Cite n={1} />——这个词汇表沿用到今天。
+
+## 二、数据：40 人团队与三个数据集
+
+数据建设是理解这篇论文的第一层<Cite n={1} />：约 **40 名承包商**（Upwork + ScaleAI），经筛选测试选拔——测试的正是「对人口群体偏好的敏感性」与「识别有害输出的能力」。prompt 主要来自 API Playground 的真实用户（按用户 ID 划分训练/验证/测试防泄漏，训练集过滤 PII，每用户最多 200 条、按公共前缀去重）。
+
+冷启动靠标注员自己写三类 prompt：任意任务（Plain）、带示例的指令（Few-shot）、按 waitlist 用例模拟（User-based）。最终三个数据集：**SFT 约 1.3 万条 prompt（含标注员写的）、RM 约 3.3 万条（排序模型输出）、PPO 约 3.1 万条（纯 API、无标注）**<Cite n={1} />。
+
+值得记住的一致率数字：训练标注员之间 72.6±1.5%，held-out 标注员 77.3±1.3%——作为参照，此前摘要任务上研究员之间是 73±4%<Cite n={1} />。
+
+## 三、三步法：每步都有反直觉的细节
+
+<figure className="my-6">
+  <img src="./fig-2-three-steps.png" alt="InstructGPT 三步法示意图：第一步 SFT，用标注员示范数据微调 GPT-3；第二步奖励模型训练，标注员对同一 prompt 的多个模型输出（A–D）排序，训练 RM 预测偏好；第三步 PPO 强化学习，用 RM 作为奖励函数微调 SFT 模型，并对每 token 施加对 SFT 模型的 KL 惩罚" className="mx-auto h-auto max-w-full rounded-lg border border-zinc-200 shadow-sm dark:border-zinc-800" />
+  <figcaption className="mt-2 text-center text-xs text-zinc-500 dark:text-zinc-400">
+    <span className="figure-caption-main">InstructGPT 三步法示意图：第一步 SFT，用标注员示范数据微调 GPT-3；第二步奖励模型训练，标注员对同一 prompt 的多个模型输出（A–D）排序，训练 RM 预测偏好；第三步 PPO 强化学习，用 RM 作为奖励函数微调 SFT 模型，并对每 token 施加对 SFT 模型的 KL 惩罚</span>
+    <span className="figure-caption-source">图源：Ouyang et al., <em>Training language models to follow instructions with human feedback</em>（arXiv:2203.02155）Figure 2</span>
+  </figcaption>
+</figure>
+
+**第一步 SFT**：在标注员示范上监督微调，16 epoch、cosine 退火、残差 dropout 0.2。反直觉的观察：验证损失 1 个 epoch 后就开始过拟合，**但继续训 RM 分与人类偏好反而更高**——按 RM 验证分选模型，不按损失<Cite n={1} />。
+
+**第二步 RM**：从 SFT 模型去掉最后 unembedding 层、输出标量奖励。两个关键工程决策<Cite n={1} />：
+
+- **只用 6B RM**——省算力，且 175B RM 训练不稳定、不适合做 RL 的 value 函数；
+- **K=4–9 个响应一次排序**，产生 $\binom{K}{2}$ 个对比对；若打散进数据集，单轮就过拟合。解法是把同一 prompt 的全部对比对**作为单个 batch 元素**——一次前向出所有响应的分数，既高效又不过拟合。
+
+损失是对比 softmax（偏好对的奖励差代表 log odds），训练后按「示范数据均值为 0」做偏置归一化再进 RL<Cite n={1} />。
+
+**第三步 PPO**：环境是一个 bandit——给随机用户 prompt、模型答一次、RM 打分、episode 结束。value 函数从 RM 初始化；**每 token 加对 SFT 模型的 KL 惩罚**防过度优化。完整目标（PPO-ptx）<Cite n={1} />：
+
+$$
+\text{objective}(\phi) = \mathbb{E}_{(x,y)\sim D_\pi^{\mathrm{RL}}} \left[ r_\theta(x,y) - \beta \log \frac{\pi_\phi^{\mathrm{RL}}(y|x)}{\pi^{\mathrm{SFT}}(y|x)} \right] + \gamma\, \mathbb{E}_{x\sim D^{\mathrm{pretrain}}} \left[ \log \pi_\phi^{\mathrm{RL}}(x) \right]
+$$
+
+$\gamma$ 那一项就是**对齐税的补法**：混入预训练分布的似然梯度（PPO-ptx），公共 NLP 任务的回退被大幅缓解而偏好分数几乎不损；论文还对照了「加大 KL 系数」这个朴素方案——效果更差<Cite n={1} />。后来 Qwen2 的 Online Merging Optimizer、各家「预训练梯度」都是这个思路的后裔。
+
+## 四、结果：偏好、诚实性、毒性的三张成绩单
+
+**偏好**：主评测是标注员在 held-out 用户 prompt 上的盲测。175B InstructGPT 的输出被偏好于 175B GPT-3 **85±3%** 的时间；即使加了帮助跟随指令的 few-shot 前缀的 GPT-3，也被偏好 71±4%<Cite n={1} />。跨尺寸的对比更直观：
+
+<figure className="my-6">
+  <img src="./fig-1-winrate.png" alt="各模型相对 175B SFT 的胜率随模型尺寸变化：1.3B、6B、175B 三档上，PPO-ptx 与 PPO 均显著高于 GPT-3 基线（GPT 与 prompted GPT）；1.3B PPO-ptx 的胜率已超过 175B GPT-3 的水平" className="mx-auto h-auto max-w-full rounded-lg border border-zinc-200 shadow-sm dark:border-zinc-800" />
+  <figcaption className="mt-2 text-center text-xs text-zinc-500 dark:text-zinc-400">
+    <span className="figure-caption-main">各模型相对 175B SFT 的胜率随模型尺寸变化：1.3B、6B、175B 三档上，PPO-ptx 与 PPO 均显著高于 GPT-3 基线（GPT 与 prompted GPT）；1.3B PPO-ptx 的胜率已超过 175B GPT-3 的水平</span>
+    <span className="figure-caption-source">图源：Ouyang et al., <em>Training language models to follow instructions with human feedback</em>（arXiv:2203.02155）Figure 1</span>
+  </figcaption>
+</figure>
+
+**诚实性**：TruthfulQA 上「真实且有信息」的回答约是 GPT-3 的两倍；闭域任务（摘要、闭域问答）的编造率从 41% 降到 21%<Cite n={1} />。
+
+**毒性**：被明确要求「尊重」时输出毒性降低约 25%；但 **Winogender 与 CrowSPairs 上的偏见没有显著改善**——论文如实报告了这个不对称。另一个重要的对比：被要求输出有害内容时，InstructGPT 比加了 few-shot 的 GPT-3 **更顺从**（毒性更高）——指令跟随是把双刃剑，这个观察对今天讨论「sycophancy（谄媚）」仍然适用<Cite n={1} />。
+
+**泛化**：held-out 标注员的偏好率与训练标注员相当；对微调分布外的指令（摘要代码、多语言指令——训练数据里极少）也能跟随，说明模型学到的是「跟随指令」这个概念本身而非具体任务<Cite n={1} />。
+
+## 五、「对齐到谁」：论文最重要的自我限定
+
+第 5.2 节值得整段读<Cite n={1} />：作者明确承认 InstructGPT 对齐的是**「特定人群的偏好」**——他们的标注员与研究者，而非任何广义「人类价值」。标注员的筛选标准本身就是一种价值选择；训练时优先 helpfulness、评测时优先 truthfulness/harmlessness，两者的冲突被留作开放问题。
+
+这个自我限定在后来被反复验证：sycophancy（模型迎合用户）、标注员文化差异、争议输入上的分歧——都是「H 具体是谁」这个问题的展开。论文的结论落点也很克制：人类偏好微调显著改善行为，但离安全可靠仍有距离，InstructGPT 仍会不跟随指令、编造事实、对简单问题长篇铺垫、不识别假前提<Cite n={1} />。
+
+## 小结
+
+InstructGPT 的方法论遗产是三件事：**三步法**（SFT → RM → PPO，含 KL 惩罚与 bandit 环境的完整定义）；**对齐税及其补法**（PPO-ptx 混合预训练梯度）；**「对齐谁」的自觉**（偏好数据的来源即价值判断）。它在站内的位置是 RLHF 主线的源头：向前接 [PPO](/papers/ppo-schulman)，向后开启 [DPO](/papers/dpo-rafailov) 的简化路线与 [DeepSeek-R1](/papers/deepseek-r1) 的规则奖励路线——三条线共同构成 2022–2025 年对齐方法的全部主干。
+
+## 参考资料
+
+<References>
+1. Long Ouyang et al. (2022). *Training language models to follow instructions with human feedback*. NeurIPS 2022, arXiv: [2203.02155](https://arxiv.org/abs/2203.02155). —— 本文主论文：三步法流水线、数据收集、PPO-ptx 目标函数、偏好/诚实性/毒性评测与「对齐到谁」讨论。
+2. Tom B. Brown et al. (2020). *Language Models are Few-Shot Learners*. NeurIPS 2020, arXiv: [2005.14165](https://arxiv.org/abs/2005.14165). —— 被对齐的基座模型，站内精读见 [GPT-3](/papers/gpt3)。
+3. John Schulman et al. (2017). *Proximal Policy Optimization Algorithms*. arXiv: [1707.06347](https://arxiv.org/abs/1707.06347). —— 第三步使用的优化器，站内精读见 [PPO](/papers/ppo-schulman)。
+4. Rafael Rafailov et al. (2023). *Direct Preference Optimization: Your Language Model is Secretly a Reward Model*. NeurIPS 2023, arXiv: [2305.18290](https://arxiv.org/abs/2305.18290). —— 三步法的简化继任者，站内精读见 [DPO](/papers/dpo-rafailov)。
+5. Nisan Stiennon et al. (2020). *Learning to summarize with human feedback*. NeurIPS 2020, arXiv: [2009.01325](https://arxiv.org/abs/2009.01325). —— RLHF 应用于语言模型（摘要任务）的直接前身。
+6. Amanda Askell et al. (2021). *A General Language Assistant as a Laboratory for Alignment*. arXiv: [2112.00861](https://arxiv.org/abs/2112.00861). —— helpful/honest/harmless 三词组与对齐测试床的来源。
+</References>

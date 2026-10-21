@@ -1,0 +1,120 @@
+import paper from "./meta";
+import { paperMetadata } from "@/lib/papers";
+
+export const metadata = paperMetadata(paper);
+
+<PaperHeader slug={paper.slug} />
+
+# Qwen2.5：18T token、两阶段 RL 与 1M 上下文
+
+2024 年 9 月发布、2025 年 1 月放出完整技术报告的 Qwen2.5，是 Qwen 系列里一份「架构不动、数据做深」的报告<Cite n={1} />。模型结构与 tokenizer 与 Qwen2 完全一致（GQA、SwiGLU、RoPE、QKV bias、RMSNorm，BBPE 词表 151,643），变化全部发生在数据与后训练：预训练 7T → **18T** token、SFT 约 100 万样本、RL 拆成离线 DPO + 在线 GRPO 两阶段；尺寸表补回 3B/14B/32B，形成 0.5B–72B 七档；API 侧另有 Qwen2.5-Turbo（1M 上下文）与 Qwen2.5-Plus 两款 MoE 专有模型<Cite n={1} />。旗舰 72B-Instruct 的对标对象是 Llama-3-405B-Instruct——一个体量大它 5 倍的模型。
+
+> 📌 前置：建议先读 [Qwen2](/papers/qwen2)——本文所有架构名词都在那里定义；GRPO 的机制可接 [GRPO 与 DeepSeek-R1](/papers/grpo-deepseek-r1)；数据合成的部分与 [Qwen2.5-Coder](/papers/qwen2-5-coder) 共享流水线。
+
+## 一、动机：当架构不再是瓶颈
+
+Qwen2 报告留下的局面是：GQA、MoE、DCA+YARN 这些架构语言已经定型，继续在结构上动手边际收益很小；真正卡住产品体验的是三件事<Cite n={1} />：
+
+1. **预训练数据的质量天花板**：7T 之后的提升要靠更好的过滤、更聪明的配比，而不是更多爬取；
+2. **后训练深度不足**：指令跟随、长文本生成、结构化输出这些「难评估」的能力需要更密的 RL 信号；
+3. **尺寸断档**：开源社区缺 3B/14B/32B 这些性价比档位（当时开源模型密集分布在 7B 和 70B）。
+
+Qwen2.5 的回应是一次「数据工程总动员」——报告第 3、4 节的篇幅与信息密度都远超 Qwen2。它也是 Qwen 家族里第一份把 scaling law 用作**超参计算器**的报告：不再问「给定预算训多大」，而是问「给定架构，每个尺寸的最优学习率与 batch size 是多少」<Cite n={1} />。
+
+数据规模在系列演进中的位置一图可见：
+
+<figure className="my-6">
+  <img src="./fig-1-data-scaling.png" alt="Qwen 系列数据规模演进：Qwen1.5 用 3T token、Qwen2 用 7T、Qwen2.5 用 18T 预训练，柱状高度示意 MMLU、MBPP、BBH、MATH 等基准分数随数据规模逐代上升" className="mx-auto h-auto max-w-full rounded-lg border border-zinc-200 shadow-sm dark:border-zinc-800" />
+  <figcaption className="mt-2 text-center text-xs text-zinc-500 dark:text-zinc-400">
+    <span className="figure-caption-main">Qwen 系列数据规模演进：Qwen1.5 用 3T token、Qwen2 用 7T、Qwen2.5 用 18T 预训练，柱状高度示意 MMLU、MBPP、BBH、MATH 等基准分数随数据规模逐代上升</span>
+    <span className="figure-caption-source">图源：Qwen Team, <em>Qwen2.5 Technical Report</em>（arXiv:2412.15115）Figure 1</span>
+  </figcaption>
+</figure>
+
+## 二、预训练数据：7T 到 18T 的四个抓手
+
+报告把数据扩张拆成四个明确的技术抓手<Cite n={1} />，每一条都值得细读：
+
+**（1）更好的过滤。** 用 Qwen2-Instruct 当质量过滤器做多维打分——相比 Qwen2 时代的启发式方法，模型过滤能更细地区分多语言样本的质量，「高留低去」两端同时受益。
+
+**（2）领域语料注入。** 直接把 Qwen2.5-Math 与 Qwen2.5-Coder 的预训练语料并入主数据集——数学与代码能力不再靠后训练补，而是从预训练就分好配额。
+
+**（3）合成数据。** 用 Qwen2-72B-Instruct 与 Qwen2-Math-72B-Instruct 合成数学、代码、知识类数据，再过两道关：通用奖励模型 + 专用 Qwen2-Math-RM-72B。
+
+**（4）配比重平衡。** 用 Qwen2-Instruct 给数据分领域，发现**电商、社交、娱乐在网页数据里显著过量**（模板化、机器生成内容多），而科技、学术等高价值领域反而稀缺——通过下采样过量领域、上采样稀缺领域重平衡。这个观察对中文语料尤其成立，也解释了为什么「网页规模」不等于「有效信息量」。
+
+## 三、Scaling Law 当超参计算器用
+
+Qwen2.5 的 scaling law 部分与常见做法的用途不同<Cite n={1} />：不是决定模型尺寸，而是**给定架构算最优超参**。实验覆盖 44M–14B 的 dense 与 44M–1B 激活参数的 MoE、0.8B–600B token 数据，拟合最优学习率 $\mu_{opt}$ 与 batch size $B_{opt}$ 随模型规模与数据规模的变化；再以最终 loss 为响应面，反过来预测「要打平某个 dense 档位，MoE 需要多少激活与总参数」——Qwen2.5-Turbo/Plus 的 MoE 配置（对标 72B 与 14B）就出自这套计算。
+
+长上下文训练沿用 Qwen2 的两阶段方案：先 4,096 训练主体，末期拉到 32,768、RoPE 基频 1,000,000（ABF）。**Qwen2.5-Turbo 走了更激进的渐进路线**：32,768 → 65,536 → 131,072 → 262,144 四阶段，RoPE 基频提到 10,000,000，每阶段保持 40% 序列在当前最大长度、60% 短序列<Cite n={1} />。推理期再叠 YARN+DCA 四倍外推，Turbo 到 1M、其余到 131,072。
+
+## 四、后训练：SFT 的九项补课与两阶段 RL
+
+### SFT：九个方向的专项数据工程
+
+报告用九个小节描述 SFT 数据建设<Cite n={1} />，每项都对应 Qwen2 的一个产品短板：
+
+| 方向 | 关键做法 |
+|---|---|
+| 长文本生成 | 回译造长 query + 输出长度约束 + Qwen2 过滤；输出上限 2K→8K |
+| 数学 | 并入 Qwen2.5-Math 的 CoT 数据，拒绝采样 + RM 筛选推理过程 |
+| 代码 | 并入 Qwen2.5-Coder 指令数据，近 40 种语言，沙箱静态检查 + 单元测试 |
+| 指令遵循 | LLM 生成指令 + 验证代码 + 单元测试交叉验证，执行反馈拒绝采样 |
+| 结构化理解 | 表格问答、事实核查、纠错，响应带推理链 |
+| 逻辑推理 | 7 万新 query 覆盖演绎/归纳/类比/因果/统计推理，迭代剔除错误答案 |
+| 跨语言迁移 | 翻译模型转写指令到低资源语言，评估语义对齐 |
+| 系统指令鲁棒性 | 数百个系统提示词，验证一致性并降低方差 |
+| 响应过滤 | critic 模型 + 多 agent 协作打分，全维度无缺陷才保留 |
+
+最终约 100 万 SFT 样本、两个 epoch、序列长 32,768。这九项里最值得注意的是**指令遵循的验证码化**：让 LLM 为每条带约束的指令写一个 Python 验证函数——「模型自查约束」比人工检查可扩展得多。
+
+### 两阶段 RL：离线管「难评估」，在线管「可打分」
+
+RL 部分是这份报告最有传承价值的设计<Cite n={1} />：
+
+**离线 RL（DPO）** 聚焦奖励模型难以评估的能力——推理、事实性、指令遵循。信号由执行反馈与答案匹配**预先构建**：SFT 模型对新 query 重采样响应，通过质量检查的为正例、失败者为负例，配成约 15 万训练对做 DPO。
+
+**在线 RL（GRPO）** 处理奖励模型能分辨的细微质量——真实性、有用性、简洁性、切题性、无害性、去偏。query 按响应分数方差排序（方差大先训），每个 query 采 8 个响应，全局 batch 2,048。
+
+这个「可验证的离线做、可打分的在线做」的分工，是 Qwen2.5 与 Qwen3 之间最重要的桥：Qwen3 报告把推理 RL 扩展到大规模可验证任务、再用 thinking mode fusion 与通用 RL 收尾，骨架仍然是从这里长出来的。
+
+## 五、1M 上下文的三份证据
+
+长上下文的验证比 Qwen2 系统得多，三个实验层层递进<Cite n={1} />：
+
+**Passkey 检索（1M）**：Turbo 在 100 万 token 的隐藏数字检索上保持 100% 准确率——
+
+<figure className="my-6">
+  <img src="./fig-2-passkey-1m.png" alt="Qwen2.5-Turbo 在 1M token 长度的 Passkey 检索任务：横轴为上下文长度至 1M，纵轴为文档深度，整个区域为深色（100% 准确率）" className="mx-auto h-auto max-w-full rounded-lg border border-zinc-200 shadow-sm dark:border-zinc-800" />
+  <figcaption className="mt-2 text-center text-xs text-zinc-500 dark:text-zinc-400">
+    <span className="figure-caption-main">Qwen2.5-Turbo 在 1M token 长度的 Passkey 检索任务：横轴为上下文长度至 1M，纵轴为文档深度，整个区域为深色（100% 准确率）</span>
+    <span className="figure-caption-source">图源：Qwen Team, <em>Qwen2.5 Technical Report</em>（arXiv:2412.15115）Figure 2</span>
+  </figcaption>
+</figure>
+
+**RULER / LV-Eval / LongBench-Chat**：RULER 上 Turbo（1M）在 4K–128K 全档保持 84.5+ 均分，而 7B-Instruct 到 128K 档掉到 55.1——长上下文能力高度依赖渐进训练，不是全尺寸共享<Cite n={1} />。报告还给出一个工程结论：**YARN+DCA 不改变模型在短序列上的行为**，可以放心常开。
+
+**TTFT 延迟**：1M 窗口如果代价是首 token 延迟爆炸就没有产品意义。Turbo 相对 7B 全注意力基线在不同长度上取得 1.4x–5.6x 的 TTFT 加速：
+
+<figure className="my-6">
+  <img src="./fig-3-ttft.png" alt="Qwen2.5-Turbo 与 Qwen2.5-7B 的 TTFT 对比：两组柱状图显示 Turbo 在不同上下文长度下的首 token 延迟相对 7B 全注意力基线加速 1.4 到 5.6 倍，长度越长加速越明显" className="mx-auto h-auto max-w-full rounded-lg border border-zinc-200 shadow-sm dark:border-zinc-800" />
+  <figcaption className="mt-2 text-center text-xs text-zinc-500 dark:text-zinc-400">
+    <span className="figure-caption-main">Qwen2.5-Turbo 与 Qwen2.5-7B 的 TTFT 对比：两组柱状图显示 Turbo 在不同上下文长度下的首 token 延迟相对 7B 全注意力基线加速 1.4 到 5.6 倍，长度越长加速越明显</span>
+    <span className="figure-caption-source">图源：Qwen Team, <em>Qwen2.5 Technical Report</em>（arXiv:2412.15115）Figure 3</span>
+  </figcaption>
+</figure>
+
+## 小结
+
+Qwen2.5 的价值在于示范了「架构稳定期」怎么继续进步：数据侧用模型过滤、领域注入、合成与重平衡把 7T 做成 18T；后训练用「离线 DPO + 在线 GRPO」的分工把 RL 信号做密；长上下文用四阶段渐进 + 推理外推把 1M 做成产品。它的 Turbo/Plus 只在 API 提供（细节不可复现），RULER 也揭示了长度能力的尺寸依赖——但作为 Qwen3 之前最后一代 dense 时代的报告，它把「数据与后训练的工程上限」推到了一个很清楚的位置。
+
+## 参考资料
+
+<References>
+1. Qwen Team (2024). *Qwen2.5 Technical Report*. arXiv: [2412.15115](https://arxiv.org/abs/2412.15115). —— 本文主报告：18T 预训练数据、scaling law 超参、九项 SFT 数据工程、两阶段 RL、1M 长上下文三组实验。
+2. An Yang et al. (2024). *Qwen2 Technical Report*. arXiv: [2407.10671](https://arxiv.org/abs/2407.10671). —— 架构与前代数据基线（GQA、MoE、7T、DPO）。
+3. Zhihong Shao et al. (2024). *DeepSeekMath: Pushing the Limits of Mathematical Reasoning in Open Language Models*. arXiv: [2402.03300](https://arxiv.org/abs/2402.03300). —— Qwen2.5 在线 RL 采用的 GRPO 算法来源。
+4. Binyuan Hui et al. (2024). *Qwen2.5-Coder Technical Report*. arXiv: [2409.12186](https://arxiv.org/abs/2409.12186). —— 并入 Qwen2.5 预训练与 SFT 的代码领域语料来源。
+5. An Yang et al. (2024). *Qwen2.5-Math Technical Report*. arXiv: [2409.12122](https://arxiv.org/abs/2409.12122). —— 并入 Qwen2.5 预训练与 SFT 的数学领域语料来源。
+</References>

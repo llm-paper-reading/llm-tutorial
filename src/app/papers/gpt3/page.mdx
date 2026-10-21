@@ -1,0 +1,87 @@
+import paper from "./meta";
+import { paperMetadata } from "@/lib/papers";
+
+export const metadata = paperMetadata(paper);
+
+<PaperHeader slug={paper.slug} />
+
+# GPT-3：175B 与 in-context learning 的命名
+
+2020 年 5 月，OpenAI 发布 GPT-3：175B 参数、300B token 训练、上下文 2048，比当时最大的 dense 模型大一个数量级<Cite n={1} />。但这篇论文的真正贡献不是模型本身，而是一个论点的系统论证：<Cite n={1} />**足够大的语言模型可以在不更新任何参数的情况下，仅凭 prompt 里的几个示例完成任务**——作者把它命名为 **in-context learning（ICL）**，并把 zero-shot / one-shot / few-shot 三档设置做成标准评测协议。NLP 的交互方式从此从「收集数据微调模型」转向「写提示词」，这条路线最终通向 ChatGPT。站内整条对齐线（[InstructGPT](/papers/instructgpt) → [DPO](/papers/dpo-rafailov) → …）讨论的都是「这个能力出现在没有对齐的基座上之后，如何让它听话」。
+
+> 📌 前置：建议先读 [Attention Is All You Need](/papers/attention-transformer)（架构基座）与 GPT-2 的设定；scaling 的理论侧可对照 Kaplan et al. (2020)，工程侧对照 [Chinchilla](https://arxiv.org/abs/2203.15556) 与 [Llama 3](/papers/llama3) 的 IsoFLOPs。
+
+## 一、动机：微调范式的三个痛点
+
+论文开篇对当时主流「预训练 + 微调」范式的批评有三条<Cite n={1} />：
+
+1. **每任务都要标注数据**——收集与微调的成本随任务数量线性增长；
+2. **微调后的模型分布狭窄**——在分布外泛化差，benchmark 上的「人类水平」夸大了真实任务表现；
+3. **人类不这么学语言**——一句自然语言指令或极少示例就足以让人类上手大多数语言任务。
+
+第三条是全文的哲学支点：既然人类用「指令 + 少量示例」学习，模型也许可以只靠上下文中的示例学习——**不碰梯度**。这要求模型在预训练中就已经具备任务能力，剩下的只是「在上下文里激活它」。于是问题变成：要多大？
+
+## 二、规模设计：8 档模型的对照实验
+
+GPT-3 训了 **8 档模型**（125M 到 175B，跨越三个数量级），全部 300B token，架构沿用 GPT-2（修改版初始化、pre-norm、可逆分词），唯一新增是**交替的 dense 与局部带状稀疏注意力**（类似 Sparse Transformer）<Cite n={1} />。175B 的具体配置：96 层、d_model 12,288、96 个注意力头、上下文 2048——论文明确说这些超参按 GPU 布局的计算效率与负载均衡选择，验证损失对合理范围内的架构参数并不敏感<Cite n={1} />。这是一份坦率的「架构不重要、规模重要」宣言。
+
+数据侧的配方后来被广泛复制：Common Crawl 过滤后约 410B token 打底，高质量来源**大幅上采样**（WebText2、Books1/2、Wikipedia 按权重合计超过六成）——低质量数据提供覆盖面，高质量数据提供分布校准<Cite n={1} />。
+
+## 三、In-Context Learning：命名与机制描述
+
+论文对 ICL 的机制解释用了「元学习」的语言<Cite n={1} />：
+
+<figure className="my-6">
+  <img src="./fig-1-meta-learning.png" alt="语言模型元学习示意：无监督预训练中，模型在序列内部反复见到嵌入的子任务，发展出广泛的技能与模式识别能力；推理时（外环）这些能力在单次前向（内环）内被激活以适配或识别目标任务，in-context learning 指的就是这个内环过程" className="mx-auto h-auto max-w-full rounded-lg border border-zinc-200 shadow-sm dark:border-zinc-800" />
+  <figcaption className="mt-2 text-center text-xs text-zinc-500 dark:text-zinc-400">
+    <span className="figure-caption-main">语言模型元学习示意：无监督预训练中，模型在序列内部反复见到嵌入的子任务，发展出广泛的技能与模式识别能力；推理时（外环）这些能力在单次前向（内环）内被激活以适配或识别目标任务，in-context learning 指的就是这个内环过程</span>
+    <span className="figure-caption-source">图源：Brown et al., <em>Language Models are Few-Shot Learners</em>（arXiv:2005.14165）Figure 1.1</span>
+  </figcaption>
+</figure>
+
+预训练序列里天然嵌着大量重复的「子任务」（补全、问答、翻译混在网页文本里），模型在前向中逐渐形成做这些子任务的技能；推理时给出几个示例，相当于在上下文里「选中」其中一支技能。论文对 Figure 1.2 的观察值得记住：无论加不加自然语言任务描述，**大模型的 in-context 学习曲线都更陡**——规模提升的不只是知识量，还有「利用上下文信息的效率」<Cite n={1} />。诚实地说，这只是描述性框架，ICL 的机制理解（诱导头、任务向量等）是 2022 年之后才开始的。
+
+## 四、Scaling：幂律再延续两个数量级
+
+验证损失随训练算力的幂律（Kaplan et al. 2020）在 175B 上继续成立，偏离很小<Cite n={1} />：
+
+<figure className="my-6">
+  <img src="./fig-2-scaling.png" alt="性能随训练算力平滑缩放：横轴为训练算力（对数），纵轴为验证交叉熵损失，含 6 个额外极小模型在内的各尺寸模型几乎完全落在幂律预测曲线上，幂律趋势在 Kaplan et al. (2020) 之后又延续了两个数量级" className="mx-auto h-auto max-w-full rounded-lg border border-zinc-200 shadow-sm dark:border-zinc-800" />
+  <figcaption className="mt-2 text-center text-xs text-zinc-500 dark:text-zinc-400">
+    <span className="figure-caption-main">性能随训练算力平滑缩放：横轴为训练算力（对数），纵轴为验证交叉熵损失，含 6 个额外极小模型在内的各尺寸模型几乎完全落在幂律预测曲线上，幂律趋势在 Kaplan et al. (2020) 之后又延续了两个数量级</span>
+    <span className="figure-caption-source">图源：Brown et al., <em>Language Models are Few-Shot Learners</em>（arXiv:2005.14165）Figure 3.1</span>
+  </figcaption>
+</figure>
+
+这为「继续放大」提供了信心；同时论文强调损失下降会传导到下游任务——损失不是在拟合语料的琐碎细节。两年后 Chinchilla 指出这批模型在「参数/数据」配比上欠优（token 给少了），Llama 3 的 IsoFLOPs 实验则把这条线工程化——但「验证损失作为规模化信号」的用法正是从这里开始的。
+
+## 五、结果：few-shot 逼近到哪里
+
+评测覆盖九大类任务，全部在 zero/one/few-shot 三档下进行<Cite n={1} />。定位 GPT-3 few-shot 能力的三个数字：
+
+- **SuperGLUE few-shot 平均 71.8**——超过微调的 BERT-Large（69.0），距微调 SOTA（89.0）仍差 17 分：GPT-3 证明的是「不用微调也可用」，不是「超过微调」<Cite n={1} />；
+- **CoQA 阅读理解 few-shot 85 F1**——距人类与微调 SOTA 仅数分；
+- **十项算术测试**：从第二大的 13B 到 175B 出现显著跳变（三位数加法等任务上小模型接近零、175B 接近 80–90%）——论文用「significant jump」描述，这张图后来成为「涌现能力」讨论最常引用的证据之一<Cite n={1} />。
+
+## 六、诚实的附录：基准污染与局限
+
+两点常被忽视但值得读<Cite n={1} />：
+
+1. **基准污染分析**（附录 C）：训练数据与部分测试集存在重叠，论文统计了污染率并分析受影响任务——这个操作后来成为大模型报告的标准配置（Qwen 系列的 13-gram 剔除、Llama 3 的 n-gram 去污染都源于此）；
+2. **局限性小节**：文本生成仍会语义重复与逻辑断裂、长文结构控制弱、所有能力仍是「有时可行」而非可靠。
+
+此外「更广影响」章节对滥用、偏见、能耗的讨论篇幅可观——2020 年的论文里这份自觉相当超前。
+
+## 小结
+
+GPT-3 的遗产是三件事：**交互范式的转换**（prompt 成为编程接口）；**scaling 的实证信心**（幂律跨两个数量级延续）；**对齐问题的起点**（能力先于可控性出现，才有 [InstructGPT](/papers/instructgpt) 的三步法与之后的整条对齐线）。它也是站内多篇论文的隐含基座：[Qwen1](/papers/qwen1) 的 tokenizer 起点参照它的 cl100k、Llama 3 的「架构最简 + 规模拉满」是它的方法论直系。
+
+## 参考资料
+
+<References>
+1. Tom B. Brown et al. (2020). *Language Models are Few-Shot Learners*. NeurIPS 2020, arXiv: [2005.14165](https://arxiv.org/abs/2005.14165). —— 本文主论文：8 档模型对照、in-context learning 定义与三档评测协议、幂律延续、算术跳变、污染分析与局限。
+2. Jared Kaplan et al. (2020). *Scaling Laws for Neural Language Models*. arXiv: [2001.08361](https://arxiv.org/abs/2001.08361). —— 幂律 scaling law 的理论侧姊妹篇。
+3. Long Ouyang et al. (2022). *Training language models to follow instructions with human feedback*. NeurIPS 2022, arXiv: [2203.02155](https://arxiv.org/abs/2203.02155). —— 在 GPT-3 基座上做对齐的后续，站内精读见 [InstructGPT](/papers/instructgpt)。
+4. Jordan Hoffmann et al. (2022). *Training Compute-Optimal Large Language Models*（Chinchilla）. arXiv: [2203.15556](https://arxiv.org/abs/2203.15556). —— 两年后对「参数/数据」配比的修正，站内对照见 [Llama 3](/papers/llama3) 的 IsoFLOPs 讨论。
+5. Alec Radford et al. (2019). *Language Models are Unsupervised Multitask Learners*（GPT-2）. —— 架构与「多任务零样本」论点的直接前身。
+</References>
