@@ -1,0 +1,106 @@
+import paper from "./meta";
+import { paperMetadata } from "@/lib/papers";
+
+export const metadata = paperMetadata(paper);
+
+<PaperHeader slug={paper.slug} />
+
+# Scaling Laws：性能随规模的幂律
+
+2020 年 1 月，OpenAI 发布这篇经验研究：在从 10³ 到 10⁹ 参数（六个数量级）、跨多档数据量与算力的受控实验上，**语言建模损失与规模三要素——参数量 $N$、数据量 $D$、训练算力 $C$——各自呈现精确的幂律**<Cite n={1} />。此后「训多大模型」从玄学变成算术：[GPT-3](/papers/gpt3) 用它论证 175B、Chinchilla 修正它的数据配比、[Llama 3](/papers/llama3) 的 IsoFLOPs 与 [Qwen2.5](/papers/qwen2-5) 的超参 scaling law 都是它的工程化后代。它也是站内十几份技术报告里所有「外推」「计算最优」论述的公式源头。
+
+> 📌 前置：需要 Transformer 基础（[Attention Is All You Need](/papers/attention-transformer)）；后续演进对照 [GPT-3](/papers/gpt3)（幂律延续验证）、[Llama 3](/papers/llama3)（IsoFLOPs 实测版）。
+
+## 一、动机：把「训多大」变成可外推的问题
+
+2020 年之前，「语言模型该多大、配多少数据、训多久」没有定量答案——每个新模型都是一次昂贵实验。这篇论文的做法朴素而有效：训一族覆盖巨大尺寸范围的模型（小到 10³ 参数），固定其他变量动一个，拟合损失曲线<Cite n={1} />。语言建模任务的「高天花板低地板」特性允许在超过七个数量级的跨度上研究趋势。
+
+## 二、三条幂律与七个发现
+
+核心公式（$N$ 为非嵌入参数）<Cite n={1} />：
+
+$$
+L(N) = \left(\frac{N_c}{N}\right)^{\alpha_N},\ \alpha_N \approx 0.076;\qquad
+L(D) = \left(\frac{D_c}{D}\right)^{\alpha_D},\ \alpha_D \approx 0.095
+$$
+
+$$
+L(C_{\min}) = \left(\frac{C_c}{C_{\min}}\right)^{\alpha_C},\ \alpha_C \approx 0.050
+$$
+
+三条趋势分别跨六个（$N$、$D$）到八个（$C_{\min}$）数量级成立，高端无偏离迹象：
+
+<figure className="my-6">
+  <img src="./fig-1-power-law.png" alt="语言建模性能随三个规模因素的幂律关系：横轴分别为参数量（非嵌入）、数据集大小（token 数）与训练算力（PF-days），纵轴为测试损失；双对数坐标下三者均呈跨多个数量级的直线幂律趋势" className="mx-auto h-auto max-w-full rounded-lg border border-zinc-200 shadow-sm dark:border-zinc-800" />
+  <figcaption className="mt-2 text-center text-xs text-zinc-500 dark:text-zinc-400">
+    <span className="figure-caption-main">语言建模性能随三个规模因素的幂律关系：横轴分别为参数量（非嵌入）、数据集大小（token 数）与训练算力（PF-days），纵轴为测试损失；双对数坐标下三者均呈跨多个数量级的直线幂律趋势</span>
+    <span className="figure-caption-source">图源：Kaplan et al., <em>Scaling Laws for Neural Language Models</em>（arXiv:2001.08361）Figure 1</span>
+  </figcaption>
+</figure>
+
+摘要里列的七个发现构成后续所有讨论的词汇表<Cite n={1} />：
+
+1. **性能强依赖规模、弱依赖形状**——深度/宽度/头数在合理范围内影响极小；
+2. **平滑幂律**——三个因素各自幂律，无上端偏离；
+3. **过拟合普适性**——损失惩罚取决于 $N^{0.74}/D$（模型大 8 倍，数据只需多 5 倍）；
+4. **训练普适性**——训练曲线可用尺寸无关的参数拟合，早段可外推远期损失；
+5. **迁移随性能改善**——换分布测试只带来近似恒定的损失偏移；
+6. **样本效率**——大模型用更少步数与数据达到同样性能；
+7. **收敛是低效的**——固定算力下最优解是训大模型、远未收敛就停。
+
+## 三、联合公式与过拟合规律
+
+单变量幂律的自然组合给出 $N$ 与 $D$ 的联合依赖<Cite n={1} />：
+
+$$
+L(N, D) = \left[ \left(\frac{N_c}{N}\right)^{\alpha_N/\alpha_D} + \frac{D_c}{D} \right]^{\alpha_D}
+$$
+
+它预测的过拟合行为只取决于比值 $N^{0.74}/D$——这是「数据该配多少」的第一个定量拇指法则。类似地，训练动力学有 $L(N, S)$ 联合式（$S$ 为优化步数），学习曲线因此可以按尺寸无关的方式归一化：
+
+<figure className="my-6">
+  <img src="./fig-2-smooth.png" alt="规模化的训练曲线两图：左为大模型用更少样本达到同样性能（不同参数量的训练损失随处理 token 数下降，大模型曲线更低），右为最优模型尺寸随损失目标与算力预算平滑增长" className="mx-auto h-auto max-w-full rounded-lg border border-zinc-200 shadow-sm dark:border-zinc-800" />
+  <figcaption className="mt-2 text-center text-xs text-zinc-500 dark:text-zinc-400">
+    <span className="figure-caption-main">规模化的训练曲线两图：左为大模型用更少样本达到同样性能（不同参数量的训练损失随处理 token 数下降，大模型曲线更低），右为最优模型尺寸随损失目标与算力预算平滑增长</span>
+    <span className="figure-caption-source">图源：Kaplan et al., <em>Scaling Laws for Neural Language Models</em>（arXiv:2001.08361）Figure 2</span>
+  </figcaption>
+</figure>
+
+## 四、计算最优：算力主要买参数
+
+联合公式推出固定算力下的最优配比<Cite n={1} />：
+
+$$
+N \propto C^{0.73},\qquad B \propto C^{0.24},\qquad S \propto C^{0.03}
+$$
+
+指数分布的结论非常不均衡：**算力增长几乎全部应该花在更大的模型上**，batch size 温和增长，串行步数几乎不增（大部分数据增量用于并行），数据只需 $D \sim C^{0.27}$ 缓慢增长——并且最优训练应远未收敛时停止：
+
+<figure className="my-6">
+  <img src="./fig-4-compute-optimal.png" alt="计算最优训练前沿：固定算力预算下，最优模型尺寸随算力增长快速上升，最优停止点远在收敛之前；图中的前沿由不同尺寸模型的早停损失包络构成" className="mx-auto h-auto max-w-full rounded-lg border border-zinc-200 shadow-sm dark:border-zinc-800" />
+  <figcaption className="mt-2 text-center text-xs text-zinc-500 dark:text-zinc-400">
+    <span className="figure-caption-main">计算最优训练前沿：固定算力预算下，最优模型尺寸随算力增长快速上升，最优停止点远在收敛之前；图中的前沿由不同尺寸模型的早停损失包络构成</span>
+    <span className="figure-caption-source">图源：Kaplan et al., <em>Scaling Laws for Neural Language Models</em>（arXiv:2001.08361）Figure 3–4</span>
+  </figcaption>
+</figure>
+
+## 五、后续修正与局限
+
+两个后续发展必须知道：<Cite n={1} />
+
+- **Chinchilla（2022）**：用学习率调度修正与更大实验范围发现 Kaplan 的数据配比偏保守——参数与数据应大致同步放大（约 20:1 token/参数），而非 8:5。GPT-3 一代模型普遍「训得不够久」正是 Kaplan 结论的直接后果；
+- **常数不可迁移**：$N_c$、$D_c$、$C_c$ 依赖词表与 tokenization，论文明言无根本意义；结论停留在 loss 层面，loss 与下游能力的关系是「涌现能力」研究（[GPT-3](/papers/gpt3) 的算术跳变即一例）后续补的。
+
+## 小结
+
+Scaling Laws 的遗产是一个思维框架：**规模三要素的定量兑换表**。它把「更大是否更好」变成「好在多少、代价多少」；它的每一个结论（形状弱依赖、过拟合比值、算力买参数）都被后续工作反复检验、修正、工程化——从 [GPT-3](/papers/gpt3) 的 175B 赌注到 [Llama 3](/papers/llama3) 的 405B 外推，方法论一脉相承。读它，是把站内所有 scaling 论述的引用链补上第一环。
+
+## 参考资料
+
+<References>
+1. Jared Kaplan, Sam McCandlish, et al. (2020). *Scaling Laws for Neural Language Models*. arXiv: [2001.08361](https://arxiv.org/abs/2001.08361). —— 本文主论文：三条幂律与拟合常数、L(N,D) 联合公式、过拟合比值 N^0.74/D、计算最优配比 N∝C^0.73 与七个经验发现。
+2. Tom B. Brown et al. (2020). *Language Models are Few-Shot Learners*. NeurIPS 2020, arXiv: [2005.14165](https://arxiv.org/abs/2005.14165). —— 幂律跨两个数量级的延续验证，站内精读见 [GPT-3](/papers/gpt3)。
+3. Jordan Hoffmann et al. (2022). *Training Compute-Optimal Large Language Models*（Chinchilla）. arXiv: [2203.15556](https://arxiv.org/abs/2203.15556). —— 对数据配比结论的修正。
+4. Llama Team, AI @ Meta (2024). *The Llama 3 Herd of Models*. arXiv: [2407.21783](https://arxiv.org/abs/2407.21783). —— IsoFLOPs 实测的计算最优外推，站内精读见 [Llama 3](/papers/llama3)。
+5. Qwen Team (2024). *Qwen2.5 Technical Report*. arXiv: [2412.15115](https://arxiv.org/abs/2412.15115). —— scaling law 用作超参计算器的新用法，站内精读见 [Qwen2.5](/papers/qwen2-5)。
+</References>

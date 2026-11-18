@@ -1,6 +1,13 @@
 import attentionTransformerFAQ from "@/app/papers/attention-transformer/faq";
 import llama3FAQ from "@/app/papers/llama3/faq";
 import gpt3FAQ from "@/app/papers/gpt3/faq";
+import flashAttentionFAQ from "@/app/papers/flash-attention/faq";
+import scalingLawsFAQ from "@/app/papers/scaling-laws/faq";
+import constitutionalAIFAQ from "@/app/papers/constitutional-ai/faq";
+import chainOfThoughtFAQ from "@/app/papers/chain-of-thought/faq";
+import mixtralFAQ from "@/app/papers/mixtral/faq";
+import mambaFAQ from "@/app/papers/mamba/faq";
+import vllmFAQ from "@/app/papers/vllm/faq";
 import instructgptFAQ from "@/app/papers/instructgpt/faq";
 import deepseekR1FAQ from "@/app/papers/deepseek-r1/faq";
 import deepseekOcrFAQ from "@/app/papers/deepseek-ocr/faq";
@@ -35,6 +42,8 @@ import qwen3VlFAQ from "@/app/papers/qwen3-vl/faq";
 import rethinkingOpdFAQ from "@/app/papers/rethinking-opd/faq";
 import tmlOpdFAQ from "@/app/papers/tml-opd/faq";
 import uiTars2FAQ from "@/app/papers/ui-tars-2/faq";
+import oneFitsAllFAQ from "@/app/papers/one-fits-all/faq";
+import timeLlmFAQ from "@/app/papers/time-llm/faq";
 
 export interface PaperFAQItem {
   id: string;
@@ -50,6 +59,13 @@ const paperFAQBySlug: Partial<Record<string, PaperFAQ>> = {
   "attention-transformer": attentionTransformerFAQ,
   "llama3": llama3FAQ,
   "gpt3": gpt3FAQ,
+  "flash-attention": flashAttentionFAQ,
+  "scaling-laws": scalingLawsFAQ,
+  "constitutional-ai": constitutionalAIFAQ,
+  "chain-of-thought": chainOfThoughtFAQ,
+  "mixtral": mixtralFAQ,
+  "mamba": mambaFAQ,
+  "vllm": vllmFAQ,
   "instructgpt": instructgptFAQ,
   "deepseek-r1": deepseekR1FAQ,
   "deepseek-ocr": deepseekOcrFAQ,
@@ -84,6 +100,8 @@ const paperFAQBySlug: Partial<Record<string, PaperFAQ>> = {
   "rethinking-opd": rethinkingOpdFAQ,
   "tml-opd": tmlOpdFAQ,
   "ui-tars-2": uiTars2FAQ,
+  "one-fits-all": oneFitsAllFAQ,
+  "time-llm": timeLlmFAQ,
 };
 
 export function getPaperFAQ(slug: string): PaperFAQ {

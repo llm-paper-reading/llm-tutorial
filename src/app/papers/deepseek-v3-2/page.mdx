@@ -42,7 +42,7 @@ $$
 论文原版结构图——绿色部分就是索引器的打分与 top-k 选择，灰色部分是只在被选中的潜向量上计算的主注意力：
 
 <figure className="my-6">
-  <img src="./fig-dsa-arch.png" alt="DSA 注意力架构：轻量索引器给前文 token 打分选出 top-k（绿色），主注意力只在选中的 MLA 潜向量 KV 条目上计算" className="mx-auto h-auto max-w-2xl rounded-lg border border-zinc-200 shadow-sm dark:border-zinc-800" />
+  <img src="./fig-dsa-arch.svg" alt="DSA 注意力架构：轻量索引器给前文 token 打分选出 top-k（绿色），主注意力只在选中的 MLA 潜向量 KV 条目上计算" className="mx-auto h-auto max-w-2xl rounded-lg border border-zinc-200 shadow-sm dark:border-zinc-800" />
   <figcaption className="mt-2 text-center text-xs text-zinc-500 dark:text-zinc-400">
     <span className="figure-caption-main">DSA 注意力架构：轻量索引器给前文 token 打分选出 top-k（绿色），主注意力只在选中的 MLA 潜向量 KV 条目上计算</span>
     <span className="figure-caption-source">图源：DeepSeek-AI et al., <em>DeepSeek-V3.2 Technical Report</em>（arXiv:2512.02556）Figure 2</span>
@@ -131,7 +131,7 @@ R1 的推理在「一次性解题」上很强，但智能体需要在**多轮工
 论文原版的思考保留机制图，直观对比了 R1 式「每轮全丢」与 V3.2 的「用户消息边界丢弃、工具轮次保留」:
 
 <figure className="my-6">
-  <img src="./fig-thinking-retention.jpeg" alt="工具调用场景下的思考保留机制：新用户消息到来时丢弃历史思考，追加工具输出时思考链全程保留，工具调用与结果始终留在上下文中" className="mx-auto h-auto max-w-2xl rounded-lg border border-zinc-200 shadow-sm dark:border-zinc-800" />
+  <img src="./fig-thinking-retention.svg" alt="工具调用场景下的思考保留机制：新用户消息到来时丢弃历史思考，追加工具输出时思考链全程保留，工具调用与结果始终留在上下文中" className="mx-auto h-auto max-w-2xl rounded-lg border border-zinc-200 shadow-sm dark:border-zinc-800" />
   <figcaption className="mt-2 text-center text-xs text-zinc-500 dark:text-zinc-400">
     <span className="figure-caption-main">工具调用场景下的思考保留机制：新用户消息到来时丢弃历史思考，追加工具输出时思考链全程保留，工具调用与结果始终留在上下文中</span>
     <span className="figure-caption-source">图源：DeepSeek-AI et al., <em>DeepSeek-V3.2 Technical Report</em>（arXiv:2512.02556）Figure 4</span>

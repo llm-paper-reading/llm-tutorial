@@ -1,0 +1,79 @@
+import paper from "./meta";
+import { paperMetadata } from "@/lib/papers";
+
+export const metadata = paperMetadata(paper);
+
+<PaperHeader slug={paper.slug} />
+
+# Constitutional AI：用 AI 反馈做无害对齐
+
+2022 年 12 月，Anthropic 发布 Constitutional AI（CAI）<Cite n={1} />——对齐方法的第二大范式分支。彼时 [InstructGPT](/papers/instructgpt) 的 RLHF 刚证明人类偏好可以驱动对齐，但其代价已显现：无害性标注昂贵缓慢、目标不透明（数万条私有标签无法审查），且模型学会了**敷衍式拒绝**——遇到有问题的请求就含糊推脱，helpfulness 与 harmlessness 此消彼长。CAI 的方案激进而简洁：<Cite n={1} />**用一份自然语言写成的原则清单（宪法）替代人工无害性标注，让 AI 自己批评、改写、评判**。52B 模型的实验显示，RL-CAI 在无害-有用的 Pareto 前沿上全面优于用人类反馈训练的版本，且训出一个「不回避」的助手。
+
+> 📌 前置：建议先读 [InstructGPT](/papers/instructgpt)（RLHF 三步法是 CAI 的对照组）与 [PPO](/papers/ppo-schulman)；偏好判断里用到的推理可接 [Chain-of-Thought](/papers/chain-of-thought)。
+
+## 一、动机：放大监督
+
+论文的四个动机层层递进<Cite n={1} />：
+
+1. **Scaling Supervision**：随着 AI 能力逼近或超过人类，必须发展「用 AI 帮人类监督 AI」的技术——监督者的能力若能与被监督者同步增长，对齐才有可持续方案；
+2. **消除敷衍**：此前人类反馈训练的无害模型爱拒绝、爱回避，而 CAI 想训出「解释为什么拒绝」的助手；
+3. **透明**：把训练目标写成一份可读的原则清单，而不是数万条无人能整体理解的私有标签；
+4. **快速迭代**：改目标只需改文本，不必重新收集人工标注。
+
+第四条在工程上最实用：RLHF 改一次目标就要重新标注一轮，CAI 改一次宪法就行。
+
+## 二、方法：两阶段流水线
+
+<figure className="my-6">
+  <img src="./fig-1-rlhf-rlaif.png" alt="RLHF 与 Constitutional AI（RLAIF）流程对比：上半部分 RLHF 用人工对有害 prompt 的响应做偏好标注训练偏好模型；下半部分 CAI 在监督阶段让模型自我批评并按宪法原则改写响应做 SFT，在 RL 阶段用 AI 按原则的偏好对比（RLAIF）替代人工标注训练偏好模型" className="mx-auto h-auto max-w-full rounded-lg border border-zinc-200 shadow-sm dark:border-zinc-800" />
+  <figcaption className="mt-2 text-center text-xs text-zinc-500 dark:text-zinc-400">
+    <span className="figure-caption-main">RLHF 与 Constitutional AI（RLAIF）流程对比：上半部分 RLHF 用人工对有害 prompt 的响应做偏好标注训练偏好模型；下半部分 CAI 在监督阶段让模型自我批评并按宪法原则改写响应做 SFT，在 RL 阶段用 AI 按原则的偏好对比（RLAIF）替代人工标注训练偏好模型</span>
+    <span className="figure-caption-source">图源：Bai et al., <em>Constitutional AI: Harmlessness from AI Feedback</em>（arXiv:2212.08073）Figure 1</span>
+  </figcaption>
+</figure>
+
+**监督阶段（Critique → Revision → SFT）**<Cite n={1} />：用 helpful-only 模型回复有害 prompt（初始回复通常有毒），然后要求模型**按随机抽取的宪法原则批评自己的回复**，再依据批评改写；可多轮迭代、每轮换原则。全部完成后用最终改写做监督微调。这一阶段的目的是快速把模型的行为分布「搬到」目标附近——减少 RL 阶段的探索负担与训练时长。
+
+**RL 阶段（AI 偏好 → PM → RL）**<Cite n={1} />：完全模仿 RLHF 的结构，唯一的替换是人类标注 → **AI 按原则评判**：从 SFT 模型采样成对回复，让模型依据宪法（可选先生成一段 CoT 推理）判断哪个更好，用这批「AI 偏好」训练偏好模型 PM，再以 PM 为奖励做 RL。论文特别测试了带 CoT 的评判版（RL-CAI CoT）：裁判先想再判，质量与透明度都更高。
+
+两阶段分工的表述值得记住：**第一阶段上分布，第二阶段做精修**——与 [DeepSeek-R1](/papers/deepseek-r1) 的冷启动 SFT + RL 同构，说明这是偏好优化的通用骨架。
+
+<figure className="my-6">
+  <img src="./fig-2-two-stage.png" alt="Constitutional AI 两阶段训练流程详图：监督阶段（上）为响应生成、按原则批评、修订、监督学习；强化学习阶段（下）为从 SFT 模型采样成对响应、AI 按宪法原则做偏好对比、训练偏好模型、RLAIF 训练" className="mx-auto h-auto max-w-full rounded-lg border border-zinc-200 shadow-sm dark:border-zinc-800" />
+  <figcaption className="mt-2 text-center text-xs text-zinc-500 dark:text-zinc-400">
+    <span className="figure-caption-main">Constitutional AI 两阶段训练流程详图：监督阶段（上）为响应生成、按原则批评、修订、监督学习；强化学习阶段（下）为从 SFT 模型采样成对响应、AI 按宪法原则做偏好对比、训练偏好模型、RLAIF 训练</span>
+    <span className="figure-caption-source">图源：Bai et al., <em>Constitutional AI: Harmlessness from AI Feedback</em>（arXiv:2212.08073）Figure 1（两阶段分解）</span>
+  </figcaption>
+</figure>
+
+## 三、「宪法」：把目标写成文档
+
+实验用的宪法约 16 条原则，来源包括联合国人权宣言的改写与平台信任安全实践，覆盖从「不要帮助用户做不道德的事」到「遇到模糊请求应请用户澄清」<Cite n={1} />。论文对「为什么叫宪法」的辩解颇有分量：**任何 AI 系统都无法避免选择某套治理原则——即使它隐藏或隐式存在**；CAI 只是把这份原则写成可审查、可版本控制的文本。
+
+对比之下，RLHF 的目标藏在数万条标注数据的集体效应里，论文的评语是「即使公开也无人能理解或总结这么多信息的集体影响」<Cite n={1} />。
+
+## 四、结果：Pareto 前沿与「不回避」
+
+52B 模型的核心结果图（论文 Figure 2）横轴 helpfulness、纵轴 harmlessness 的 Elo 分数：用人类反馈训练的 Helpful 与 HH 模型呈现明显的取舍曲线；**RL-CAI 系列把前沿整体推向左上**——同等有用性下显著更无害，且带 CoT 的版本最好<Cite n={1} />。
+
+行为层面的变化比分数更本质：评估者被指示「两者同样无害时偏好不回避的回复」，RL-CAI 学会了**正面解释拒绝理由**（"I can't help with that because…"），而不是 RLHF 模型的敷衍推脱。论文指出这还解锁了后续能力：无害模型不再「一拒绝就废掉整段对话」，自动化红队测试因此可扩展<Cite n={1} />。
+
+## 五、局限与影响
+
+论文自己列出的风险面值得转述<Cite n={1} />：scaling supervision 自动化（并可能遮蔽）了决策；原则文本本身与 AI 对原则的解读都可能带偏差。结论的范围限定在内部 52B 模型与特定宪法上。
+
+影响侧：CAI 是 Claude 系列行为风格的直接来源；「AI 反馈替代人工标注」的思路后来渗入整个行业——从 [Qwen2](/papers/qwen2) 的自动数据合成、[Llama 3](/papers/llama3) 的 LLM 打分质检，到 RLVR 时代「规则即奖励」的 [DeepSeek-R1](/papers/deepseek-r1)（把原则进一步压缩为可验证函数）。对齐技术的谱系里，它是「监督信号工程化」的起点。
+
+## 小结
+
+CAI 的方法论遗产：**目标是文档**（宪法可读、可改、可审查）、**监督可放大**（AI 执行原则替代人工标注）、**拒绝也是交互**（解释理由而非敷衍）。它与 [InstructGPT](/papers/instructgpt)（人类偏好）、[DPO](/papers/dpo-rafailov)（去掉 RL 环节）并列为对齐三大范式节点，也是理解 Claude「有原则的拒绝」风格的钥匙。
+
+## 参考资料
+
+<References>
+1. Yuntao Bai et al. (2022). *Constitutional AI: Harmlessness from AI Feedback*. arXiv: [2212.08073](https://arxiv.org/abs/2212.08073). —— 本文主论文：两阶段流水线、宪法设计、RLAIF、Pareto 前沿结果与不回避行为、局限讨论。
+2. Long Ouyang et al. (2022). *Training language models to follow instructions with human feedback*. NeurIPS 2022, arXiv: [2203.02155](https://arxiv.org/abs/2203.02155). —— RLHF 对照范式，站内精读见 [InstructGPT](/papers/instructgpt)。
+3. Amanda Askell et al. (2021). *A General Language Assistant as a Laboratory for Alignment*. arXiv: [2112.00861](https://arxiv.org/abs/2112.00861). —— helpful/honest/harmless 框架与「原则式对齐」的先声。
+4. Jason Wei et al. (2022). *Chain-of-Thought Prompting Elicits Reasoning in Large Language Models*. NeurIPS 2022, arXiv: [2201.11903](https://arxiv.org/abs/2201.11903). —— CAI 评判阶段使用的 CoT 推理，站内精读见 [Chain-of-Thought](/papers/chain-of-thought)。
+5. Rafael Rafailov et al. (2023). *Direct Preference Optimization*. NeurIPS 2023, arXiv: [2305.18290](https://arxiv.org/abs/2305.18290). —— 对齐的第三条路线（显式偏好优化），站内精读见 [DPO](/papers/dpo-rafailov)。
+</References>

@@ -24,7 +24,7 @@ Qwen2.5 的回应是一次「数据工程总动员」——报告第 3、4 节�
 数据规模在系列演进中的位置一图可见：
 
 <figure className="my-6">
-  <img src="./fig-1-data-scaling.png" alt="Qwen 系列数据规模演进：Qwen1.5 用 3T token、Qwen2 用 7T、Qwen2.5 用 18T 预训练，柱状高度示意 MMLU、MBPP、BBH、MATH 等基准分数随数据规模逐代上升" className="mx-auto h-auto max-w-full rounded-lg border border-zinc-200 shadow-sm dark:border-zinc-800" />
+  <img src="./fig-1-data-scaling.svg" alt="Qwen 系列数据规模演进：Qwen1.5 用 3T token、Qwen2 用 7T、Qwen2.5 用 18T 预训练，柱状高度示意 MMLU、MBPP、BBH、MATH 等基准分数随数据规模逐代上升" className="mx-auto h-auto max-w-full rounded-lg border border-zinc-200 shadow-sm dark:border-zinc-800" />
   <figcaption className="mt-2 text-center text-xs text-zinc-500 dark:text-zinc-400">
     <span className="figure-caption-main">Qwen 系列数据规模演进：Qwen1.5 用 3T token、Qwen2 用 7T、Qwen2.5 用 18T 预训练，柱状高度示意 MMLU、MBPP、BBH、MATH 等基准分数随数据规模逐代上升</span>
     <span className="figure-caption-source">图源：Qwen Team, <em>Qwen2.5 Technical Report</em>（arXiv:2412.15115）Figure 1</span>
@@ -86,7 +86,7 @@ RL 部分是这份报告最有传承价值的设计<Cite n={1} />：
 **Passkey 检索（1M）**：Turbo 在 100 万 token 的隐藏数字检索上保持 100% 准确率——
 
 <figure className="my-6">
-  <img src="./fig-2-passkey-1m.png" alt="Qwen2.5-Turbo 在 1M token 长度的 Passkey 检索任务：横轴为上下文长度至 1M，纵轴为文档深度，整个区域为深色（100% 准确率）" className="mx-auto h-auto max-w-full rounded-lg border border-zinc-200 shadow-sm dark:border-zinc-800" />
+  <img src="./fig-2-passkey-1m.svg" alt="Qwen2.5-Turbo 在 1M token 长度的 Passkey 检索任务：横轴为上下文长度至 1M，纵轴为文档深度，整个区域为深色（100% 准确率）" className="mx-auto h-auto max-w-full rounded-lg border border-zinc-200 shadow-sm dark:border-zinc-800" />
   <figcaption className="mt-2 text-center text-xs text-zinc-500 dark:text-zinc-400">
     <span className="figure-caption-main">Qwen2.5-Turbo 在 1M token 长度的 Passkey 检索任务：横轴为上下文长度至 1M，纵轴为文档深度，整个区域为深色（100% 准确率）</span>
     <span className="figure-caption-source">图源：Qwen Team, <em>Qwen2.5 Technical Report</em>（arXiv:2412.15115）Figure 2</span>

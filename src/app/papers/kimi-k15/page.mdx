@@ -22,8 +22,8 @@ export const metadata = paperMetadata(paper);
 论文原版的大规模 RL 训练系统总览（左）与 partial rollout 示意（右）——注意右图中被长度截断的轨迹如何存入 replay buffer、在下一轮迭代续写：
 
 <figure className="my-6 grid gap-4 sm:grid-cols-2">
-  <img src="./fig-rl-system-overview.png" alt="Kimi k1.5 大规模 RL 训练系统总览：Rollout Workers 采样轨迹，经 Reward Models 打分进入 Replay Buffer,Trainer Workers 拿训练数据更新策略模型，参考模型旁路提供 KL 锚定" className="mx-auto h-auto max-w-full rounded-lg border border-zinc-200 shadow-sm dark:border-zinc-800" />
-  <img src="./fig-partial-rollout.png" alt="Partial rollout 示意：rollout worker 给每条轨迹设固定 token 预算，正常结束或重复检测提前终止的轨迹完整保存，被长度截断的轨迹存入 replay buffer 留待下一轮迭代续写" className="mx-auto h-auto max-w-full rounded-lg border border-zinc-200 shadow-sm dark:border-zinc-800" />
+  <img src="./fig-rl-system-overview.svg" alt="Kimi k1.5 大规模 RL 训练系统总览：Rollout Workers 采样轨迹，经 Reward Models 打分进入 Replay Buffer,Trainer Workers 拿训练数据更新策略模型，参考模型旁路提供 KL 锚定" className="mx-auto h-auto max-w-full rounded-lg border border-zinc-200 shadow-sm dark:border-zinc-800" />
+  <img src="./fig-partial-rollout.svg" alt="Partial rollout 示意：rollout worker 给每条轨迹设固定 token 预算，正常结束或重复检测提前终止的轨迹完整保存，被长度截断的轨迹存入 replay buffer 留待下一轮迭代续写" className="mx-auto h-auto max-w-full rounded-lg border border-zinc-200 shadow-sm dark:border-zinc-800" />
   <figcaption className="sm:col-span-2 mt-1 text-center text-xs text-zinc-500 dark:text-zinc-400">
     <span className="figure-caption-main">Partial rollout 示意：rollout worker 给每条轨迹设固定 token 预算，正常结束或重复检测提前终止的轨迹完整保存，被长度截断的轨迹存入 replay buffer 留待下一轮迭代续写</span>
     <span className="figure-caption-source">图源：Kimi Team, <em>Kimi k1.5: Scaling Reinforcement Learning with LLMs</em>（arXiv:2501.12599）Figure 3</span>
@@ -33,7 +33,7 @@ export const metadata = paperMetadata(paper);
 性能随回答长度持续上升的证据（论文 Figure 6，横轴为平均 token 长度，纵轴为各基准准确率，三条基准的拟合斜率均为正）:<Cite n={1} />
 
 <figure className="my-6">
-  <img src="./fig-perf-vs-length.png" alt="模型性能随回答长度上升：MathVista、OMNI-MATH500、MATH500 三个基准上准确率均随平均 token 长度线性增长" className="mx-auto h-auto max-w-full rounded-lg border border-zinc-200 shadow-sm dark:border-zinc-800" />
+  <img src="./fig-perf-vs-length.svg" alt="模型性能随回答长度上升：MathVista、OMNI-MATH500、MATH500 三个基准上准确率均随平均 token 长度线性增长" className="mx-auto h-auto max-w-full rounded-lg border border-zinc-200 shadow-sm dark:border-zinc-800" />
   <figcaption className="mt-2 text-center text-xs text-zinc-500 dark:text-zinc-400">
     <span className="figure-caption-main">模型性能随回答长度上升：MathVista、OMNI-MATH500、MATH500 三个基准上准确率均随平均 token 长度线性增长</span>
     <span className="figure-caption-source">图源：Kimi Team, <em>Kimi k1.5: Scaling Reinforcement Learning with LLMs</em>（arXiv:2501.12599）Figure 6</span>
@@ -133,7 +133,7 @@ print("\\n合成奖励:", total.round(3))
 课程采样的消融曲线（论文 Figure 9）：均匀采样混采易/难题为基线，课程采样先均匀再在第 24 轮迭代切换到难题，准确率显著抬升——
 
 <figure className="my-6">
-  <img src="./fig-curriculum.png" alt="课程学习消融：横轴为训练迭代轮数，纵轴为准确率；先均匀采样易题、第 24 轮切换到难题的课程学习曲线明显高于混合易难题的均匀采样基线" className="mx-auto h-auto max-w-full rounded-lg border border-zinc-200 shadow-sm dark:border-zinc-800" />
+  <img src="./fig-curriculum.svg" alt="课程学习消融：横轴为训练迭代轮数，纵轴为准确率；先均匀采样易题、第 24 轮切换到难题的课程学习曲线明显高于混合易难题的均匀采样基线" className="mx-auto h-auto max-w-full rounded-lg border border-zinc-200 shadow-sm dark:border-zinc-800" />
   <figcaption className="mt-2 text-center text-xs text-zinc-500 dark:text-zinc-400">
     <span className="figure-caption-main">课程学习消融：横轴为训练迭代轮数，纵轴为准确率；先均匀采样易题、第 24 轮切换到难题的课程学习曲线明显高于混合易难题的均匀采样基线</span>
     <span className="figure-caption-source">图源：Kimi Team, <em>Kimi k1.5: Scaling Reinforcement Learning with LLMs</em>（arXiv:2501.12599）Figure 9</span>

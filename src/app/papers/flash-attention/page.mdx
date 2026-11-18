@@ -1,0 +1,94 @@
+import paper from "./meta";
+import { paperMetadata } from "@/lib/papers";
+
+export const metadata = paperMetadata(paper);
+
+<PaperHeader slug={paper.slug} />
+
+# FlashAttention：IO 感知的精确注意力
+
+2022 年 5 月，Stanford 的 Tri Dao 等人发布 FlashAttention<Cite n={1} />——一篇不改注意力数学、只重组计算顺序的系统论文，后来成为现代 LLM 栈事实上的默认注意力实现。它回答了一个被近似注意力研究长期忽视的问题：<Cite n={1} />**GPU 上的注意力为什么慢**？答案不在 FLOPs，而在 IO：标准实现把 $N \times N$ 的中间矩阵写进显存（HBM）再读回来，而 HBM 带宽只有片上 SRAM 的约 1/10。FlashAttention 用 tiling + 在线 softmax + 反向重算三个手段，把 HBM 访问从 $\Theta(Nd + N^2)$ 压到 $\Theta(N^2d^2M^{-1})$，注意力部分最高提速 **7.6×**，内存随序列长度**线性**增长——并顺手证明了这是精确注意力的 IO 下界。
+
+> 📌 前置：建议先读 [Attention Is All You Need](/papers/attention-transformer)（注意力公式本体）；GQA / KV cache 的背景见 [Qwen2](/papers/qwen2) 与 [vLLM](/papers/vllm)；站内 [Llama 3](/papers/llama3) 的训练效率部分直接建立在它之上。
+
+## 一、动机：近似注意力的墙钟悖论
+
+2020–2022 年有一大批近似注意力工作（稀疏、低秩及其混合），把计算复杂度降到线性或近线性——**但多数在 wall-clock 时间上并不比标准注意力快**，因此从未被广泛采用<Cite n={1} />。论文的诊断直击要害：这些方法优化的是 FLOPs，而 FLOPs 与实际耗时并不相关；它们忽略了**内存访问（IO）的开销**。
+
+现代 GPU 的存储层级是数量级的鸿沟：A100 的 HBM 有 40–80GB、带宽 1.5–2.0TB/s；108 个流式多处理器各有 192KB 片上 SRAM、合计带宽约 19TB/s<Cite n={1} />。算力增速长期快于显存带宽，Transformer 的多数操作（softmax、dropout、逐元素运算）都是 memory-bound——**时间花在搬数据，不在算**。
+
+标准注意力实现的三步每步都要过 HBM：算 $S = QK^\top$ 写回、读出来做 softmax 写回、再读出来乘 $V$<Cite n={1} />。序列长 1K 时 $S$、$P$ 各是 $N^2$ 的矩阵，纯搬运成本已经是二次方。IO 感知算法在数据库 join、图像处理、线性代数里是老智慧，但 PyTorch/TensorFlow 不给细粒度内存控制——所以要用 CUDA 手写 kernel。
+
+## 二、三个技术手段
+
+FlashAttention 的目标是**不把注意力矩阵写进 HBM**。两个拦路虎：softmax 归约需要整行输入；反向传播需要中间矩阵算梯度。两个都是老技术的新用法<Cite n={1} />：
+
+**手段一：tiling（分块）**。把 $Q, K, V$ 切成块，从 HBM 装进 SRAM，在片上算分块注意力，按正确的归一化因子缩放累加。关键在 softmax 的可分解性——把 $\mathrm{softmax}(x)$ 拆成行最大值 $m(x)$ 与指数和 $\ell(x)$ 两个统计量，两个统计量都能分块增量合并：
+
+$$
+m(x) = \max(m(x^{(1)}), m(x^{(2)})),\qquad \ell(x) = e^{m(x^{(1)})-m(x)}\ell(x^{(1)}) + e^{m(x^{(2)})-m(x)}\ell(x^{(2)})
+$$
+
+每处理一个 KV 块，更新 $(m, \ell)$ 并重缩放已累积的输出——数学上精确，$N \times N$ 矩阵永不物化。
+
+**手段二：重算（recomputation）**。反向传播传统上要读前向存的 $S, P$。FlashAttention 只存输出 $O$ 和统计量 $(m, \ell)$，反向时在 SRAM 内用 $Q, K, V$ 的块**重算** $S$ 与 $P$<Cite n={1} />。FLOPs 变多了，但 HBM 访问大幅变少——在 memory-bound 的场景，这笔交换稳赚。论文把它类比为「选择性梯度检查点」，区别是以前的所有实现都在用速度换内存，而这里**更快的同时更省**。
+
+**手段三：kernel 融合**。tiling 让全部步骤（矩阵乘、softmax、可选的 mask/dropout、再矩阵乘）在**一个 CUDA kernel** 内完成：输入从 HBM 读一次，输出写回一次，中间全在片上<Cite n={1} />。
+
+<figure className="my-6">
+  <img src="./fig-1-tiling.svg" alt="FlashAttention 分块计算示意与加速比：左侧为 GPU 存储层级（HBM 1.5TB/s 与 SRAM 19TB/s），外层循环按块加载 K、V 到 SRAM，内层循环遍历 Q 块，分块计算注意力并直接写回输出，全程不物化 N×N 注意力矩阵（虚线框）；右侧为 GPT-2 上注意力运算相对 PyTorch 实现的加速，最高达 7.6 倍" className="mx-auto h-auto max-w-full rounded-lg border border-zinc-200 shadow-sm dark:border-zinc-800" />
+  <figcaption className="mt-2 text-center text-xs text-zinc-500 dark:text-zinc-400">
+    <span className="figure-caption-main">FlashAttention 分块计算示意与加速比：左侧为 GPU 存储层级（HBM 1.5TB/s 与 SRAM 19TB/s），外层循环按块加载 K、V 到 SRAM，内层循环遍历 Q 块，分块计算注意力并直接写回输出，全程不物化 N×N 注意力矩阵（虚线框）；右侧为 GPT-2 上注意力运算相对 PyTorch 实现的加速，最高达 7.6 倍</span>
+    <span className="figure-caption-source">图源：Dao et al., <em>FlashAttention: Fast and Memory-Efficient Exact Attention with IO-Awareness</em>（arXiv:2205.14135）Figure 1</span>
+  </figcaption>
+</figure>
+
+## 三、IO 复杂度：理论极限在哪
+
+论文的定理给了精确的账本<Cite n={1} />：
+
+| 实现 | HBM 访问 |
+|---|---|
+| 标准注意力 | $\Theta(Nd + N^2)$ |
+| **FlashAttention** | $\Theta(N^2d^2M^{-1})$（$M$ 为 SRAM 大小） |
+| block-sparse 版 | $\Theta(Nd + N^2d^2M^{-1} s)$（$s$ 为非零块比例） |
+
+典型取值 $d = 64$–$128$、$M \approx 100\mathrm{KB}$：$d^2$ 远小于 $M$，FlashAttention 的 HBM 访问少一个数量级（实测最高 9×）。更硬核的是**下界证明**：不存在任何精确注意力算法能在所有 SRAM 大小 $M \in [d, Nd]$ 上做到 $o(N^2d^2M^{-1})$——FlashAttention 已经是精确注意力的 IO 理论极限<Cite n={1} />。
+
+实验同时验证了「HBM 访问决定耗时」这个前提：固定其他条件只调块大小，访问越少耗时越低，直到块大到 SRAM 放不下或瓶颈转移到计算上：
+
+<figure className="my-6">
+  <img src="./fig-2-hbm.svg" alt="FlashAttention 的 HBM 访问与运行时关系三图：左为 GPT-2 medium 前向+反向的耗时与 HBM 访问量对比（FlashAttention FLOPs 更多但 HBM 访问远少，运行更快）；中为块大小对前向耗时的影响（块越大访问越少越快，超过 256 后受其他因素限制）；右为块稀疏版随稀疏度等比提速" className="mx-auto h-auto max-w-full rounded-lg border border-zinc-200 shadow-sm dark:border-zinc-800" />
+  <figcaption className="mt-2 text-center text-xs text-zinc-500 dark:text-zinc-400">
+    <span className="figure-caption-main">FlashAttention 的 HBM 访问与运行时关系三图：左为 GPT-2 medium 前向+反向的耗时与 HBM 访问量对比（FlashAttention FLOPs 更多但 HBM 访问远少，运行更快）；中为块大小对前向耗时的影响（块越大访问越少越快，超过 256 后受其他因素限制）；右为块稀疏版随稀疏度等比提速</span>
+    <span className="figure-caption-source">图源：Dao et al., <em>FlashAttention: Fast and Memory-Efficient Exact Attention with IO-Awareness</em>（arXiv:2205.14135）Figure 2</span>
+  </figcaption>
+</figure>
+
+## 四、收益：训练提速与长上下文新能力
+
+三层收益层层递进<Cite n={1} />：
+
+- **注意力本身**：常用序列长度（128–2K）上最高 3×，GPT-2（seq 1K）注意力部分 7.6×；
+- **端到端训练**：BERT-large（512）超 MLPerf 1.1 纪录 15%；GPT-2（1K）较 HuggingFace 基线 3×；LRA（1K–4K）2.4×；
+- **模型质量**：内存线性于 $N$，长上下文变得可训——GPT-2 用 4K 上下文比 Megatron 训 1K **还快**，困惑度好 0.7；长文档分类提升 6.4 分；**Path-X（16K）与 Path-256（64K）首次有 Transformer 超过随机水平**。
+
+第三层最有深意：系统优化不只省钱，它**解锁了以前训不了的模型能力**——这个「快 → 长 → 强」的传导链，是后来 128K 长上下文竞赛的物理基础。
+
+## 五、block-sparse：原语的复用价值
+
+把算法 1 里跳过 mask 为零的块，就得到 block-sparse FlashAttention：IO 复杂度按非零比例 $s$ 直接打折，比密集版再快 2–4×，序列可到 64K；LRA 上 2.8× 加速且精度不降<Cite n={1} />。这一节的意义在于展示 FlashAttention 是**可组合的原语**：近似注意力的正确姿势是先解决 IO 开销，再叠加稀疏/低秩——反过来的方案（先近似、不管 IO）正是此前工作 wall-clock 不提速的原因。
+
+## 小结
+
+FlashAttention 的方法论遗产可以压缩成三句话：**先测瓶颈再优化**（memory-bound 就优化 IO，不是 FLOPs）；**数学不变也可以快**（tiling + 在线 softmax + 重算，输出精确相等）；**理论给上限**（IO 下界证明这条路已到头）。它与站内论文的连接是全方位的：[Qwen2](/papers/qwen2) 的 GQA 减少 KV cache、[vLLM](/papers/vllm) 的分页 KV 管理、[Llama 3](/papers/llama3) 的 4D 并行与长上下文渐进、各家用 FlashAttention 训长序列的实践——现代 LLM 的效率故事里，这篇是地基。
+
+## 参考资料
+
+<References>
+1. Tri Dao, Daniel Y. Fu, Stefano Ermon, Atri Rudra, Christopher Ré (2022). *FlashAttention: Fast and Memory-Efficient Exact Attention with IO-Awareness*. NeurIPS 2022, arXiv: [2205.14135](https://arxiv.org/abs/2205.14135). —— 本文主论文：tiling 与在线 softmax、反向重算、IO 复杂度上下界、block-sparse 扩展与训练/精度实验。
+2. Ashish Vaswani et al. (2017). *Attention Is All You Need*. NeurIPS 2017, arXiv: [1706.03762](https://arxiv.org/abs/1706.03762). —— 注意力公式本体，站内精读见 [Attention Is All You Need](/papers/attention-transformer)。
+3. Tri Dao (2023). *FlashAttention-2: Faster Attention with Better Parallelism and Work Partitioning*. arXiv: [2307.08691](https://arxiv.org/abs/2307.08691). —— 并行度与占用率优化的续作。
+4. Woosuk Kwon et al. (2023). *Efficient Memory Management for Large Language Model Serving with PagedAttention*（vLLM）. SOSP 2023, arXiv: [2309.06180](https://arxiv.org/abs/2309.06180). —— KV cache 的另一侧优化（显存管理而非 kernel 内 IO），站内精读见 [vLLM](/papers/vllm)。
+5. Llama Team, AI @ Meta (2024). *The Llama 3 Herd of Models*. arXiv: [2407.21783](https://arxiv.org/abs/2407.21783). —— 大规模训练中 FlashAttention 类 kernel 的实际应用场景，站内精读见 [Llama 3](/papers/llama3)。
+</References>

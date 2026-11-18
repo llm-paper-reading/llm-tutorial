@@ -1,0 +1,85 @@
+import paper from "./meta";
+import { paperMetadata } from "@/lib/papers";
+
+export const metadata = paperMetadata(paper);
+
+<PaperHeader slug={paper.slug} />
+
+# Chain-of-Thought：提示词里的推理涌现
+
+2022 年 1 月（2023 年 1 月定稿），Google 的 Jason Wei 等人发布 Chain-of-Thought Prompting<Cite n={1} />——可能是一句 prompt 改变一个领域的最纯粹例子。方法只有一行：**在 few-shot 示例的答案前面，把中间推理步骤写出来**。零参数更新、零架构改动，PaLM 540B 仅用 8 个手写示例就在 GSM8K 数学应用题基准上拿到 **56.9%**——超过微调的 GPT-3 175B 加验证器，当时的最优成绩<Cite n={1} />。更重要的是它确立的范式：<Cite n={1} />**推理发生在生成的 token 流里**。[DeepSeek-R1](/papers/deepseek-r1) 的 RL 涌现、Qwen3 的 thinking 模式、o1 系列的 test-time compute——这条线的起点都是这个 prompt 技巧。
+
+> 📌 前置：需要 few-shot / in-context learning 概念（[GPT-3](/papers/gpt3)）；后续演进接 [DeepSeek-R1](/papers/deepseek-r1)（RL 训练出的推理）与 [Constitutional AI](/papers/constitutional-ai)（把 CoT 用于 AI 评判）。
+
+## 一、动机：两个半成品的拼接
+
+论文的出发点是一次诊断<Cite n={1} />：规模提升了解答与样本效率，但**数学、常识、符号推理卡住**——直接给答案的 few-shot 提示不够用。当时的两条已有路线各有残缺：
+
+- **rationale 增强训练**（从头训或微调带推理链的模型）：有效，但高质量推理链标注昂贵；
+- **few-shot 提示**（[GPT-3](/papers/gpt3) 证明）：免微调、通用，但只对简单任务有效。
+
+CoT prompting 把两者拼接：**把推理链写进 few-shot 示例**——不需要标注一个训练集，也不需要微调，8 个示例就够。
+
+<figure className="my-6">
+  <img src="./fig-1-prompt.png" alt="标准提示与链式思考提示对比：标准提示下模型对两个数学应用题都直接给出错误答案；链式思考提示在示例答案中加入中间推理步骤（如「Roger 开始有 5 个球，2 罐每罐 3 个是 6 个，5+6=11」），模型随之生成逐步推理并得出正确答案" className="mx-auto h-auto max-w-full rounded-lg border border-zinc-200 shadow-sm dark:border-zinc-800" />
+  <figcaption className="mt-2 text-center text-xs text-zinc-500 dark:text-zinc-400">
+    <span className="figure-caption-main">标准提示与链式思考提示对比：标准提示下模型对两个数学应用题都直接给出错误答案；链式思考提示在示例答案中加入中间推理步骤（如「Roger 开始有 5 个球，2 罐每罐 3 个是 6 个，5+6=11」），模型随之生成逐步推理并得出正确答案</span>
+    <span className="figure-caption-source">图源：Wei et al., <em>Chain-of-Thought Prompting Elicits Reasoning in Large Language Models</em>（arXiv:2201.11903）Figure 1</span>
+  </figcaption>
+</figure>
+
+## 二、结果：三个模型、三类任务
+
+实验覆盖 GPT-3 175B、LaMDA 137B、PaLM 540B 三个模型族，算术（GSM8K 等 5 个基准）、常识（CSQA 等 5 个）、符号推理（末位词拼接、硬币翻转）三大类<Cite n={1} />。代表性数字：
+
+| 任务 | 标准 few-shot | CoT few-shot |
+|---|---|---|
+| GSM8K（PaLM 540B） | 18% | **56.9%**（当时 SOTA） |
+| SVAMP / StrategyQA / Sports 等（常识） | — | 一致提升 |
+| 末位词拼接（PaLM 540B，符号） | 14% | **66%** |
+
+GSM8K 上的位置一图看清：
+
+<figure className="my-6">
+  <img src="./fig-2-gsm8k.png" alt="GSM8K 数学应用题基准的求解率对比：微调 GPT-3 175B 加验证器为 55%（此前最优），PaLM 540B 标准提示为 18%，PaLM 540B 链式思考提示以仅 8 个示例达到 56.9%，刷新当时最优" className="mx-auto h-auto max-w-full rounded-lg border border-zinc-200 shadow-sm dark:border-zinc-800" />
+  <figcaption className="mt-2 text-center text-xs text-zinc-500 dark:text-zinc-400">
+    <span className="figure-caption-main">GSM8K 数学应用题基准的求解率对比：微调 GPT-3 175B 加验证器为 55%（此前最优），PaLM 540B 标准提示为 18%，PaLM 540B 链式思考提示以仅 8 个示例达到 56.9%，刷新当时最优</span>
+    <span className="figure-caption-source">图源：Wei et al., <em>Chain-of-Thought Prompting Elicits Reasoning in Large Language Models</em>（arXiv:2201.11903）Figure 2</span>
+  </figcaption>
+</figure>
+
+## 三、涌现：100B 以下的模型别用
+
+CoT 论文最重要的科学发现不是分数，而是**规模依赖**<Cite n={1} />：CoT prompting 是模型规模的**涌现能力**——只对约 100B 参数以上的模型有正收益。小模型（如 LaMDA 以下、GPT-3 6B/175B 的较小档）生成「流畅但不合逻辑」的推理链，分数反而**低于**标准提示。
+
+这与 [GPT-3](/papers/gpt3) 的算术跳变（13B → 175B）一起构成「涌现能力」叙事最早的一批硬证据：能力不是随规模渐变的，是阈值跳变。对评测的含义直接：只看平均分会掩盖跳变，必须看规模分解。
+
+## 四、稳健性与「为什么有效」
+
+消融做得很扎实<Cite n={1} />：8 个示例**没做任何 prompt 工程**；换不同注释者写的推理链、换示例集，结果稳定。真正的调节变量是**任务难度**：GSM8K（基线最低、最难）上翻倍，MAWPS 的单步子集（SingleOp）收益近零甚至为负——CoT 是难任务专属的杠杆。
+
+为什么有效的机制论证有三条<Cite n={1} />：把问题分解为中间步骤允许更多计算；推理链让模型把领域知识显式表达出来；逐 token 生成给每步推理留出采样空间。诚实地说这是动机性解释而非证明；一个支持性证据是人工抽查：50 个正确答案里 46 个的推理链也正确（92% 一致性）<Cite n={1} />——「答案对」大致意味着「推理对」。（两年后 reward hacking 的世界里这个假设不再免费成立。）
+
+## 五、从 prompt 到 RL：推理能力的三个台阶
+
+CoT prompting 的定位要放进演进序列里看<Cite n={1} />：
+
+1. **Prompt 阶段（本文）**：向基座「请求」推理——上限是预训练时已有的能力，GSM8K 56.9%；
+2. **SFT 阶段（STaR / RFT 等）**：自动生成推理链、按答案过滤、微调——示例不再手写；
+3. **RL 阶段（[DeepSeek-R1](/papers/deepseek-r1)）**：用可验证奖励直接优化推理行为——模型「学会」推理，GSM8K 80%+，且反思、验证等策略自发涌现。
+
+有意思的呼应：R1-Zero 的模板只规定 `<think>` 标签格式、不教内容——「推理发生在 token 流里」这个 CoT 确立的前提，正是 RL 能起作用的原因。[Constitutional AI](/papers/constitutional-ai) 则展示了另一个方向：让 AI 裁判先生成依据原则的 CoT 再评判偏好，把推理链用作监督基础设施。
+
+## 小结
+
+Chain-of-Thought 的遗产：**一个极简方法揭示的能力断层**（有推理链与没有、100B 以上与以下）、**一个范式前提**（推理在 token 流中展开）、**一条演进路线的起点**（prompt → SFT → RL）。今天所有「思考模型」的产品形态——展开的推理、可折叠的思考过程、thinking budget——其概念原型都在那张左右对照的 prompt 图里。
+
+## 参考资料
+
+<References>
+1. Jason Wei, Xuezhi Wang, Dale Schuurmans, Maarten Bosma, Brian Ichter, Fei Xia, Ed H. Chi, Quoc V. Le, Denny Zhou (2022). *Chain-of-Thought Prompting Elicits Reasoning in Large Language Models*. NeurIPS 2022, arXiv: [2201.11903](https://arxiv.org/abs/2201.11903). —— 本文主论文：方法与 8 示例设置、三大类任务结果、规模涌现阈值、稳健性消融与机制论证。
+2. Tom B. Brown et al. (2020). *Language Models are Few-Shot Learners*. NeurIPS 2020, arXiv: [2005.14165](https://arxiv.org/abs/2005.14165). —— few-shot 提示范式与算术规模跳变，站内精读见 [GPT-3](/papers/gpt3)。
+3. DeepSeek-AI (2025). *DeepSeek-R1: Incentivizing Reasoning Capability in LLMs via Reinforcement Learning*. arXiv: [2501.12948](https://arxiv.org/abs/2501.12948). —— RL 阶段的推理训练，站内精读见 [DeepSeek-R1](/papers/deepseek-r1)。
+4. Yuntao Bai et al. (2022). *Constitutional AI: Harmlessness from AI Feedback*. arXiv: [2212.08073](https://arxiv.org/abs/2212.08073). —— CoT 用于 AI 评判的应用，站内精读见 [Constitutional AI](/papers/constitutional-ai)。
+5. Karl Cobbe et al. (2021). *Training Verifiers to Solve Math Word Problems*. arXiv: [2110.14168](https://arxiv.org/abs/2110.14168). —— GSM8K 基准与「微调 + 验证器」路线（本文的主要对比对象）。
+</References>

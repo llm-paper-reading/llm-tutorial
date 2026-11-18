@@ -1,0 +1,103 @@
+import paper from "./meta";
+import { paperMetadata } from "@/lib/papers";
+
+export const metadata = paperMetadata(paper);
+
+<PaperHeader slug={paper.slug} />
+
+# vLLM：PagedAttention 与 KV cache 分页管理
+
+2023 年 9 月，UC Berkeley 的 Sky Computing 实验室发布 vLLM，论文发表在系统顶会 SOSP 上<Cite n={1} />。它处理的问题与 [FlashAttention](/papers/flash-attention) 互补：FlashAttention 优化 kernel **内部**的 IO 层级，vLLM 优化 kernel **外部**的显存布局。核心洞察是一个被量化的浪费：LLM 服务里 KV cache 按最大长度连续预分配，实测**只有 20.4%–38.2% 的 KV cache 显存存着真实的 token 状态**——其余全是预留、碎片和零头<Cite n={1} />。方案是把操作系统的**虚拟内存与分页**原样搬过来：块=页、token=字节、请求=进程。PagedAttention 把浪费压到 4% 以下，同等延迟下吞吐 **2–4×**<Cite n={1} />。
+
+> 📌 前置：KV cache 的概念见 [Qwen2](/papers/qwen2) 的 GQA 部分（KV cache 大小由 KV 头数决定）；kernel 侧的对应优化见 [FlashAttention](/papers/flash-attention)；[Llama 3](/papers/llama3) 后训练里的 PagedAttention 拒绝采样加速就是这套系统的实际使用。
+
+## 一、动机：显存利用率卡死吞吐
+
+自回归生成的两阶段反差是问题的起点<Cite n={1} />：prompt 阶段全部 token 已知、可用矩阵乘并行，GPU 吃满；解码阶段每步只算一个 token（矩阵-向量乘），**memory-bound**，GPU 大量空转。提高利用率靠 batch——多个请求分摊权重搬运，batch 越大吞吐越高。
+
+但 batch 上限由显存决定。以 13B 模型在 A100 40GB 为例：权重占 65%（常驻），KV cache 只有约 30% 的空间，随请求动态增减<Cite n={1} />。这 30% 怎么用，直接决定能并发多少请求：
+
+<figure className="my-6">
+  <img src="./fig-3-waste.svg" alt="现有 LLM 服务系统的 KV cache 显存浪费构成：按最大长度预分配的连续空间里，实际存储 token 状态的部分（Token states）只占 20.4%–38.2%，其余为预留（Reservation）、内部碎片（Internal frag.）与外部碎片（External frag.）；vLLM 的分页管理将有效占比提升到 96% 以上" className="mx-auto h-auto max-w-full rounded-lg border border-zinc-200 shadow-sm dark:border-zinc-800" />
+  <figcaption className="mt-2 text-center text-xs text-zinc-500 dark:text-zinc-400">
+    <span className="figure-caption-main">现有 LLM 服务系统的 KV cache 显存浪费构成：按最大长度预分配的连续空间里，实际存储 token 状态的部分（Token states）只占 20.4%–38.2%，其余为预留（Reservation）、内部碎片（Internal frag.）与外部碎片（External frag.）；vLLM 的分页管理将有效占比提升到 96% 以上</span>
+    <span className="figure-caption-source">图源：Kwon et al., <em>Efficient Memory Management for Large Language Model Serving with PagedAttention</em>（arXiv:2309.06180）Figure 2–3</span>
+  </figcaption>
+</figure>
+
+浪费的三个来源，全部源于「为不知道会多长的请求按最大长度预分配连续空间」<Cite n={1} />：
+
+1. **预留**：为未来 token 保留的空间在请求全程被占着，别的短请求用不上；
+2. **内部碎片**：实际输出常远短于最大长度（比如按 2048 预留、实际生成 200）；
+3. **外部碎片**：各请求预分配大小不一，buddy 分配器级别的零头无法复用。
+
+## 二、PagedAttention：分页的 KV cache
+
+方案与操作系统解内存问题的方案同构<Cite n={1} />：**请求的 KV cache 不再连续存放，切成固定大小的块（block，如 16 个 token 一块），按需分配，逻辑块经 block table 映射到物理块**。
+
+<figure className="my-6">
+  <img src="./fig-5-paged.svg" alt="PagedAttention 算法示意：一个序列的 key 与 value 向量存储在非连续的内存块中，逻辑块 0/1/2 分别映射到物理块 7/1/3，注意力计算时按块表收集 K/V 向量在 gather 后参与点积" className="mx-auto h-auto max-w-full rounded-lg border border-zinc-200 shadow-sm dark:border-zinc-800" />
+  <figcaption className="mt-2 text-center text-xs text-zinc-500 dark:text-zinc-400">
+    <span className="figure-caption-main">PagedAttention 算法示意：一个序列的 key 与 value 向量存储在非连续的内存块中，逻辑块 0/1/2 分别映射到物理块 7/1/3，注意力计算时按块表收集 K/V 向量在 gather 后参与点积</span>
+    <span className="figure-caption-source">图源：Kwon et al., <em>Efficient Memory Management for Large Language Model Serving with PagedAttention</em>（arXiv:2309.06180）Figure 5</span>
+  </figcaption>
+</figure>
+
+三个浪费源逐一被解：**固定块大小**消灭外部碎片；**按需分配**消灭预留（生成到哪块申请哪块）；**小块粒度**把内部碎片压到平均每请求半块以内。实测 KV cache 有效利用率从 20.4%–38.2% 提升到 **60.6%–96.3%**（取决于负载）<Cite n={1} />。
+
+代价是注意力 kernel 要改造：K/V 不再连续，注意力计算要按 block table **gather** 各块再算——这是 PagedAttention 这个名字里「Attention」的由来（不是新的注意力数学，是适配分页布局的 kernel）。此外每序列多维护一张 block table 的元数据开销，块越小开销越大，论文给出权衡（默认 16 token/块）。
+
+## 三、共享：copy-on-write 与高级解码
+
+分页带来一个连作者都称为「意外之喜」的能力：**块级共享**<Cite n={1} />。多个序列的逻辑块可以映射到同一个物理块（引用计数管理），这让高级解码算法的显存开销大幅下降：
+
+**并行采样**：一个 prompt 出多个样本，prompt 部分的 KV cache 天然相同——只存一份，逻辑块共享映射。样本各自生成 diverge 后才需要独立存储：
+
+<figure className="my-6">
+  <img src="./fig-9-sharing.svg" alt="并行采样的 KV cache 块共享示意：两个输出序列共享同一 prompt 的逻辑块（映射到相同物理块 7 与 1，引用计数为 2）；生成阶段需要写入最后一个逻辑块时触发 copy-on-write，为其中一个序列分配新的物理块并复制内容，此后各自独立增长" className="mx-auto h-auto max-w-full rounded-lg border border-zinc-200 shadow-sm dark:border-zinc-800" />
+  <figcaption className="mt-2 text-center text-xs text-zinc-500 dark:text-zinc-400">
+    <span className="figure-caption-main">并行采样的 KV cache 块共享示意：两个输出序列共享同一 prompt 的逻辑块（映射到相同物理块 7 与 1，引用计数为 2）；生成阶段需要写入最后一个逻辑块时触发 copy-on-write，为其中一个序列分配新的物理块并复制内容，此后各自独立增长</span>
+    <span className="figure-caption-source">图源：Kwon et al., <em>Efficient Memory Management for Large Language Model Serving with PagedAttention</em>（arXiv:2309.06180）Figure 8–9</span>
+  </figcaption>
+</figure>
+
+写共享块时触发 **copy-on-write**（fork 进程的老戏码）：发现引用计数 > 1，分配新物理块、复制、计数减一。beam search 的共享更动态——beam 之间不仅共享 prompt，解码中途的公共前缀也在共享，**最多省 55% 显存**<Cite n={1} />。在连续存储的旧系统里，这些共享完全不可实现，因为每个序列的 KV cache 是独立的连续空间。
+
+## 四、系统设计与结果
+
+vLLM 的调度器与内存管理协同设计：块级 KV 管理 + **抢占式调度**（显存耗尽时把请求 swap 出去或丢弃 KV 重算）+ 迭代级 batch 组装；分布式场景支持 tensor parallel，各 worker 的 cache engine 各管各的块<Cite n={1} />。
+
+结果：<Cite n={1} />
+
+- 同等延迟下吞吐 **2–4×**（对比 FasterTransformer 与 Orca，含知道真实长度的 Orca-Oracle 上界）；
+- 提升随序列变长、模型变大、解码变复杂而扩大——beam search 场景收益最大（显存共享 + 零浪费叠加）；
+- OPT-13B 上，相同请求速率下 vLLM 的 batch 内请求数（132.44）是 Orca-Max（30.42）的 4 倍以上——省下的显存直接变成并发度。
+
+读数字的口径提醒：对比对象是 2023 年的系统（FasterTransformer、Orca），吞吐数字不可与今日引擎横比；但「显存利用率决定 batch 上限、batch 上限决定吞吐」的机制至今是推理系统的第一性原理。
+
+## 五、与 FlashAttention 的分工
+
+两篇论文常被一起提，分工其实是正交的<Cite n={1} />：
+
+| 维度 | [FlashAttention](/papers/flash-attention) | vLLM / PagedAttention |
+|---|---|---|
+| 优化位置 | kernel **内部** | kernel **外部**（显存布局与调度） |
+| 存储层级 | SRAM vs HBM 的读写次数 | HBM 内的碎片与共享 |
+| 数学 | 精确注意力（输出相等） | 精确注意力（输出相等） |
+| 收益 | 训练 + 推理都快 | 只影响服务吞吐与并发 |
+
+现代推理引擎是两者的叠加：分页的 KV 块被 gather 后送进 FlashAttention kernel 计算。加上 [Qwen2](/papers/qwen2) 的 GQA（从模型侧压缩 KV cache 体积），「KV cache 效率」的完整拼图是三方合力——模型侧少存（GQA）、kernel 侧少搬（FlashAttention）、系统侧不浪费（PagedAttention）。
+
+## 小结
+
+vLLM 的方法论遗产：**用量化唤醒问题意识**（「你的 KV cache 只有 20% 在干活」是全文最有传播力的一张图）；**老方案解新问题**（虚拟内存与分页是 1960 年代的智慧）；**机制优先于数字**（浪费率 80% → 4% 的机制至今成立，具体吞吐数字属于 2023 年）。它与 [FlashAttention](/papers/flash-attention) 一起构成推理效率的两大支柱，也直接催生了开源推理引擎的标准化浪潮。
+
+## 参考资料
+
+<References>
+1. Woosuk Kwon, Zhuohan Li, Siyuan Zhuang, Ying Sheng, Lianmin Zheng, Cody Hao Yu, Joseph E. Gonzalez, Hao Zhang, Ion Stoica (2023). *Efficient Memory Management for Large Language Model Serving with PagedAttention*. SOSP 2023, arXiv: [2309.06180](https://arxiv.org/abs/2309.06180). —— 本文主论文：KV cache 浪费量化、PagedAttention 分块算法、copy-on-write 与块共享、抢占调度与吞吐评测。
+2. Tri Dao et al. (2022). *FlashAttention: Fast and Memory-Efficient Exact Attention with IO-Awareness*. NeurIPS 2022, arXiv: [2205.14135](https://arxiv.org/abs/2205.14135). —— kernel 内部 IO 优化的互补工作，站内精读见 [FlashAttention](/papers/flash-attention)。
+3. Gyeong-In Yu et al. (2022). *Orca: A Distributed Serving System for Transformer-Based Generative Models*. OSDI 2022. —— 迭代级调度（continuous batching）的先驱，vLLM 的主要对比基线。
+4. An Yang et al. (2024). *Qwen2 Technical Report*. arXiv: [2407.10671](https://arxiv.org/abs/2407.10671). —— GQA 从模型侧压缩 KV cache，站内精读见 [Qwen2](/papers/qwen2)。
+5. Llama Team, AI @ Meta (2024). *The Llama 3 Herd of Models*. arXiv: [2407.21783](https://arxiv.org/abs/2407.21783). —— 后训练拒绝采样用 PagedAttention 提速 2× 的实际案例，站内精读见 [Llama 3](/papers/llama3)。
+</References>

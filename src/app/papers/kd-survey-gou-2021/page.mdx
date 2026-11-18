@@ -13,7 +13,7 @@ Gou、Yu、Maybank、Tao 的 *Knowledge Distillation: A Survey* 是一篇通用�
 
 ## 一、为什么需要一篇 KD survey
 
-经典 KD 的最小图景很简单：老师模型给出 soft targets，学生模型去匹配这些软分布。<Cite n={2} />但一旦离开 MNIST、语音识别或普通分类器，蒸馏问题会迅速分叉：学生到底学老师的输出、特征还是样本关系？老师是固定的、在线一起训练的，还是模型自己教自己？师生是否同构？容量差距太大怎么办？<Cite n={1} />
+经典 KD 的最小图景很简单：老师模型给出 soft targets，学生模型去匹配这些软分布。<Cite n={2} />这条主线其实比 Hinton 更早：Buciluǎ 等人在 2006 年就提出 model compression，把集成大模型的知识迁移进单个小模型；Ba 与 Caruana 2014 年进一步说明，训练得当的浅层学生可以逼近深层模型的输出，Hinton 等人 2015 年才把这类做法正式命名为知识蒸馏。<Cite n={[2,3,4]} />但一旦离开 MNIST、语音识别或普通分类器，蒸馏问题会迅速分叉：学生到底学老师的输出、特征还是样本关系？老师是固定的、在线一起训练的，还是模型自己教自己？师生是否同构？容量差距太大怎么办？<Cite n={1} />
 
 Gou 等人的综述把这些分叉整理成几条轴线：**knowledge categories**、**distillation schemes**、**teacher-student architectures**、**distillation algorithms**、**applications** 和 **challenges / future directions**。<Cite n={1} />因此读这篇的重点不是记住某个公式，而是拿到一个坐标系：以后看到任何 KD 论文，都先问“它在蒸什么、谁教谁、在哪里教、用什么目标函数”。
 
@@ -26,7 +26,7 @@ Gou 等人的综述把这些分叉整理成几条轴线：**knowledge categories
 </figure>
 
 <figure className="my-6">
-  <img src="./fig-2-survey-structure.png" alt="Gou 等人综述的结构图：以 teacher-student 框架为中心，串起知识来源、蒸馏类型、算法与应用各章节的关系" className="mx-auto h-auto max-w-full rounded-lg border border-zinc-200 shadow-sm dark:border-zinc-800" />
+  <img src="./fig-2-survey-structure.svg" alt="Gou 等人综述的结构图：以 teacher-student 框架为中心，串起知识来源、蒸馏类型、算法与应用各章节的关系" className="mx-auto h-auto max-w-full rounded-lg border border-zinc-200 shadow-sm dark:border-zinc-800" />
   <figcaption>
     <span className="figure-caption-main">综述原文的结构图：以 teacher-student 框架为中心，展示知识来源、蒸馏类型、算法与应用各章节之间的关系</span>
     <span className="figure-caption-source">图源：Gou et al., <em>Knowledge Distillation: A Survey</em>（arXiv:2006.05525）Figure 2</span>
@@ -51,11 +51,11 @@ Gou 等人的综述把这些分叉整理成几条轴线：**knowledge categories
 | Feature-based | 老师中间层特征或 hint | 学老师“内部表示” | 适合解释视觉模型、检测、分割里的中间监督 |
 | Relation-based | 样本间、层间或特征间关系 | 学老师“结构关系” | 和暗知识中的类别相似性直觉相通 |
 
-**Response-based KD** 最接近 Hinton 2015：老师输出的非最大类别概率携带类别相似性，学生通过匹配 soft targets 学到暗知识。<Cite n={[1,2]} />它通常实现简单、接口清晰，但只看最终输出，未必能充分利用老师内部的层级表示。
+**Response-based KD** 最接近 Hinton 2015：老师输出的非最大类别概率携带类别相似性，学生通过匹配 soft targets 学到暗知识。<Cite n={[1,2]} />这类知识不限于分类 logits：在检测里它可以附带边界框偏移，在姿态估计里可以是关键点热图。<Cite n={1} />综述也把 soft targets 的作用类比为 label smoothing 式正则，但 Müller 等人的实验发现，被 label smoothing 训练过的老师反而会削弱蒸馏效果，说明两者机制并不完全等价。<Cite n={5} />response-based KD 通常实现简单、接口清晰，但只看最终输出，未必能充分利用老师内部的层级表示。
 
-**Feature-based KD** 则把监督信号放到中间层：学生不仅要答对，还要在表示空间中像老师一样组织信息。<Cite n={1} />这对视觉模型尤其自然，因为低层纹理、中层部件、高层语义都可能包含可迁移知识。代表性工作包括 FitNets：用老师中间层的 hint 训练更薄更深的学生网络；以及 Attention Transfer：让学生匹配老师的空间 attention / activation map。<Cite n={[6,7]} />
+**Feature-based KD** 则把监督信号放到中间层：学生不仅要答对，还要在表示空间中像老师一样组织信息。<Cite n={1} />这对视觉模型尤其自然，因为低层纹理、中层部件、高层语义都可能包含可迁移知识。代表性工作包括 FitNets（用老师中间层的 hint 训练更薄更深的学生）<Cite n={6} />、NST（匹配老师的神经元选择性模式）<Cite n={7} />、Attention Transfer（让学生匹配老师的空间 attention / activation map）<Cite n={8} />，以及 Factor Transfer（先把老师特征“改写”成 factor 再传给学生）<Cite n={9} />。survey 同时提醒：hint 层怎么选、师生特征尺寸差异怎么对齐，仍是开放问题。<Cite n={1} />
 
-**Relation-based KD** 更进一步：它不只要求某个样本的表示像老师，而是要求样本之间、特征之间或层之间的关系结构保持一致。<Cite n={1} />如果 response-based KD 关心“这张图像各类别概率是多少”，relation-based KD 关心的是“这批样本在老师眼里彼此有多像”。代表性工作包括 Relational KD：蒸馏样本间的距离与角度关系；以及 Similarity-Preserving KD：保持 mini-batch 内样本相似性结构。<Cite n={[8,9]} />
+**Relation-based KD** 更进一步：它不只要求某个样本的表示像老师，而是要求样本之间、特征之间或层之间的关系结构保持一致。<Cite n={1} />如果 response-based KD 关心“这张图像各类别概率是多少”，relation-based KD 关心的是“这批样本在老师眼里彼此有多像”。代表性工作包括 FSP（用两层特征间的 Gram 矩阵概括老师的“解题流程”）<Cite n={10} />、Relational KD（蒸馏样本间的距离与角度关系）<Cite n={11} />、Similarity-Preserving KD（保持 mini-batch 内样本相似性结构）<Cite n={12} />，以及 Contrastive Representation Distillation（用对比目标拉近师生表示的互信息）<Cite n={13} />。
 
 ## 三、训练方式：offline、online、self-distillation
 
@@ -67,19 +67,19 @@ Gou 等人的综述把这些分叉整理成几条轴线：**knowledge categories
 | Online distillation | 师生或 peers 同时训练 | 训练中可互相适应 | 工程复杂、稳定性更难 |
 | Self-distillation | 模型自己教自己 | 不需要外部大老师 | 容易和普通正则 / 深监督混淆 |
 
-Offline KD 是最经典的形式：先训练或拿到一个强老师，再训练学生去模仿老师。<Cite n={1} />Hinton KD、很多 logit matching、sequence-level distillation 都可放在这条线上。它的好处是简单；坏处是学生一旦在生成任务里走到老师数据之外的状态，离线数据就不一定能纠正它。
+Offline KD 是最经典的形式：先训练或拿到一个强老师，再训练学生去模仿老师。<Cite n={1} />Hinton KD、很多 logit matching，以及 Kim 与 Rush 提出的 sequence-level distillation（学生直接模仿老师整句输出分布）都可放在这条线上。<Cite n={14} />它的好处是简单；坏处是学生一旦在生成任务里走到老师数据之外的状态，离线数据就不一定能纠正它。
 
-Online KD 让老师和学生在训练中共同演化，或让多个网络互相提供监督。<Cite n={1} />今天我们读 [OPD](/papers/opd-agarwal)、[MiniLLM](/papers/minillm-gu)、[Thinking Machines OPD](/papers/tml-opd) 时，也可以把它们看成“学生状态参与产生蒸馏信号”的 LLM 时代变体，只是它们更关注自回归序列分布和 token-level teacher signal。<Cite n={[3,4,5]} />
+Online KD 让老师和学生在训练中共同演化，或让多个网络互相提供监督：Deep Mutual Learning 让一组同构网络互为师生、协作训练；co-distillation 则让多个并行副本在大规模训练中互相蒸馏。<Cite n={[15,16]} />今天我们读 [OPD](/papers/opd-agarwal)、[MiniLLM](/papers/minillm-gu)、[Thinking Machines OPD](/papers/tml-opd) 时，也可以把它们看成“学生状态参与产生蒸馏信号”的 LLM 时代变体，只是它们更关注自回归序列分布和 token-level teacher signal。<Cite n={[17,18,19]} />
 
-Self-distillation 则更像“自己给自己提供更软或更深的监督”：同一模型的早晚阶段、深浅层、或者同架构重训练过程都可能成为老师。<Cite n={1} />站内 [学生超越老师](/tutorials/student-beats-teacher) 这条线可以接上 born-again networks 和 self-distillation 的直觉。
+Self-distillation 则更像“自己给自己提供更软或更深的监督”：born-again networks 让同架构网络逐代重训、上一代教下一代<Cite n={20} />；Be Your Own Teacher 把网络深层的知识蒸回浅层<Cite n={21} />；teacher-free KD 甚至用虚拟软目标替代真实老师，并可从 label smoothing 正则化角度解释其有效性<Cite n={22} />。Mobahi 等人还给出理论解释：自蒸馏相当于在 Hilbert 空间中不断放大正则项。<Cite n={23} />站内 [学生超越老师](/tutorials/student-beats-teacher) 这条线正好接上 born-again networks 与 self-distillation 的直觉。
 
 ## 四、师生结构：容量差距不是小事
 
 综述强调，KD 不是随便找一个强老师、一个小学生就能成功。师生模型可以是同构或异构，可以是一对一、多教师，也可以引入 teacher assistant 缓解容量差距。<Cite n={1} />
 
-容量差距过大时，老师分布可能对学生太难：老师的表示空间、类别边界或推理路径超出学生可表达范围。<Cite n={1} />这也是现代 OPD 论文反复遇到的问题：强老师并不总是好老师，老师信号还必须落在学生可学习的区域内。这个现象可以和 [Rethinking OPD](/papers/rethinking-opd) 对照阅读。
+容量差距过大时，老师分布可能对学生太难：老师的表示空间、类别边界或推理路径超出学生可表达范围。<Cite n={1} />survey 引用的实证结果显示，更大的老师未必是更好的老师；为此 TAKD 在大小模型之间插入一个中等规模的 teacher assistant，先蒸给 assistant 再蒸给学生<Cite n={24} />；Cho 与 Hariharan 的系统分析也量化了容量错配对蒸馏收益的影响。<Cite n={25} />这也是现代 OPD 论文反复遇到的问题：强老师并不总是好老师，老师信号还必须落在学生可学习的区域内，这个现象可以和 [Rethinking OPD](/papers/rethinking-opd) 对照阅读。
 
-多教师蒸馏则解决另一个问题：单个老师很难覆盖所有领域。<Cite n={1} />在 LLM 时代，这条线演化成 multi-teacher / multi-domain OPD，例如 [MiMo-v2-Flash](/papers/mimo-v2-flash) 和 [Nemotron-Cascade 2](/papers/nemotron-cascade-2) 里“不同领域老师合流”的思路。
+多教师蒸馏则解决另一个问题：单个老师很难覆盖所有领域。<Cite n={1} />You 等人的做法是：在平均多个老师的 logits 之外，再引入老师中间层特征，让迁移的知识既包含“答案分布”也包含“样本该如何被区分”。<Cite n={26} />在 LLM 时代，这条线演化成 multi-teacher / multi-domain OPD，例如 [MiMo-v2-Flash](/papers/mimo-v2-flash) 和 [Nemotron-Cascade 2](/papers/nemotron-cascade-2) 里“不同领域老师合流”的思路。
 
 ## 五、算法族：不止 logit matching
 
@@ -88,15 +88,19 @@ Self-distillation 则更像“自己给自己提供更软或更深的监督”�
 | 算法族 | 监督信号 | 适合场景 | 代表性论文 |
 |---|---|---|---|
 | Logit / probability matching | 输出层 logits、soft labels | 分类、小模型部署、LLM token logprob | Hinton KD <Cite n={2} /> |
-| Hint / feature matching | 中间层 feature maps | CNN、检测、分割、视觉表征迁移 | FitNets、Attention Transfer <Cite n={[6,7]} /> |
-| Attention transfer | attention maps / activation maps | 视觉注意区域、可解释区域迁移 | Attention Transfer <Cite n={7} /> |
-| Relation / similarity preserving | 样本关系、特征关系、图结构 | 表征学习、检索、度量结构保持 | Relational KD、Similarity-Preserving KD <Cite n={[8,9]} /> |
+| Hint / feature matching | 中间层 feature maps | CNN、检测、分割、视觉表征迁移 | FitNets、Attention Transfer <Cite n={[6,8]} /> |
+| Attention transfer | attention maps / activation maps | 视觉注意区域、可解释区域迁移 | Attention Transfer <Cite n={8} /> |
+| Relation / similarity preserving | 样本关系、特征关系、图结构 | 表征学习、检索、度量结构保持 | Relational KD、Similarity-Preserving KD <Cite n={[11,12]} /> |
 
-这张表也能帮助读现代 LLM 蒸馏：token-level KL 属于 response-based；中间层表示蒸馏属于 feature-based；学生 rollout 上老师给出的逐 token preference 或 advantage，则可以看成 response / policy signal 在自回归状态上的延伸。<Cite n={[1,3,4]} />
+除了“匹配什么”，survey 第 6 节还列出了几类相对正交的算法族。**对抗蒸馏**把 GAN 的生成器 / 判别器引入师生框架，用合成的困难样本或对抗信号拉近师生分布（如 zero-shot adversarial belief matching）<Cite n={24} />；**data-free 蒸馏**在拿不到原始数据时，用老师网络的层激活重建迁移数据，或像 DeepInversion 那样直接从权重里“梦”出合成图像<Cite n={[25,26]} />；**量化蒸馏**把蒸馏和低精度量化结合，让权重量化的学生逼近全精度老师<Cite n={27} />；**跨模态蒸馏**把有标注模态上的老师迁移到无标注模态的学生，例如从 RGB 图像向深度图做监督迁移<Cite n={28} />；**终身蒸馏**则把 KD 当作抗灾难性遗忘的正则，Learning without Forgetting 是这条线的代表<Cite n={29} />。
+
+这张表也能帮助读现代 LLM 蒸馏：token-level KL 属于 response-based；中间层表示蒸馏属于 feature-based；学生 rollout 上老师给出的逐 token preference 或 advantage，则可以看成 response / policy signal 在自回归状态上的延伸。<Cite n={[1,17,18]} />
 
 ## 六、应用：压缩只是起点
 
 综述把 KD 的应用放得很宽：模型压缩与加速是最经典场景，但 KD 也可用于迁移学习、数据高效学习，以及视觉、语音、NLP、推荐等任务。<Cite n={1} />因此 KD 不只是“把大模型压小”，更像一种把老师模型行为、表示或结构迁移给学生的训练范式。
+
+NLP 一侧的 BERT 压缩线尤其值得单独看，因为它直接连到今天的 LLM 蒸馏：Kim 与 Rush 的 sequence-level KD 把整句分布作为老师信号用于机器翻译<Cite n={14} />；DistilBERT 用同构的六层学生在显著更小的体积下保留大部分性能<Cite n={30} />；TinyBERT 把蒸馏拆成通用预训练和任务微调两个阶段<Cite n={31} />；Patient KD 之外，也有工作把 BERT 直接蒸进 BiLSTM 这种异构小模型<Cite n={32} />。除了压缩，KD 还被用在推荐（ranking distillation 把推荐当作排序问题来蒸馏）<Cite n={33} /> 和数据隐私场景——Papernot 等人让多个老师各自只接触敏感数据的子集，再聚合蒸馏出一个公共学生以保护隐私。<Cite n={34} />
 
 这点对今天尤其重要。LLM 时代的蒸馏不一定只为了小模型：有时是把 RL checkpoint 的能力压回主模型，有时是把多个领域专家合成一个模型，有时是把长程 agent 轨迹变成更稳定的训练信号。比如 [Qwen3](/papers/qwen3) 强调在线蒸馏，[MiMo-v2-Flash](/papers/mimo-v2-flash) 强调多教师在线蒸馏，[Nemotron-Cascade 2](/papers/nemotron-cascade-2) 则把 Cascade RL 与多域 OPD 结合起来。
 
@@ -109,11 +113,13 @@ Self-distillation 则更像“自己给自己提供更软或更深的监督”�
 - **在哪里教**：固定数据、老师轨迹、人类数据，还是学生自己 rollout？
 - **怎么优化**：forward KL、reverse KL、SFT、RL-style advantage，还是混合目标？
 
-这样一来，[MiniLLM](/papers/minillm-gu) 可以被看成生成式场景里的 on-policy reverse-KL distillation；[OPD / GKD](/papers/opd-agarwal) 可以被看成学生自生成状态上的分布匹配或 token reward；[Thinking Machines OPD](/papers/tml-opd) 则把 teacher logprob scoring 工程化成 RL 风格训练循环。<Cite n={[3,4,5]} />
+这样一来，[MiniLLM](/papers/minillm-gu) 可以被看成生成式场景里的 on-policy reverse-KL distillation；[OPD / GKD](/papers/opd-agarwal) 可以被看成学生自生成状态上的分布匹配或 token reward；[Thinking Machines OPD](/papers/tml-opd) 则把 teacher logprob scoring 工程化成 RL 风格训练循环。<Cite n={[17,18,19]} />
 
 ## 八、局限与开放问题
 
-综述也指出 KD 仍有许多挑战，例如理论解释、老师选择、师生容量差距、架构不匹配、蒸馏目标选择、鲁棒性与应用扩展等。<Cite n={1} />这些问题在 LLM 时代并没有消失，只是换了更大的外衣：老师可能是黑盒 API，学生只能拿到 top-k 或 logprob；任务可能是长程生成，状态分布由学生自己决定；评估也不再只是分类准确率，而是推理、工具、偏好和安全的混合目标。
+综述也指出 KD 仍有许多挑战，例如理论解释、老师选择、师生容量差距、架构不匹配、蒸馏目标选择、鲁棒性与应用扩展等。<Cite n={1} />理论这一条尤其薄弱：蒸馏被看作 learning with privileged information 的一种特例<Cite n={39} />；Phuong 与 Lampert 在深度线性分类器场景下给出了学生的泛化界与收敛速度分析<Cite n={38} />；Cho 与 Hariharan 的系统实验则提醒我们，“更大老师必然更好”“蒸馏一定优于从头训练”这些直觉并不总成立。<Cite n={25} />
+
+这些问题在 LLM 时代并没有消失，只是换了更大的外衣：老师可能是黑盒 API，学生只能拿到 top-k 或 logprob；任务可能是长程生成，状态分布由学生自己决定；评估也不再只是分类准确率，而是推理、工具、偏好和安全的混合目标。
 
 因此，这篇 survey 的正确用法不是把它当作“最后答案”，而是当作一张旧地图：它覆盖了 KD 的经典地形，但读现代 LLM 蒸馏时，还要在上面叠加 on-policy、长上下文、agent 轨迹和多教师调度这些新图层。
 
@@ -126,13 +132,43 @@ Self-distillation 则更像“自己给自己提供更软或更深的监督”�
 ## 参考资料
 
 <References>
-1. Jianping Gou, Baosheng Yu, Stephen J. Maybank, Dacheng Tao (2021). *Knowledge Distillation: A Survey*. International Journal of Computer Vision; arXiv: [2006.05525](https://arxiv.org/abs/2006.05525). —— 本文主论文，支撑 KD 分类、训练方式、师生结构、算法、应用和挑战的综述框架。
+1. Jianping Gou, Baosheng Yu, Stephen J. Maybank, Dacheng Tao (2021). *Knowledge Distillation: A Survey*. International Journal of Computer Vision 129(6): 1789–1819; arXiv: [2006.05525](https://arxiv.org/abs/2006.05525). —— 本文主论文，支撑 KD 分类、训练方式、师生结构、算法、应用和挑战的综述框架。
 2. Geoffrey Hinton, Oriol Vinyals, Jeff Dean (2015). *Distilling the Knowledge in a Neural Network*. arXiv: [1503.02531](https://arxiv.org/abs/1503.02531). —— 经典 response-based KD、soft targets、温度和 dark knowledge 来源。
-3. Rishabh Agarwal, Nino Vieillard, Yongchao Zhou, Piotr Stanczyk, Sabela Ramos, Matthieu Geist, Olivier Bachem (2024). *On-policy Distillation of Language Models: Learning from Self-Generated Mistakes*. ICLR 2024, arXiv: [2306.13649](https://arxiv.org/abs/2306.13649). —— LLM 时代 OPD / GKD 的代表工作，用于对照 survey 分类在 on-policy 生成场景中的延伸。
-4. Yuxian Gu, Li Dong, Furu Wei, Minlie Huang (2024). *MiniLLM: On-Policy Distillation of Large Language Models*. ICLR 2024, arXiv: [2306.08543](https://arxiv.org/abs/2306.08543). —— 生成式 LLM 中 reverse-KL on-policy distillation 的代表工作。
-5. Kevin Lu, Thinking Machines Lab (2025). *On-Policy Distillation*. [thinkingmachines.ai/blog/on-policy-distillation](https://thinkingmachines.ai/blog/on-policy-distillation/). —— OPD 工程化解释与 teacher logprob scoring 机制对照。
+3. Cristian Buciluǎ, Rich Caruana, Alexandru Niculescu-Mizil (2006). *Model Compression*. KDD 2006: 535–541. [dl.acm.org/doi/10.1145/1150402.1150464](https://dl.acm.org/doi/10.1145/1150402.1150464). —— KD 的前身：最早把集成大模型的知识迁移进小模型的 model compression 工作。
+4. Jimmy Ba, Rich Caruana (2014). *Do Deep Nets Really Need to Be Deep?*. NeurIPS 2014, arXiv: [1312.6184](https://arxiv.org/abs/1312.6184). —— 用匹配 logits 的方式让浅层学生逼近深层模型，response-based KD 的直接前驱。
+5. Rafael Müller, Simon Kornblith, Geoffrey E. Hinton (2019). *When Does Label Smoothing Help?*. NeurIPS 2019, arXiv: [1906.02629](https://arxiv.org/abs/1906.02629). —— 讨论 soft targets 与 label smoothing 的关系，发现 label smoothing 会削弱老师的蒸馏能力。
 6. Adriana Romero, Nicolas Ballas, Samira Ebrahimi Kahou, Antoine Chassang, Carlo Gatta, Yoshua Bengio (2015). *FitNets: Hints for Thin Deep Nets*. ICLR 2015, arXiv: [1412.6550](https://arxiv.org/abs/1412.6550). —— Feature-based KD / hint learning 的代表工作，用老师中间层表示指导学生训练。
-7. Sergey Zagoruyko, Nikos Komodakis (2017). *Paying More Attention to Attention: Improving the Performance of Convolutional Neural Networks via Attention Transfer*. ICLR 2017, arXiv: [1612.03928](https://arxiv.org/abs/1612.03928). —— Attention / activation map 迁移的代表工作，常归入 feature-based KD。
-8. Wonpyo Park, Dongju Kim, Yan Lu, Minsu Cho (2019). *Relational Knowledge Distillation*. CVPR 2019, arXiv: [1904.05068](https://arxiv.org/abs/1904.05068). —— Relation-based KD 的代表工作，蒸馏样本间距离与角度关系。
-9. Frederick Tung, Greg Mori (2019). *Similarity-Preserving Knowledge Distillation*. ICCV 2019, arXiv: [1907.09682](https://arxiv.org/abs/1907.09682). —— Relation-based KD 的代表工作，保持 mini-batch 内样本相似性结构。
+7. Zehao Huang, Naiyan Wang (2017). *Like What You Like: Knowledge Distill via Neuron Selectivity Transfer*. arXiv: [1707.01219](https://arxiv.org/abs/1707.01219). —— NST：用 MMD 匹配老师神经元的选择性激活模式，feature-based KD 的一支。
+8. Sergey Zagoruyko, Nikos Komodakis (2017). *Paying More Attention to Attention: Improving the Performance of Convolutional Neural Networks via Attention Transfer*. ICLR 2017, arXiv: [1612.03928](https://arxiv.org/abs/1612.03928). —— Attention / activation map 迁移的代表工作，常归入 feature-based KD。
+9. Jangho Kim, Seonguk Park, Nojun Kwak (2018). *Paraphrasing Complex Network: Network Compression via Factor Transfer*. NeurIPS 2018, arXiv: [1802.04977](https://arxiv.org/abs/1802.04977). —— Factor Transfer：先把老师特征“改写”成 factor，再传递给学生。
+10. Junho Yim, Donggyu Joo, Jihoon Bae, Junmo Kim (2017). *A Gift from Knowledge Distillation: Fast Optimization, Network Minimization and Transfer Learning*. CVPR 2017. [CVPR open access](https://openaccess.thecvf.com/content_cvpr_2017/html/Yim_A_Gift_From_CVPR_2017_paper.html). —— FSP：用两层特征间的 Gram 矩阵作为被蒸馏知识，relation-based KD 的起点之一。
+11. Wonpyo Park, Dongju Kim, Yan Lu, Minsu Cho (2019). *Relational Knowledge Distillation*. CVPR 2019, arXiv: [1904.05068](https://arxiv.org/abs/1904.05068). —— Relation-based KD 代表作，蒸馏样本间距离与角度关系。
+12. Frederick Tung, Greg Mori (2019). *Similarity-Preserving Knowledge Distillation*. ICCV 2019, arXiv: [1907.09682](https://arxiv.org/abs/1907.09682). —— Relation-based KD 代表作，保持 mini-batch 内样本相似性结构。
+13. Yonglong Tian, Dilip Krishnan, Phillip Isola (2020). *Contrastive Representation Distillation*. ICLR 2020, arXiv: [1910.10699](https://arxiv.org/abs/1910.10699). —— CRD：用对比学习目标最大化师生表示的互信息下界。
+14. Yoon Kim, Alexander M. Rush (2016). *Sequence-Level Knowledge Distillation*. EMNLP 2016, arXiv: [1606.07947](https://arxiv.org/abs/1606.07947). —— 把 word-level KD 扩展到序列级，学生模仿老师整句分布，是 NLP / LLM 蒸馏的前史。
+15. Ying Zhang, Tao Xiang, Timothy M. Hospedales, Huchuan Lu (2018). *Deep Mutual Learning*. CVPR 2018, arXiv: [1706.00384](https://arxiv.org/abs/1706.00384). —— online KD 代表：一组网络互为师生、协作训练。
+16. Rohan Anil, Gabriel Pereyra, Alexandre Passos, Robert Ormandi, George E. Dahl, Geoffrey E. Hinton (2018). *Large Scale Distributed Neural Network Training Through Online Distillation*. ICLR 2018, arXiv: [1804.03235](https://arxiv.org/abs/1804.03235). —— co-distillation：多个并行副本互相蒸馏的在线训练变体。
+17. Rishabh Agarwal, Nino Vieillard, Yongchao Zhou, Piotr Stanczyk, Sabela Ramos, Matthieu Geist, Olivier Bachem (2024). *On-policy Distillation of Language Models: Learning from Self-Generated Mistakes*. ICLR 2024, arXiv: [2306.13649](https://arxiv.org/abs/2306.13649). —— LLM 时代 OPD / GKD 的代表工作，用于对照 survey 分类在 on-policy 生成场景中的延伸。
+18. Yuxian Gu, Li Dong, Furu Wei, Minlie Huang (2024). *MiniLLM: On-Policy Distillation of Large Language Models*. ICLR 2024, arXiv: [2306.08543](https://arxiv.org/abs/2306.08543). —— 生成式 LLM 中 reverse-KL on-policy distillation 的代表工作。
+19. Kevin Lu, Thinking Machines Lab (2025). *On-Policy Distillation*. [thinkingmachines.ai/blog/on-policy-distillation](https://thinkingmachines.ai/blog/on-policy-distillation/). —— OPD 工程化解释与 teacher logprob scoring 机制对照。
+20. Tommaso Furlanello, Zachary C. Lipton, Michael Tschannen, Laurent Itti, Anima Anandkumar (2018). *Born-Again Neural Networks*. ICML 2018, arXiv: [1805.04770](https://arxiv.org/abs/1805.04770). —— 同架构逐代自蒸馏，学生可超越老师，self / 多教师序列蒸馏代表。
+21. Linfeng Zhang, Jiebo Song, Anni Gao, Jinghua Chen, Chenglong Bao, Kaisheng Ma (2019). *Be Your Own Teacher: Improve the Performance of Convolutional Neural Networks via Self Distillation*. ICCV 2019, arXiv: [1905.08094](https://arxiv.org/abs/1905.08094). —— 把网络深层知识蒸回浅层的自蒸馏代表。
+22. Li Yuan, Francis E. H. Tay, Guilin Li, Tao Wang, Jiashi Feng (2020). *Revisiting Knowledge Distillation via Label Smoothing Regularization*. CVPR 2020. [CVPR open access](https://openaccess.thecvf.com/content_CVPR_2020/html/Yuan_Revisiting_Knowledge_Distillation_via_Label_Smoothing_Regularization_CVPR_2020_paper.html). —— teacher-free KD：用虚拟软目标替代老师，并从 label smoothing 正则化角度解释蒸馏。
+23. Hossein Mobahi, Mehrdad Farajtabar, Peter L. Bartlett (2020). *Self-Distillation Amplifies Regularization in Hilbert Space*. NeurIPS 2020, arXiv: [2002.05715](https://arxiv.org/abs/2002.05715). —— 自蒸馏的理论解释：等价于在 Hilbert 空间中放大正则化。
+24. Seyed Iman Mirzadeh, Mehrdad Farajtabar, Ang Li, Hassan Ghasemzadeh (2020). *Improved Knowledge Distillation via Teacher Assistant*. AAAI 2020, arXiv: [1902.03393](https://arxiv.org/abs/1902.03393). —— TAKD：在大小模型之间插入 teacher assistant，缓解容量差距。
+25. Jang Hyun Cho, Bharath Hariharan (2019). *On the Efficacy of Knowledge Distillation*. ICCV 2019, arXiv: [1910.01348](https://arxiv.org/abs/1910.01348). —— 系统实证分析 KD 有效性，指出更大老师未必是更好老师、蒸馏并非总优于从头训练。
+26. Shan You, Chang Xu, Chao Xu, Dacheng Tao (2017). *Learning from Multiple Teacher Networks*. KDD 2017. [kdd.org](https://www.kdd.org/kdd2017/accepted-papers/view/learning-from-multiple-teacher-networks). —— 多教师蒸馏代表：在平均 logits 之外引入中间层特征联合监督。
+27. Paul Micaelli, Amos J. Storkey (2019). *Zero-shot Knowledge Transfer via Adversarial Belief Matching*. NeurIPS 2019, arXiv: [1905.09768](https://arxiv.org/abs/1905.09768). —— 对抗蒸馏 / data-free 方向：用对抗生成器制造困难样本进行知识迁移。
+28. Raphael G. Lopes, Stefano Fenu, Thad Starner (2017). *Data-Free Knowledge Distillation for Deep Neural Networks*. NeurIPS 2017 Workshop, arXiv: [1710.07535](https://arxiv.org/abs/1710.07535). —— data-free KD 先驱：用老师层激活的元数据重建迁移数据。
+29. Hongxu Yin, Pavlo Molchanov, Jose M. Alvarez, Zhizhong Li, Arun Mallya, Derek Hoiem, Niraj K. Jha, Jan Kautz (2020). *Dreaming to Distill: Data-free Knowledge Transfer via DeepInversion*. CVPR 2020, arXiv: [1912.08795](https://arxiv.org/abs/1912.08795). —— DeepInversion：从网络权重与 BN 统计反演合成图像做无数据蒸馏。
+30. Antonio Polino, Razvan Pascanu, Dan Alistarh (2018). *Model Compression via Distillation and Quantization*. ICLR 2018, arXiv: [1802.05668](https://arxiv.org/abs/1802.05668). —— 量化蒸馏：把蒸馏与低精度量化结合，让权重量化学生逼近全精度老师。
+31. Saurabh Gupta, Judy Hoffman, Jitendra Malik (2016). *Cross Modal Distillation for Supervision Transfer*. CVPR 2016, arXiv: [1507.00448](https://arxiv.org/abs/1507.00448). —— 跨模态蒸馏代表：用配对样本把 RGB 老师的监督迁移到深度图等新模态学生。
+32. Zhizhong Li, Derek Hoiem (2017). *Learning without Forgetting*. ECCV 2016 / IEEE TPAMI 40(12): 2935–2947, arXiv: [1606.09282](https://arxiv.org/abs/1606.09282). —— 终身 / 持续学习代表：用蒸馏保留旧任务输出、缓解灾难性遗忘。
+33. Victor Sanh, Lysandre Debut, Julien Chaumond, Thomas Wolf (2019). *DistilBERT, a distilled version of BERT: smaller, faster, cheaper and lighter*. arXiv: [1910.01108](https://arxiv.org/abs/1910.01108). —— BERT 压缩代表：同构六层学生在更小体积下保留大部分性能。
+34. Xiaoqi Jiao, Yichun Yin, Lifeng Shang, Xin Jiang, Xiao Chen, Linlin Li, Fang Wang, Qun Liu (2020). *TinyBERT: Distilling BERT for Natural Language Understanding*. Findings of EMNLP 2020, arXiv: [1909.10351](https://arxiv.org/abs/1909.10351). —— 两阶段 transformer 蒸馏：通用预训练蒸馏 + 任务特定蒸馏。
+35. Raphael Tang, Yao Lu, Linqing Liu, Lili Mou, Olga Vechtomova, Jimmy Lin (2019). *Distilling Task-Specific Knowledge from BERT into Simple Neural Networks*. arXiv: [1903.12136](https://arxiv.org/abs/1903.12136). —— 把 BERT 蒸进 BiLSTM 这种异构小模型的任务特定蒸馏。
+36. Jiaxi Tang, Ke Wang (2018). *Ranking Distillation: Learning Compact Ranking Models with High Performance for Recommender System*. KDD 2018, arXiv: [1809.07428](https://arxiv.org/abs/1809.07428). —— 把 KD 首次引入推荐系统，将推荐表述为排序蒸馏问题。
+37. Nicolas Papernot, Martín Abadi, Úlfar Erlingsson, Ian Goodfellow, Kunal Talwar (2017). *Semi-supervised Knowledge Transfer for Deep Learning from Private Training Data*. ICLR 2017, arXiv: [1610.05755](https://arxiv.org/abs/1610.05755). —— PATE：多个老师各自接触私有数据子集，聚合蒸馏出公共学生以保护隐私。
+38. Mary Phuong, Christoph H. Lampert (2019). *Towards Understanding Knowledge Distillation*. ICML 2019, arXiv: [2105.13093](https://arxiv.org/abs/2105.13093). —— 深度线性分类器场景下给出蒸馏学生的泛化界与收敛速度分析。
+39. David Lopez-Paz, Léon Bottou, Bernhard Schölkopf, Vladimir Vapnik (2016). *Unifying Distillation and Privileged Information*. ICLR 2016, arXiv: [1511.03643](https://arxiv.org/abs/1511.03643). —— 把蒸馏统一进 learning using privileged information（LUPI）框架。
 </References>

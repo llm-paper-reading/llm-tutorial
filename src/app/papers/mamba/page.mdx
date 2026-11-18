@@ -1,0 +1,85 @@
+import paper from "./meta";
+import { paperMetadata } from "@/lib/papers";
+
+export const metadata = paperMetadata(paper);
+
+<PaperHeader slug={paper.slug} />
+
+# Mamba：选择性状态空间与线性时间序列建模
+
+2023 年 12 月，CMU 的 Albert Gu 与 Princeton 的 Tri Dao（[FlashAttention](/papers/flash-attention) 的作者）发布 Mamba<Cite n={1} />——「Transformer 之外」这条线到目前为止最重要的一步。诊断明确：<Cite n={1} />注意力的自回归形式有两个根本缺陷（无法建模有限窗口之外的信息、计算随窗口长度二次增长），而此前的亚二次替代架构（线性注意力、门控卷积、结构化 SSM）在语言上始终追不上注意力，**因为它们缺「基于内容的选择」**。Mamba 用三件事补上：选择机制、硬件感知的并行扫描、极简同构架构——推理吞吐 **5×**、序列线性扩展、每步常数开销（无 KV cache），3B 的语言质量匹配两倍大的 Transformer<Cite n={1} />。
+
+> 📌 前置：注意力机制见 [Attention Is All You Need](/papers/attention-transformer)；硬件感知算法与 [FlashAttention](/papers/flash-attention) 同一哲学；混合架构的产业化见 Nemotron-H。
+
+## 一、动机：选择性的缺失
+
+结构化 SSM（S4 一族）此前在连续信号（音频、视觉）上很强、在 Long Range Arena 霸榜，但在离散且信息密集的文本上不行<Cite n={1} />。论文的诊断聚焦在两个合成任务上——**选择性拷贝**与**归纳头**（大模型 in-context learning 的关键机制，[CoT](/papers/chain-of-thought) 一篇也提到它）：这两类任务都要求模型**按内容决定记住什么、忽略什么**。
+
+问题出在 **LTI（线性时不变）约束**：此前所有高效 SSM 的参数必须固定，才能等价为卷积、才能用 FFT 快速训练。但固定参数意味着对任何位置的输入一视同仁——序列里某个 token 重要与否，模型无法表达。选择性要求参数依赖输入，而选择性与 LTI 数学上互斥：<Cite n={1} />**想要选择，就必须放弃卷积形式的免费午餐**。
+
+<figure className="my-6">
+  <img src="./fig-1-selection.png" alt="选择机制对比示意：上方为 LTI 的 SSM（S4），参数固定、可等价为卷积，无法区分输入内容；下方为选择性的 SSM（S6），参数（Δ、B、C）依赖输入，可按当前 token 决定状态的记住或遗忘，但失去卷积形式" className="mx-auto h-auto max-w-full rounded-lg border border-zinc-200 shadow-sm dark:border-zinc-800" />
+  <figcaption className="mt-2 text-center text-xs text-zinc-500 dark:text-zinc-400">
+    <span className="figure-caption-main">选择机制对比示意：上方为 LTI 的 SSM（S4），参数固定、可等价为卷积，无法区分输入内容；下方为选择性的 SSM（S6），参数（Δ、B、C）依赖输入，可按当前 token 决定状态的记住或遗忘，但失去卷积形式</span>
+    <span className="figure-caption-source">图源：Gu & Dao, <em>Mamba: Linear-Time Sequence Modeling with Selective State Spaces</em>（arXiv:2312.00752）Figure 1</span>
+  </figcaption>
+</figure>
+
+## 二、选择机制：参数化的三个改动
+
+具体实现出乎意料地简单：把 SSM 的三个参数 **$\Delta$（步长）、$B$、$C$ 变成输入的函数**<Cite n={1} />。直觉：
+
+- **$\Delta$ 大** → 当前 token 主导状态更新（「记住这个」）；
+- **$\Delta$ 小** → 状态几乎不变（「跳过这个」）。
+
+效果上，模型获得了沿序列维度做内容寻址的过滤能力——无关信息被压缩，相关信息可无限期保留。论文用选择性拷贝与归纳头验证：Mamba 不仅解决这两类任务，还能**无限外推**（百万 token 以上）<Cite n={1} />——固定参数的 S4 在这类任务上结构性失败。
+
+## 三、硬件感知算法：为放弃卷积买单
+
+选择机制让训练必须走**递推**（每步参数不同，无法卷积一次算完）。朴素实现的显存账是灾难：扩展状态形状 $(B, L, D, N)$（批×序列×通道×状态维），物化到 HBM 直接爆炸<Cite n={1} />。
+
+解法与 [FlashAttention](/papers/flash-attention) 同一哲学——**不让大中间量离开 SRAM**：
+
+<figure className="my-6">
+  <img src="./fig-2-scan.png" alt="选择性扫描的硬件感知算法示意：核内将序列分块，扩展状态不在 HBM 物化，而是在 SRAM 内逐块重算与递推（并行扫描），扫描与重算融合，避免 GPU 存储层级间的 IO 瓶颈" className="mx-auto h-auto max-w-full rounded-lg border border-zinc-200 shadow-sm dark:border-zinc-800" />
+  <figcaption className="mt-2 text-center text-xs text-zinc-500 dark:text-zinc-400">
+    <span className="figure-caption-main">选择性扫描的硬件感知算法示意：核内将序列分块，扩展状态不在 HBM 物化，而是在 SRAM 内逐块重算与递推（并行扫描），扫描与重算融合，避免 GPU 存储层级间的 IO 瓶颈</span>
+    <span className="figure-caption-source">图源：Gu & Dao, <em>Mamba: Linear-Time Sequence Modeling with Selective State Spaces</em>（arXiv:2312.00752）Figure 2（算法示意）</span>
+  </figcaption>
+</figure>
+
+并行扫描（scan）：kernel 内把序列分块，**扩展状态只在 SRAM 里逐块重算与递推**，从不整体写回 HBM；扫描与重算融合。理论上线性于序列长度（此前卷积 SSM 是伪线性），实测比此前方法快约 **3×**（A100）<Cite n={1} />。递推形式还顺带改掉了推理：每生成一个 token 只需常数时间与常数状态（无 KV cache、无序列长度的内存增长）——这是吞吐 5× 的来源。
+
+## 四、架构：无注意力、无 MLP 的同构块
+
+Mamba 把此前 SSM 架构（H3 的门控结构）与 Transformer 的 MLP 块**合并成一个同构块**<Cite n={1} />：
+
+<figure className="my-6">
+  <img src="./fig-3-block.png" alt="Mamba 块架构：由 H3 块（门控 SSM）与 MLP 块合并简化而来，流水线为线性投影扩展、深度卷积、SiLU 激活、选择性 SSM，再经门控与投影输出；无注意力、无独立 MLP，整个网络由该同构块堆叠而成" className="mx-auto h-auto max-w-full rounded-lg border border-zinc-200 shadow-sm dark:border-zinc-800" />
+  <figcaption className="mt-2 text-center text-xs text-zinc-500 dark:text-zinc-400">
+    <span className="figure-caption-main">Mamba 块架构：由 H3 块（门控 SSM）与 MLP 块合并简化而来，流水线为线性投影扩展、深度卷积、SiLU 激活、选择性 SSM，再经门控与投影输出；无注意力、无独立 MLP，整个网络由该同构块堆叠而成</span>
+    <span className="figure-caption-source">图源：Gu & Dao, <em>Mamba: Linear-Time Sequence Modeling with Selective State Spaces</em>（arXiv:2312.00752）Figure 3</span>
+  </figcaption>
+</figure>
+
+每个块 = 投影扩展 → 卷积 → SiLU 门控 → 选择性 SSM → 投影输出，没有注意力、没有独立 MLP——比 Transformer 块更简单。整篇论文的三个贡献（选择、扫描、架构）环环相扣：选择要求放弃卷积，放弃卷积要求重写算法，新算法支撑了新架构。
+
+## 五、结果与终局：混合架构
+
+结果分三层<Cite n={1} />：合成任务（拷贝/归纳头可无限外推）；音频与基因组（超 [Long Range Arena] 级的 SOTA，语音生成 FID 减半，性能随上下文增长到百万级）；**语言**——scaling law 拟合到 1B 显示 Mamba 超过包括 LLaMa 配方在内的一系列基线，3B 匹配两倍大的 Transformer（常识推理平均分超 Pythia-3B 四点、甚至超 Pythia-7B），生成吞吐 5×。
+
+但要诚实面对纯 Mamba 的短板：<Cite n={1} />**精确检索**（「大海捞针」式的逐字回忆）与部分 in-context learning 场景仍弱于注意力——状态的固定容量终究会压缩信息。行业的答案是**混合架构**：Jamba（1:7 的注意力:SSM 层比）、Nemotron-H（8B/56B，用少量注意力层补检索）等把 Mamba 块做线性时间主体、注意力层做精确回忆——NVIDIA 这条产品线（站内 Nemotron-H 一节）正是 Mamba 工业化的直接成果。Transformer vs SSM 之争的终局不是谁取代谁，而是分工。
+
+## 小结
+
+Mamba 的方法论遗产：**诊断先于设计**（「缺内容选择」这一句定位了整篇论文）；**取舍自觉**（选择性与 LTI 互斥，用硬件算法买回效率）；**架构极简**（同构块替代注意力+MLP 双结构）。它与 [FlashAttention](/papers/flash-attention)（IO 感知）、[vLLM](/papers/vllm)（分页 KV）共同构成「序列建模效率」的三条正交战线——kernel 内、显存布局、模型结构——而 Tri Dao 一个人贡献了其中两条。
+
+## 参考资料
+
+<References>
+1. Albert Gu, Tri Dao (2023). *Mamba: Linear-Time Sequence Modeling with Selective State Spaces*. ICML 2024 / COLM 2024, arXiv: [2312.00752](https://arxiv.org/abs/2312.00752). —— 本文主论文：LTI 约束诊断、选择机制（Δ/B/C 输入参数化）、硬件感知并行扫描、同构块架构与多模态实验。
+2. Albert Gu, Karan Goel, Christopher Ré (2022). *Efficiently Modeling Long Sequences with Structured State Spaces*（S4）. ICLR 2022, arXiv: [2111.00396](https://arxiv.org/abs/2111.00396). —— 结构化 SSM 的奠基工作（Mamba 的直接前身）。
+3. Tri Dao et al. (2022). *FlashAttention: Fast and Memory-Efficient Exact Attention with IO-Awareness*. NeurIPS 2022, arXiv: [2205.14135](https://arxiv.org/abs/2205.14135). —— 同作者的 IO 感知 kernel 哲学，站内精读见 [FlashAttention](/papers/flash-attention)。
+4. Vaswani et al. (2017). *Attention Is All You Need*. NeurIPS 2017, arXiv: [1706.03762](https://arxiv.org/abs/1706.03762). —— 被对照的注意力机制，站内精读见 [Attention Is All You Need](/papers/attention-transformer)。
+5. Assaf Shocher et al. (2024). *Jamba: A Hybrid Transformer-Mamba Language Model*. arXiv: [2403.19887](https://arxiv.org/abs/2403.19887). —— 混合架构路线的代表工作（少量注意力 + Mamba 主体）。
+</References>

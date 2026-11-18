@@ -1,7 +1,7 @@
-<svg xmlns="http://www.w3.org/2000/svg" width="900" height="420" viewBox="0 0 900 420" role="img" aria-labelledby="title desc">
+<svg xmlns="http://www.w3.org/2000/svg" width="1100" height="420" viewBox="0 0 1100 420" role="img" aria-labelledby="title desc">
   <title id="title">PPO clip objective intuition</title>
   <desc id="desc">A schematic showing how PPO clips the probability ratio for positive and negative advantages.</desc>
-  <rect width="900" height="420" fill="#fafafa"/>
+  <rect width="1100" height="420" fill="#fafafa"/>
   <text x="450" y="42" text-anchor="middle" font-family="Arial, sans-serif" font-size="24" font-weight="700" fill="#111827">PPO-Clip：只截停“过头”的更新</text>
   <line x1="110" y1="320" x2="790" y2="320" stroke="#374151" stroke-width="2"/>
   <line x1="450" y1="80" x2="450" y2="350" stroke="#9ca3af" stroke-width="1.5" stroke-dasharray="6 6"/>

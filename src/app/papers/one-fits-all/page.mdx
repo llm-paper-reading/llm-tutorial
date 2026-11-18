@@ -1,0 +1,149 @@
+import paper from "./meta";
+import { paperMetadata } from "@/lib/papers";
+
+export const metadata = paperMetadata(paper);
+
+<PaperHeader slug={paper.slug} />
+
+# One Fits All：冻结预训练 Transformer 统一时序分析
+
+2023 年 2 月，阿里巴巴达摩院决策智能实验室提出一个在当时看来颇有些「不讲武德」的做法：不改 GPT2 的结构，也不做时序预训练，直接把残差块里的自注意力与 FFN **冻住**，只训练输入嵌入、位置嵌入、LayerNorm 与输出层，就让同一个主干在七类时序任务上达到 SOTA 或相当的水平。<Cite n={1} />数字很直接：可训练参数只占 4.6%，分类平均准确率 74.00% 高于 TimesNet 的 73.60%，异常检测平均 F1 86.72% 高于 85.24%，补全平均 MSE 0.047 低于 0.049。<Cite n={1} />这篇笔记拆三件事：为什么「借」比「训」更现实、冻结主干之后还要训练哪些层、以及论文用自注意力与 PCA 的联系给出的解释。
+
+> 📌 前置：Transformer 与注意力机制见 [Attention Is All You Need](/papers/attention-transformer)；序列建模的另一条非 Transformer 路线见 [Mamba](/papers/mamba)。
+
+## 一、动机：时序缺的是数据，不是架构
+
+NLP 和 CV 已经证明，一个在大规模数据上预训练的主干加上轻量适配，就能覆盖分类、检测、生成等大量下游任务。时序领域一直没能复制这件事，论文把原因归结得很直接：**没有足够的数据**。<Cite n={1} />最大的公开时序数据集不到 10GB，与语言模型的「数十亿 token」不在一个量级；而且时序数据来自电力、交通、气象、工业设备等不同系统，分布差异极大，跨数据集迁移本身就难。<Cite n={1} />于是每类任务继续各自设计模型：预测用 PatchTST、TimesNet，分类用自己的 CNN 或 Transformer，异常检测又是另一套。
+
+论文的假设是：如果预训练 Transformer 在文本上学到的是一种与内容无关的通用运算，那么时序可以直接复用这套运算，只需要换掉输入输出接口。<Cite n={1} />这与「冻结预训练 Transformer 当通用计算引擎」的思路一脉相承——冻结的语言模型已经能执行算术、逻辑等非语言任务，时序或许只是又一个接口不同的任务。<Cite n={1} />
+
+> 📌 作者在中文解读里补充：GPT2 只是算力受限下的选择，并不代表它是理论上的最优主干。<Cite n={6} />
+
+<figure className="my-6">
+  <img src="./fig-1-overview.svg" alt="七类时序任务的雷达图对比：GPT2-backbone 在最外圈，在长程预测、补全、分类、异常检测、少样本与零样本等轴上整体优于 TimesNet、PatchTST、DLinear 等基线；短期预测与最强基线接近" className="mx-auto h-auto max-w-full rounded-lg border border-zinc-200 shadow-sm dark:border-zinc-800" />
+  <figcaption className="mt-2 text-center text-xs text-zinc-500 dark:text-zinc-400">
+    <span className="figure-caption-main">同一个冻结 GPT2 主干在七类时序任务上的综合表现：每个轴是一个任务，越靠外越好。GPT2-backbone（红色最外圈）说明无需为每类任务更换架构，也能同时覆盖预测、补全、分类与异常检测</span>
+    <span className="figure-caption-source">图源：Zhou et al., <em>One Fits All: Power General Time Series Analysis by Pretrained LM</em>（arXiv:2302.11939）Figure 1</span>
+  </figcaption>
+</figure>
+
+## 二、方法：FPT，冻结主干加接口
+
+方法的核心是最小改动原则：残差块内的 Multi-Head Attention 与 Feed Forward 承载了预训练获得的大部分知识，直接冻结；<Cite n={1} />其余组件是跨模态接口，必须重训：
+
+| 模块 | 处理 | 理由 |
+|---|---|---|
+| 输入嵌入 | 训练 | 把时序 patch 投影到预训练模型的 $d_{\text{model}}$ 维；用线性层做 linear probing，控制新增参数 |
+| 位置嵌入 | 训练 | 语言的位置顺序对时序没有直接意义，需要重新学习 |
+| 各层 LayerNorm | 训练 | 跨模态分布对齐，也是参数高效微调的常见做法 |
+| 自注意力 / FFN | 冻结 | 保留预训练主干里的通用运算 |
+| 任务输出层 | 训练 | 预测输出 1 维、分类输出 C 类，任务间不同 |
+
+<figure className="my-6">
+  <img src="./fig-2-architecture.svg" alt="Frozen Pretrained Transformer 结构：时序经过实例归一化、patching 与输入嵌入后进入 GPT2 残差块；右侧放大单个残差块，自注意力与 FFN 带雪花标记表示冻结，Add & Layer Norm 带火焰标记表示微调；位置嵌入与输出层也参与微调" className="mx-auto h-auto max-w-full rounded-lg border border-zinc-200 shadow-sm dark:border-zinc-800" />
+  <figcaption className="mt-2 text-center text-xs text-zinc-500 dark:text-zinc-400">
+    <span className="figure-caption-main">Frozen Pretrained Transformer（FPT）的结构：虚线框圈出预训练参数区，其中 Transformer 块的自注意力与 FFN 冻结，位置嵌入与 LayerNorm 参与微调；输入嵌入与任务输出层需要重新训练。雪花表示冻结，火焰表示微调</span>
+    <span className="figure-caption-source">图源：Zhou et al., <em>One Fits All</em>（arXiv:2302.11939）Figure 2</span>
+  </figcaption>
+</figure>
+
+输入管线是「实例归一化 → patching → 线性投影」。<Cite n={[1,4,5]} />归一化先把每条序列按自身均值和方差标准化，输出时再把统计量加回去，缓解训练与测试之间的分布漂移；patching 把相邻时间步合成一个 token，在 token 数不变的前提下扩大历史窗口，并降低信息冗余。<Cite n={[1,4]} />主干取自 GPT2 的前 $K$ 层，记作 GPT2($K$)，论文默认 $K=6$，补全等更轻的任务用 $K=3$。<Cite n={[1,2]} />这样参数的账很好算：GPT2(6) 的可训练参数只有 4M，占全部参数的 4.6%。<Cite n={1} />
+
+## 三、为什么冻结也能用：自注意力 ≈ PCA
+
+论文没有停在「效果好」，而是追问机制。一个直接可测的量是**层内 token 之间的余弦相似度**：随机初始化的 GPT2(6) 里，各层相似度都在 0.1–0.2；换成预训练权重后，深层相似度迅速升高，最后一层超过 0.9。<Cite n={1} />这意味着深层把不同 token 的特征压到了同一个低维方向——这与 PCA 的行为高度相似。
+
+更关键的对照实验：把自注意力模块整体换成 PCA，token 相似度的分布形态基本不变。<Cite n={1} />于是论文提出，训练后的自注意力在做的事，与对输入模式做主成分分析密切相关。
+
+<figure className="my-6">
+  <img src="./fig-4-pca.png" alt="替换预训练权重比例的实验：随预训练权重比例与层数增加，深层 token 相似度升高、预测误差先降后升；用 PCA 替换注意力后相似度分布与预训练模型一致；不同随机比例下各层相似度直方图" className="mx-auto h-auto max-w-full rounded-lg border border-zinc-200 shadow-sm dark:border-zinc-800" />
+  <figcaption className="mt-2 text-center text-xs text-zinc-500 dark:text-zinc-400">
+    <span className="figure-caption-main">替换实验：把预训练权重按比例换成随机初始化后，性能与层内 token 相似度同步变化；(b) 用 PCA 直接替换注意力，相似度分布仍与预训练模型一致，说明两者在做类似的主成分投影</span>
+    <span className="figure-caption-source">图源：Zhou et al., <em>One Fits All</em>（arXiv:2302.11939）Figure 4</span>
+  </figcaption>
+</figure>
+
+把直觉写成式子：设输入 $X=(x_1,\dots,x_N)^\top$，自注意力为 $f_i(X)=\operatorname{softmax}(XAX^\top)X$，其中 $A=W_QW_K^\top$。论文先给出注意力对输入的 Jacobian 范数上界（Lemma 8.1），指出最小化梯度范数等价于让每个 $x_i$ 逼近 $X^\top XAx_i$；在 $A$ 较小且输入中心化时，最小化该目标的最优解由 $X^\top X$ 的前 $m$ 个特征向量给出：
+
+$$
+A^*=\sum_{i=1}^{m}\lambda_i v_i v_i^\top,\qquad m=\operatorname{rank}(A)
+$$
+
+也就是说，训练把注意力推向了一个**低秩主成分投影器**。<Cite n={1} />这个解释同时回答了「为什么只冻结、不全量微调」：如果预训练模型整体执行的是一种通用投影，改动块内任何组件都可能破坏这个功能，导致下游任务退化——论文的消融实验支持了这一点。<Cite n={1} />
+
+## 四、七个任务：一张总表
+
+实验沿用 TimesNet 的 benchmark、数据划分与基线配置，因此表中的数字可以直接与已发表结果对照。<Cite n={[1,3]} />
+
+| 任务 | 指标 | FPT | 最强基线 | 解读 |
+|---|---|---|---|---|
+| 补全 | 平均 MSE ↓ | **0.047** | TimesNet 0.049 | ETTh1 上相对降低 11.5% |
+| 分类 | 平均准确率 ↑ | **74.00%** | TimesNet 73.60% | 比 PatchTST 的 67.50% 高 6.5 个百分点 |
+| 异常检测 | 平均 F1 ↑ | **86.72%** | TimesNet 85.24% | 统一用重构误差，代价是没吃满 Anomaly Transformer 的关联差异 |
+| 长程预测 | 平均 MSE ↓ | 0.516 | PatchTST **0.446** | 不及 PatchTST，比 TimesNet 0.596 好 |
+| 短期预测（M4） | sMAPE ↓ | 11.991 | TimesNet **11.829** | 与 N-BEATS 11.851 基本持平 |
+| 少样本 10% | 平均 MSE ↓ | **0.371** | PatchTST 0.385 | 比 TimesNet 相对降低 33.3%，比 DLinear 降低 13.5% |
+| 零样本 | 综合指标 ↓ | 16.38 | N-BEATS **15.19** | 好于 PatchTST 17.67、TimesNet 18.96，但落后 N-BEATS |
+
+表中数字来自论文 Table 1–6，加粗为该任务最优；基线列取同类方法中最好的一个。<Cite n={1} />几个值得单独看的点：
+
+- **补全**：GPT2(3) 在多数数据集最好，6 个数据集平均 MSE 相对 TimesNet 降 4.1%，ETTh1 上降 11.5%。<Cite n={1} />
+- **分类**：10 个 UEA 数据集平均准确率 74.00%，超过 TimesNet；相比同期 PatchTST 的 67.50% 高 6.5 个百分点，论文则称相对提升 9.0%。<Cite n={1} />
+- **异常检测**：5 个数据集平均 F1 86.72%，比 TimesNet 高 1.7%；论文特意把所有方法统一到重构误差口径，排除了 Anomaly Transformer 额外关联差异带来的优势。<Cite n={1} />
+- **长程预测**：8 个 benchmark、4 个预测长度平均，GPT2(6) 不及 PatchTST（0.516 对 0.446），但比 TimesNet 低 9.3%，比 DLinear、FEDformer 等也更好。<Cite n={1} />
+- **少样本**：只用 10% 训练数据时平均 MSE 0.371，相对 TimesNet 降 33.3%；5% 设置下在 ETTh1、ETTh2 上仍明显领先，但 ETTm1 上不如 DLinear。这也是论文最有说服力的场景——数据越少，借来的先验越值钱。<Cite n={1} />
+- **零样本**：在 M4 上训练、直接迁移到 M3、Tourism、Electricity，相对 DLinear、TimesNet 分别降低 13.1%、13.6%，相对 PatchTST 降低 7.3%，但落后于带 meta-learning 设计的 N-BEATS。<Cite n={1} />
+
+跨域迁移也不是 GPT2 独有：把主干换成 BERT 或图像预训练的 BEiT，在 5% ETTh2 上 MSE 分别为 0.452 与 0.459，虽略逊于 GPT2(6) 的 0.400，但都远好于 DLinear 的 0.827。<Cite n={1} />这说明起作用的是「预训练 Transformer + 冻结」这个组合，而非某个特定语言模型。
+
+## 五、消融与成本：预训练权重与冻结各值多少
+
+论文用三个变体拆开归因，以 10% 数据、ETTh1 的 MSE 为例：
+
+| 变体 | ETTh1 MSE ↓ | 含义 |
+|---|---|---|
+| GPT2(6) FPT | **0.427** | 完整方案 |
+| GPT2(0) FPT | 0.874 | 去掉全部预训练层，只剩接口 |
+| No Freeze | 0.753 | 6 层预训练块解冻一起训练 |
+| No Pretrain | 1.326 | 同样 6 层结构，随机初始化 |
+
+以上数字来自论文 Table 7。<Cite n={1} />结论有两层：第一，提升主要来自**预训练权重**——同结构随机初始化后误差涨到三倍左右，而随机初始化再冻结在附录里表现同样差；第二，**冻结本身也有价值**——解冻后可以训练的参数更多，但效果反而变差，符合「部分微调会破坏通用功能」的解释。<Cite n={1} />
+
+成本是这篇论文最容易被误判的地方。GPT2(6) 的可训练参数只有 4M，占总参数的 4.6%，单步训练与推理反而比同维度的时序模型更快：
+
+| 模型（$d_{\text{model}}=768$） | 可训练参数 | 占比 | 单步训练（s） | 单批推理（s） |
+|---|---|---|---|---|
+| GPT2(6) | 4M | **4.6%** | **0.104** | 0.054 |
+| PatchTST | 20M | 100% | 0.457 | 0.123 |
+| FEDformer | 33M | 100% | 0.208 | 0.056 |
+| TimesNet | 42M | 100% | 5.723 | 2.162 |
+
+测速条件是单张 32G V100、batch size 128。<Cite n={1} />论文把速度优势部分归因于 HuggingFace GPT2 实现的高度优化——这一点值得记住：结论依赖实现，换一套推理栈，绝对数字会变。<Cite n={1} />
+
+## 六、局限与后续：一个「发现型」工作
+
+论文自己承认的边界很清楚：零样本在多个数据集上仍落后 N-BEATS；对 Transformer 通用性的理论分析还停在「注意力与 PCA 相关」这一步，没有给出完整的机制证明。<Cite n={1} />作者在中文回顾里说得更直白：这是一篇**发现型**工作，投稿 ICML 被拒、NeurIPS 也有审稿人维持负面意见，原因可以概括为「我不信」；他建议怀疑者在自己的数据上试一遍。<Cite n={6} />
+
+后续方向也写在结论里：一是引入参数高效微调（LoRA 一类）替代简单的全冻结，二是在 n-gram 语言模型的视角下继续理解 Transformer 的通用性。<Cite n={1} />对工程实践来说，这篇论文留下的判断标准比某个具体模型更有用：**当你手上的时序数据不足以训练自己的 foundation model 时，冻结一个预训练 Transformer 并用少量参数做接口适配，是一个成本极低、值得先试的基线**——但要像对待任何跨域迁移一样，先在自有分布上验证，别把论文的平均分当成保证。
+
+> 📖 中文社区的逐节导读可参考「两匹老虎」的模型解读<Cite n={7} />；不过数字与结论仍应以原论文为准。
+
+## 小结
+
+- **问题**：时序没有足够数据训练 foundation model，论文选择借用 NLP/CV 的预训练 Transformer，而不是从头预训练。
+- **方法**：冻结自注意力与 FFN，只训练位置嵌入、LayerNorm、输入嵌入与输出层；配合实例归一化与 patching，用一个 GPT2(6) 主干覆盖七类任务。
+- **解释**：深层 token 相似度随预训练权重升高，自注意力可被 PCA 替换；理论上最优注意力矩阵由输入协方差的前若干特征向量构成，等价于低秩主成分投影。
+- **结果**：补全、分类、异常检测、少样本领先；长程预测不及 PatchTST，短期与零样本不及最强基线——不是全面 SOTA，但用一个冻结主干拿到「接近或超过」已经足够说明问题。
+- **成本**：4.6% 可训练参数，训练/推理速度不降反升，关键前提是预训练权重还在、块内参数没被动过。
+
+## 参考资料
+
+<References>
+1. Tian Zhou, Peisong Niu, Xue Wang, Liang Sun, Rong Jin (2023). *One Fits All: Power General Time Series Analysis by Pretrained LM*. NeurIPS 2023 Spotlight, arXiv: [2302.11939](https://arxiv.org/abs/2302.11939)，[NeurIPS Proceedings](https://proceedings.neurips.cc/paper_files/paper/2023/hash/86c17de05579cde52025f9984e6e2ebb-Abstract-Conference.html)。—— 本文主论文：动机、FPT 结构、七类任务实验、消融、成本对比，以及自注意力与 PCA 的理论分析；Figure 1/2/4 出处。
+2. Alec Radford, Jeffrey Wu, Rewon Child, David Luan, Dario Amodei, Ilya Sutskever (2019). *Language Models are Unsupervised Multitask Learners*（GPT-2）. OpenAI Technical Report. —— 被冻结的 GPT2 主干来源。
+3. Haixu Wu, Tengge Hu, Yong Liu, Hang Zhou, Jianmin Wang, Mingsheng Long (2023). *TimesNet: Temporal 2D-Variation Modeling for General Time Series Analysis*. ICLR 2023, arXiv: [2210.02186](https://arxiv.org/abs/2210.02186)。—— 主要对照基线，实验设置与部分基线结果沿用其配置。
+4. Yuqi Nie, Nam H. Nguyen, Phanwadee Sinthong, Jayant Kalagnanam (2023). *A Time Series is Worth 64 Words: Long-term Forecasting with Transformers*（PatchTST）. ICLR 2023, arXiv: [2211.14730](https://arxiv.org/abs/2211.14730)。—— patching 做法与长程预测基线。
+5. Taesung Kim, Jinhee Kim, Yunwon Tae, Cheonbok Park, Jang-Ho Choi, Jaegul Choo (2022). *Reversible Instance Normalization for Accurate Time-Series Forecasting against Distribution Shift*（RevIN）. ICLR 2022. —— 实例归一化（reverse instance norm）的原始出处。
+6. Tian Zhou (2023). *[NeurIPS'23 spotlight] 阿里巴巴达摩院 One Fits All: Power Time Series Analysis By Pretrained LM*. 知乎作者解读，[zhuanlan.zhihu.com/p/661048378](https://zhuanlan.zhihu.com/p/661048378)。—— 作者对动机、实验取舍、评审反馈与「GPT2 只是资源受限选择」的补充说明（非论文原文，作补充参考）。
+7. 两匹老虎 (2024). *【模型解读】One Fits All: Power General Time Series Analysis by Pretrained LM*. 知乎，[zhihu.com/tardis/bd/art/664785806](https://www.zhihu.com/tardis/bd/art/664785806)。—— 中文社区的逐节导读，用于交叉核对方法描述（二手资料）。
+</References>

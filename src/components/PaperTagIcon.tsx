@@ -1,4 +1,4 @@
-import { ChatGLM, DeepSeek, Meta, Minimax, OpenAI, Qwen } from "@lobehub/icons";
+import { ChatGLM, DeepSeek, Meta, Minimax, Nvidia, OpenAI, Qwen } from "@lobehub/icons";
 import { getTagIcon, getTagIconSrc } from "@/lib/paper-tags";
 
 export default function PaperTagIcon({
@@ -30,6 +30,10 @@ export default function PaperTagIcon({
 
   if (tag === "GPT 系列") {
     return <OpenAI className={className} size="1em" />;
+  }
+
+  if (tag === "NVIDIA 系列") {
+    return <Nvidia.Color className={className} size="1em" />;
   }
 
   const iconSrc = getTagIconSrc(tag);

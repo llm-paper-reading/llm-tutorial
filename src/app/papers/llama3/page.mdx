@@ -82,7 +82,7 @@ Llama 3 的 scaling law 部分是「先算清再开训」的教科书<Cite n={1}
 最终 8K 阶段 43% MFU、128K 阶段 38% MFU<Cite n={1} />。
 
 <figure className="my-6">
-  <img src="./fig-5-4d-parallelism.png" alt="Llama 3 4D 并行示意：16 张 GPU 按 [TP=2, CP=2, PP=2, DP=2] 分组，每张 GPU 的位置用四维向量表示；同一 TP 组的 GPU0 与 GPU1 在机内，同一 CP 组跨序列切块，同一 PP 组跑相邻层段，同一 DP 组（FSDP）分片优化器状态" className="mx-auto h-auto max-w-full rounded-lg border border-zinc-200 shadow-sm dark:border-zinc-800" />
+  <img src="./fig-5-4d-parallelism.svg" alt="Llama 3 4D 并行示意：16 张 GPU 按 [TP=2, CP=2, PP=2, DP=2] 分组，每张 GPU 的位置用四维向量表示；同一 TP 组的 GPU0 与 GPU1 在机内，同一 CP 组跨序列切块，同一 PP 组跑相邻层段，同一 DP 组（FSDP）分片优化器状态" className="mx-auto h-auto max-w-full rounded-lg border border-zinc-200 shadow-sm dark:border-zinc-800" />
   <figcaption className="mt-2 text-center text-xs text-zinc-500 dark:text-zinc-400">
     <span className="figure-caption-main">Llama 3 4D 并行示意：16 张 GPU 按 [TP=2, CP=2, PP=2, DP=2] 分组，每张 GPU 的位置用四维向量表示；同一 TP 组的 GPU0 与 GPU1 在机内，同一 CP 组跨序列切块，同一 PP 组跑相邻层段，同一 DP 组（FSDP）分片优化器状态</span>
     <span className="figure-caption-source">图源：Llama Team, AI @ Meta, <em>The Llama 3 Herd of Models</em>（arXiv:2407.21783）Figure 5</span>

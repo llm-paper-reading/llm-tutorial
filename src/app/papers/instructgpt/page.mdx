@@ -34,7 +34,7 @@ export const metadata = paperMetadata(paper);
 ## 三、三步法：每步都有反直觉的细节
 
 <figure className="my-6">
-  <img src="./fig-2-three-steps.png" alt="InstructGPT 三步法示意图：第一步 SFT，用标注员示范数据微调 GPT-3；第二步奖励模型训练，标注员对同一 prompt 的多个模型输出（A–D）排序，训练 RM 预测偏好；第三步 PPO 强化学习，用 RM 作为奖励函数微调 SFT 模型，并对每 token 施加对 SFT 模型的 KL 惩罚" className="mx-auto h-auto max-w-full rounded-lg border border-zinc-200 shadow-sm dark:border-zinc-800" />
+  <img src="./fig-2-three-steps.svg" alt="InstructGPT 三步法示意图：第一步 SFT，用标注员示范数据微调 GPT-3；第二步奖励模型训练，标注员对同一 prompt 的多个模型输出（A–D）排序，训练 RM 预测偏好；第三步 PPO 强化学习，用 RM 作为奖励函数微调 SFT 模型，并对每 token 施加对 SFT 模型的 KL 惩罚" className="mx-auto h-auto max-w-full rounded-lg border border-zinc-200 shadow-sm dark:border-zinc-800" />
   <figcaption className="mt-2 text-center text-xs text-zinc-500 dark:text-zinc-400">
     <span className="figure-caption-main">InstructGPT 三步法示意图：第一步 SFT，用标注员示范数据微调 GPT-3；第二步奖励模型训练，标注员对同一 prompt 的多个模型输出（A–D）排序，训练 RM 预测偏好；第三步 PPO 强化学习，用 RM 作为奖励函数微调 SFT 模型，并对每 token 施加对 SFT 模型的 KL 惩罚</span>
     <span className="figure-caption-source">图源：Ouyang et al., <em>Training language models to follow instructions with human feedback</em>（arXiv:2203.02155）Figure 2</span>

@@ -67,7 +67,7 @@ $$
 K2 全程的逐步训练 loss 曲线（论文 Figure 3，未平滑、未降采样，15.5T token 无一次 spike）:
 
 <figure className="my-6">
-  <img src="./fig-loss-curve.png" alt="Kimi K2 逐步训练损失曲线：横轴为训练 token 数（万亿），纵轴为 loss，未平滑未降采样，全程无 loss spike" className="mx-auto h-auto max-w-full rounded-lg border border-zinc-200 shadow-sm dark:border-zinc-800" />
+  <img src="./fig-loss-curve.svg" alt="Kimi K2 逐步训练损失曲线：横轴为训练 token 数（万亿），纵轴为 loss，未平滑未降采样，全程无 loss spike" className="mx-auto h-auto max-w-full rounded-lg border border-zinc-200 shadow-sm dark:border-zinc-800" />
   <figcaption className="mt-2 text-center text-xs text-zinc-500 dark:text-zinc-400">
     <span className="figure-caption-main">Kimi K2 逐步训练损失曲线：横轴为训练 token 数（万亿），纵轴为 loss，未平滑未降采样，全程无 loss spike</span>
     <span className="figure-caption-source">图源：Kimi Team, <em>Kimi K2: Open Agentic Intelligence</em>（arXiv:2507.20534）Figure 3</span>
@@ -135,8 +135,8 @@ agentic 能力（多步工具调用、长程规划）在自然数据里稀缺、
 论文原版的合成管线两阶段图（论文 Figure 8）：（a） 工具仓库 → 智能体与带 rubric 的任务；（b） 用户智能体 × 工具模拟器多轮交互生成轨迹，再由 judge 过滤——
 
 <figure className="my-6 grid gap-4 sm:grid-cols-2">
-  <img src="./fig-tool-repo-synthesis.png" alt="工具仓库合成管线：真实 MCP 工具与合成工具规格汇入工具仓库，按域与应用分类，再为工具组合生成智能体与带 rubric 的任务" className="mx-auto h-auto max-w-full rounded-lg border border-zinc-200 shadow-sm dark:border-zinc-800" />
-  <img src="./fig-tool-traj-synthesis.png" alt="轨迹生成与过滤管线：用户智能体、智能体、工具模拟器多轮交互产生调用轨迹，judge 按任务 rubric 打分，过滤后的数据留下训练" className="mx-auto h-auto max-w-full rounded-lg border border-zinc-200 shadow-sm dark:border-zinc-800" />
+  <img src="./fig-tool-repo-synthesis.svg" alt="工具仓库合成管线：真实 MCP 工具与合成工具规格汇入工具仓库，按域与应用分类，再为工具组合生成智能体与带 rubric 的任务" className="mx-auto h-auto max-w-full rounded-lg border border-zinc-200 shadow-sm dark:border-zinc-800" />
+  <img src="./fig-tool-traj-synthesis.svg" alt="轨迹生成与过滤管线：用户智能体、智能体、工具模拟器多轮交互产生调用轨迹，judge 按任务 rubric 打分，过滤后的数据留下训练" className="mx-auto h-auto max-w-full rounded-lg border border-zinc-200 shadow-sm dark:border-zinc-800" />
   <figcaption className="sm:col-span-2 mt-1 text-center text-xs text-zinc-500 dark:text-zinc-400">
     <span className="figure-caption-main">轨迹生成与过滤管线：用户智能体、智能体、工具模拟器多轮交互产生调用轨迹，judge 按任务 rubric 打分，过滤后的数据留下训练</span>
     <span className="figure-caption-source">图源：Kimi Team, <em>Kimi K2: Open Agentic Intelligence</em>（arXiv:2507.20534）Figure 8</span>

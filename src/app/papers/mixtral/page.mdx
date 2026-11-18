@@ -1,0 +1,78 @@
+import paper from "./meta";
+import { paperMetadata } from "@/lib/papers";
+
+export const metadata = paperMetadata(paper);
+
+<PaperHeader slug={paper.slug} />
+
+# Mixtral 8×7B：开源稀疏 MoE 的标志作
+
+2024 年 1 月，Mistral AI 发布 Mixtral 8×7B<Cite n={1} />：基于 Mistral 7B 架构，每层的 FFN 换成 **8 个专家、路由每 token 选 2 个**——总参数 47B、推理激活仅 13B，32K 上下文。结果是当时开源世界的标志性事件：<Cite n={1} />**多数基准上超过 Llama 2 70B 与 GPT-3.5**，数学、代码与多语言优势最大；Apache 2.0 许可证外加向 vLLM 提交 MoE kernel，把稀疏 MoE 从「大厂专利」变成开源标配。站内 [Qwen2](/papers/qwen2) 的细粒度专家设计、[DeepSeek-V3](/papers/deepseek-v3) 的路由演进都以它为对照系。
+
+> 📌 前置：Transformer 基础见 [Attention Is All You Need](/papers/attention-transformer)；MoE 的细粒度对照见 [Qwen2](/papers/qwen2)；推理侧的 MoE kernel 与 [vLLM](/papers/vllm) 直接相关。
+
+## 一、动机：解耦容量与成本
+
+Dense 模型的全部参数参与每次计算——知识容量与推理成本线性绑定。稀疏 MoE（SMoE）的承诺是解耦：<Cite n={1} />**总参数承载容量，激活参数控制成本**。但此前的开源 MoE 质量一直落后同成本 dense， Mixtral 的贡献是证明一个干净实现可以兑现这个承诺：13B 激活的推理预算，拿到 70B 级的质量。
+
+## 二、架构：8×7B 的参数账
+
+架构与 Mistral 7B 一致（GQA、SwiGLU、RoPE 等），两处不同：**上下文 32K 全密集**（非插值），以及每层 FFN 替换为 MoE 层<Cite n={1} />：
+
+<figure className="my-6">
+  <img src="./fig-1-moe-layer.png" alt="Mixtral 的混合专家层示意：每个输入向量由路由器分配到 8 个专家中的 2 个，层输出是两个被选专家输出的加权和；每个专家是标准 Transformer 前馈块" className="mx-auto h-auto max-w-full rounded-lg border border-zinc-200 shadow-sm dark:border-zinc-800" />
+  <figcaption className="mt-2 text-center text-xs text-zinc-500 dark:text-zinc-400">
+    <span className="figure-caption-main">Mixtral 的混合专家层示意：每个输入向量由路由器分配到 8 个专家中的 2 个，层输出是两个被选专家输出的加权和；每个专家是标准 Transformer 前馈块</span>
+    <span className="figure-caption-source">图源：Jiang et al., <em>Mixtral of Experts</em>（arXiv:2401.04088）Figure 1</span>
+  </figcaption>
+</figure>
+
+参数账容易算错，值得展开：47B ≈ **共享部分**（注意力、嵌入，约 7B）+ **8 份 FFN**；激活 13B ≈ 共享部分 + **2 份 FFN**。「8×7B」指的是 FFN 复制 8 份，不是 8 个完整模型。路由是每 token 独立的——同一 token 在不同层、不同时间步可以走不同专家组合，总组合空间是 $8^2$ 量级。
+
+这是「粗粒度」MoE 的代表（8 个大专家选 2 个），与 [Qwen2](/papers/qwen2)-57B-A14B 的「细粒度」（64 个小专家选 8 + 共享专家）形成直接的粒度对照——同等总参/激活约束下细粒度的组合数指数级更多，这是后续工作的方向。
+
+## 三、结果：质量-成本双占优
+
+主要结论与部署侧收益<Cite n={1} />：
+
+- **质量**：多数基准超过 Llama 2 70B 与 GPT-3.5；数学（GSM8K / MATH）、代码（HumanEval）与多语言优势最大；32K 上下文内检索不受序列长度与信息位置影响；
+- **成本**：低 batch 下推理时延更低（每 token 激活少），大 batch 下吞吐更高——质量-成本曲线整体占优：
+
+<figure className="my-6">
+  <img src="./fig-2-quality-cost.png" alt="模型质量与推理成本对比：横轴为批量推理吞吐（token/秒），纵轴为综合质量评分；Mixtral 8×7B 在质量上超过 Llama 2 70B 与 GPT-3.5，同时在低批量下推理更快、高批量下吞吐更高，位于质量-成本 Pareto 前沿" className="mx-auto h-auto max-w-full rounded-lg border border-zinc-200 shadow-sm dark:border-zinc-800" />
+  <figcaption className="mt-2 text-center text-xs text-zinc-500 dark:text-zinc-400">
+    <span className="figure-caption-main">模型质量与推理成本对比：横轴为批量推理吞吐（token/秒），纵轴为综合质量评分；Mixtral 8×7B 在质量上超过 Llama 2 70B 与 GPT-3.5，同时在低批量下推理更快、高批量下吞吐更高，位于质量-成本 Pareto 前沿</span>
+    <span className="figure-caption-source">图源：Jiang et al., <em>Mixtral of Experts</em>（arXiv:2401.04088）Figure 2（质量-吞吐对比）</span>
+  </figcaption>
+</figure>
+
+**Instruct 版**用 SFT + DPO（与 [Qwen2](/papers/qwen2) 同期的轻对齐路线），人类评测超过 GPT-3.5 Turbo、Claude-2.1、Gemini Pro 与 Llama 2 70B-chat，且 BBQ/BOLD 上偏差更小<Cite n={1} />。工程侧的开放同样重要：为了让社区能跑，团队向 [vLLM](/papers/vllm) 提交了集成 MegaBlocks CUDA kernel 的改动——开源 MoE 的部署基础设施由此起步。
+
+## 四、路由分析：专家不是领域专家
+
+论文最有意思的部分是路由行为的事后分析<Cite n={1} />。直觉预期是「专家按领域分工」（数学专家、生物专家……），实测**不是**：
+
+- 在 Pile 的各子域（ArXiv、生物、哲学、GitHub 等）上，专家分配分布几乎一致，与均匀采样的 1/8 基准相差无几——唯一的例外是合成的 DM Mathematics，且原因可能是其语言谱系太窄；
+- 真正的模式是**语法与位置局部性**：Python 的 `self`、英文的 Question 等特定词元稳定路由到同一专家；代码缩进 token 总走同一路径；相邻 token 的专家分配高度相关。
+
+这张图改变了对 MoE 的想象：路由学到的是 **token 级的语法/局部特征**，而不是人类语义分类。「专家」这个词本身就有误导性——更准确的说法是「并行 FFN 的内容寻址选择」。[DeepSeek-V3](/papers/deepseek-v3) 的后续分析延续了这一视角。
+
+## 五、局限与影响
+
+局限：路由负载均衡依赖训练期的辅助损失、论文未展开细节（DeepSeek-V3 后来证明可以去掉均衡损失）；训练超参与数据披露有限——报告只有 13 页，示范价值大于 recipe 价值。
+
+影响侧一句话总结：<Cite n={1} />Mixtral 之后，「开源旗舰 = 稀疏 MoE」成为默认。Qwen2 的 57B-A14B（2024-07）、DeepSeek-V3 的 671B-A37B（2024-12）、Qwen3 的 235B-A22B 全部沿这条线展开；推理侧 MoE kernel（vLLM 集成、SGLang 等）的生态也由它的开源要求催生。
+
+## 小结
+
+Mixtral 的方法论遗产：**用工程兑现架构承诺**（干净实现的 SMoE 第一次质量成本双占优）、**用数据纠正直觉**（路由不按领域、按语法局部性）、**用开源放大影响**（Apache 2.0 + 基础设施贡献）。它与 [Qwen2](/papers/qwen2)（细粒度）、[DeepSeek-V3](/papers/deepseek-v3)（均衡与效率）构成开源 MoE 的三部曲——本文是第一乐章。
+
+## 参考资料
+
+<References>
+1. Albert Q. Jiang et al. (2024). *Mixtral of Experts*. arXiv: [2401.04088](https://arxiv.org/abs/2401.04088). —— 本文主论文：8×7B 架构与参数账、基准结果、32K 检索实验、路由分析（领域无关、语法局部性）、Instruct 版与 vLLM 集成。
+2. An Yang et al. (2024). *Qwen2 Technical Report*. arXiv: [2407.10671](https://arxiv.org/abs/2407.10671). —— 细粒度专家与共享专家的对照演进，站内精读见 [Qwen2](/papers/qwen2)。
+3. DeepSeek-AI (2024). *DeepSeek-V3 Technical Report*. arXiv: [2412.19437](https://arxiv.org/abs/2412.19437). —— 无辅助损失负载均衡与 MoE 效率极限，站内精读见 [DeepSeek-V3](/papers/deepseek-v3)。
+4. Woosuk Kwon et al. (2023). *Efficient Memory Management for Large Language Model Serving with PagedAttention*（vLLM）. SOSP 2023, arXiv: [2309.06180](https://arxiv.org/abs/2309.06180). —— Mixtral 推动集成的推理引擎，站内精读见 [vLLM](/papers/vllm)。
+5. Albert Q. Jiang et al. (2023). *Mistral 7B*. arXiv: [2310.06825](https://arxiv.org/abs/2310.06825). —— 基座架构（滑动窗口注意力等）的来源。
+</References>

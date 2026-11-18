@@ -31,6 +31,13 @@ import glm5 from "@/app/papers/glm-5/meta";
 import attentionTransformer from "@/app/papers/attention-transformer/meta";
 import llama3 from "@/app/papers/llama3/meta";
 import gpt3 from "@/app/papers/gpt3/meta";
+import flashAttention from "@/app/papers/flash-attention/meta";
+import scalingLaws from "@/app/papers/scaling-laws/meta";
+import constitutionalAI from "@/app/papers/constitutional-ai/meta";
+import chainOfThought from "@/app/papers/chain-of-thought/meta";
+import mixtral from "@/app/papers/mixtral/meta";
+import mamba from "@/app/papers/mamba/meta";
+import vllm from "@/app/papers/vllm/meta";
 import instructgpt from "@/app/papers/instructgpt/meta";
 import deepseekR1 from "@/app/papers/deepseek-r1/meta";
 import deepseekV3 from "@/app/papers/deepseek-v3/meta";
@@ -42,6 +49,8 @@ import deepseekOcr from "@/app/papers/deepseek-ocr/meta";
 import uiTars2 from "@/app/papers/ui-tars-2/meta";
 import kimiK3 from "@/app/papers/kimi-k3/meta";
 import minimaxM3 from "@/app/papers/minimax-m3/meta";
+import oneFitsAll from "@/app/papers/one-fits-all/meta";
+import timeLlm from "@/app/papers/time-llm/meta";
 
 export interface Paper {
   slug: string;
@@ -98,8 +107,15 @@ export const papers: Paper[] = [
   glm45,
   glm5,
   attentionTransformer,
+  scalingLaws,
+  flashAttention,
+  chainOfThought,
   gpt3,
   instructgpt,
+  constitutionalAI,
+  vllm,
+  mamba,
+  mixtral,
   llama3,
   deepseekR1,
   deepseekV3,
@@ -111,6 +127,8 @@ export const papers: Paper[] = [
   uiTars2,
   kimiK3,
   minimaxM3,
+  oneFitsAll,
+  timeLlm,
 ];
 
 /** 所有出现过的 keyword（保持注册表中的出现顺序）。 */

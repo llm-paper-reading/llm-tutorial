@@ -17,10 +17,12 @@ import { getTagHint } from "@/lib/paper-tags";
 const SERIES_TAGS = [
   "DeepSeek 系列",
   "GLM 系列",
+  "Kimi 系列",
   "MiniMax 系列",
   "Qwen 系列",
   "Llama 系列",
   "GPT 系列",
+  "NVIDIA 系列",
 ];
 
 function PaperIcon({ p, className }: { p: Paper; className: string }) {

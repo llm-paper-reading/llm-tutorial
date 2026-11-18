@@ -41,8 +41,8 @@ $$
 论文原版结构图（左）与缩放点积注意力的计算流程（右）——注意 $QK^{\top}$ 后的 scale 与 softmax 方框：
 
 <figure className="my-6 grid gap-4 sm:grid-cols-2">
-  <img src="./fig-architecture.png" alt="Transformer 整体架构：编码器（左）与解码器（右）的堆叠结构" className="mx-auto h-auto max-w-full rounded-lg border border-zinc-200 shadow-sm dark:border-zinc-800" />
-  <img src="./fig-attention.png" alt="缩放点积注意力：MatMul → Scale → Mask → SoftMax → MatMul" className="mx-auto h-auto max-w-full rounded-lg border border-zinc-200 shadow-sm dark:border-zinc-800" />
+  <img src="./fig-architecture.svg" alt="Transformer 整体架构：编码器（左）与解码器（右）的堆叠结构" className="mx-auto h-auto max-w-full rounded-lg border border-zinc-200 shadow-sm dark:border-zinc-800" />
+  <img src="./fig-attention.svg" alt="缩放点积注意力：MatMul → Scale → Mask → SoftMax → MatMul" className="mx-auto h-auto max-w-full rounded-lg border border-zinc-200 shadow-sm dark:border-zinc-800" />
   <figcaption className="sm:col-span-2 mt-1 text-center text-xs text-zinc-500 dark:text-zinc-400">
     <span className="figure-caption-main">缩放点积注意力：MatMul → Scale → Mask → SoftMax → MatMul</span>
     <span className="figure-caption-source">图源：Vaswani et al., <em>Attention Is All You Need</em>（arXiv:1706.03762）Figure 1（左）与 Figure 2 左（右）</span>
@@ -106,7 +106,7 @@ $$
 论文原版的多头机制图——$h$ 组线性投影并行做注意力，拼接后再过 $W^O$:
 
 <figure className="my-6">
-  <img src="./fig-multihead.png" alt="多头注意力：h 组投影并行的缩放点积注意力，输出拼接后线性变换" className="mx-auto h-auto max-w-xs rounded-lg border border-zinc-200 shadow-sm dark:border-zinc-800" />
+  <img src="./fig-multihead.svg" alt="多头注意力：h 组投影并行的缩放点积注意力，输出拼接后线性变换" className="mx-auto h-auto max-w-xs rounded-lg border border-zinc-200 shadow-sm dark:border-zinc-800" />
   <figcaption className="mt-2 text-center text-xs text-zinc-500 dark:text-zinc-400">
     <span className="figure-caption-main">多头注意力：h 组投影并行的缩放点积注意力，输出拼接后线性变换</span>
     <span className="figure-caption-source">图源：Vaswani et al., <em>Attention Is All You Need</em>（arXiv:1706.03762）Figure 2 右</span>

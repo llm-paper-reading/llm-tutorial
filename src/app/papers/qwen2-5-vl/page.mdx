@@ -25,7 +25,7 @@ Qwen2.5-VL 的解法是**原生动态分辨率**：图像按 28 的倍数缩放�
 整体架构一图总览：
 
 <figure className="my-6">
-  <img src="./fig-1-framework.png" alt="Qwen2.5-VL 架构总览：原生分辨率的图像与视频经动态 FPS 采样进入视觉编码器（2D-RoPE、窗口注意力、SwiGLU、RMSNorm），patch 特征按 2×2 分组压缩后经 MLP 合并器投影到语言模型维度；MRoPE 的三个分量中时间维与绝对时间对齐，支持不同 FPS 视频的节奏感知与时间定位" className="mx-auto h-auto max-w-full rounded-lg border border-zinc-200 shadow-sm dark:border-zinc-800" />
+  <img src="./fig-1-framework.svg" alt="Qwen2.5-VL 架构总览：原生分辨率的图像与视频经动态 FPS 采样进入视觉编码器（2D-RoPE、窗口注意力、SwiGLU、RMSNorm），patch 特征按 2×2 分组压缩后经 MLP 合并器投影到语言模型维度；MRoPE 的三个分量中时间维与绝对时间对齐，支持不同 FPS 视频的节奏感知与时间定位" className="mx-auto h-auto max-w-full rounded-lg border border-zinc-200 shadow-sm dark:border-zinc-800" />
   <figcaption className="mt-2 text-center text-xs text-zinc-500 dark:text-zinc-400">
     <span className="figure-caption-main">Qwen2.5-VL 架构总览：原生分辨率的图像与视频经动态 FPS 采样进入视觉编码器（2D-RoPE、窗口注意力、SwiGLU、RMSNorm），patch 特征按 2×2 分组压缩后经 MLP 合并器投影到语言模型维度；MRoPE 的三个分量中时间维与绝对时间对齐，支持不同 FPS 视频的节奏感知与时间定位</span>
     <span className="figure-caption-source">图源：Qwen Team, <em>Qwen2.5-VL Technical Report</em>（arXiv:2502.13923）Figure 1</span>

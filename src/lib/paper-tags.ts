@@ -55,6 +55,11 @@ export const KEYWORDS: PaperTag[] = [
     hint: "OpenAI GPT 系列与对齐源头：GPT-3、InstructGPT 等",
   },
   {
+    name: "NVIDIA 系列",
+    icon: "🟩",
+    hint: "英伟达 Nemotron 系列模型与 Cascade RL、多域蒸馏等后训练路线",
+  },
+  {
     name: "注意力机制",
     icon: "🎯",
     hint: "Transformer 的核心：稀疏化、线性化、分组查询等注意力结构的演进",
@@ -113,6 +118,11 @@ export const KEYWORDS: PaperTag[] = [
     name: "推理优化",
     icon: "🚀",
     hint: "部署侧提速降本：量化、投机解码、稀疏计算、KV cache 压缩",
+  },
+  {
+    name: "时间序列",
+    icon: "📈",
+    hint: "时序预测、补全、分类、异常检测，以及预训练模型向时序的跨域迁移",
   },
   {
     name: "基础架构",

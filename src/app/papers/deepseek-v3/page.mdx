@@ -48,7 +48,7 @@ $$
 论文原版架构图——下半是 MLA 的压缩-还原回路，上半是 DeepSeekMoE 的共享专家 + 路由专家：
 
 <figure className="my-6">
-  <img src="./fig-architecture.png" alt="DeepSeek-V3 基础架构：MLA 注意力(h_t 下投影压缩为潜向量 c_KV，上投影还原各头 K/V，另配解耦的 RoPE 共享 key)与 DeepSeekMoE（共享专家 + 门控选择的路由专家）" className="mx-auto h-auto max-w-2xl rounded-lg border border-zinc-200 shadow-sm dark:border-zinc-800" />
+  <img src="./fig-architecture.svg" alt="DeepSeek-V3 基础架构：MLA 注意力(h_t 下投影压缩为潜向量 c_KV，上投影还原各头 K/V，另配解耦的 RoPE 共享 key)与 DeepSeekMoE（共享专家 + 门控选择的路由专家）" className="mx-auto h-auto max-w-2xl rounded-lg border border-zinc-200 shadow-sm dark:border-zinc-800" />
   <figcaption className="mt-2 text-center text-xs text-zinc-500 dark:text-zinc-400">
     <span className="figure-caption-main">DeepSeek-V3 基础架构：MLA 注意力(h_t 下投影压缩为潜向量 c_KV，上投影还原各头 K/V，另配解耦的 RoPE 共享 key)与 DeepSeekMoE（共享专家 + 门控选择的路由专家）</span>
     <span className="figure-caption-source">图源：DeepSeek-AI et al., <em>DeepSeek-V3 Technical Report</em>（arXiv:2412.19437）Figure 2</span>
@@ -219,7 +219,7 @@ print("负载被拉平,而主损失的梯度路径从未被触碰")
 论文原版的 MTP 结构图——每层多预测一个深度，每条因果链共享主干表示，每层都有完整的因果 mask，顺序推理时这些头可拿来当投机解码的草稿模型：
 
 <figure className="my-6">
-  <img src="./fig-mtp.png" alt="多 Token 预测（MTP）实现：主干之上每层一个因果 Transformer 头，顺序预测后续 token，保持每条因果链完整" className="mx-auto h-auto max-w-2xl rounded-lg border border-zinc-200 shadow-sm dark:border-zinc-800" />
+  <img src="./fig-mtp.svg" alt="多 Token 预测（MTP）实现：主干之上每层一个因果 Transformer 头，顺序预测后续 token，保持每条因果链完整" className="mx-auto h-auto max-w-2xl rounded-lg border border-zinc-200 shadow-sm dark:border-zinc-800" />
   <figcaption className="mt-2 text-center text-xs text-zinc-500 dark:text-zinc-400">
     <span className="figure-caption-main">多 Token 预测（MTP）实现：主干之上每层一个因果 Transformer 头，顺序预测后续 token，保持每条因果链完整</span>
     <span className="figure-caption-source">图源：DeepSeek-AI et al., <em>DeepSeek-V3 Technical Report</em>（arXiv:2412.19437）Figure 3</span>
