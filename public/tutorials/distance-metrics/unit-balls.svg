@@ -1,0 +1,36 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<svg xmlns="http://www.w3.org/2000/svg" width="780" height="280" viewBox="0 0 780 280">
+  <rect width="100%" height="100%" fill="#ffffff"/>
+  <g font-family="ui-sans-serif, system-ui, -apple-system, 'Helvetica Neue', Arial, sans-serif">
+    <!-- 面板 1：L1 -->
+    <g>
+      <text x="140" y="28" font-size="15" font-weight="600" text-anchor="middle" fill="#18181b">(a) L1 / 曼哈顿</text>
+      <line x1="30" y1="150" x2="250" y2="150" stroke="#a1a1aa" stroke-width="1"/>
+      <line x1="140" y1="60" x2="140" y2="250" stroke="#a1a1aa" stroke-width="1"/>
+      <polygon points="140,70 220,150 140,230 60,150" fill="#059669" fill-opacity="0.14" stroke="#059669" stroke-width="2.5"/>
+      <text x="226" y="166" font-size="10" fill="#71717a">x₁</text>
+      <text x="148" y="66" font-size="10" fill="#71717a">x₂</text>
+      <text x="140" y="270" font-size="12" text-anchor="middle" fill="#52525b">|x₁| + |x₂| ≤ 1</text>
+    </g>
+    <!-- 面板 2：L2 -->
+    <g>
+      <text x="390" y="28" font-size="15" font-weight="600" text-anchor="middle" fill="#18181b">(b) L2 / 欧氏</text>
+      <line x1="280" y1="150" x2="500" y2="150" stroke="#a1a1aa" stroke-width="1"/>
+      <line x1="390" y1="60" x2="390" y2="250" stroke="#a1a1aa" stroke-width="1"/>
+      <circle cx="390" cy="150" r="80" fill="#059669" fill-opacity="0.14" stroke="#059669" stroke-width="2.5"/>
+      <text x="476" y="166" font-size="10" fill="#71717a">x₁</text>
+      <text x="398" y="66" font-size="10" fill="#71717a">x₂</text>
+      <text x="390" y="270" font-size="12" text-anchor="middle" fill="#52525b">x₁² + x₂² ≤ 1</text>
+    </g>
+    <!-- 面板 3：L∞ -->
+    <g>
+      <text x="640" y="28" font-size="15" font-weight="600" text-anchor="middle" fill="#18181b">(c) L∞ / 切比雪夫</text>
+      <line x1="530" y1="150" x2="750" y2="150" stroke="#a1a1aa" stroke-width="1"/>
+      <line x1="640" y1="60" x2="640" y2="250" stroke="#a1a1aa" stroke-width="1"/>
+      <rect x="560" y="70" width="160" height="160" fill="#059669" fill-opacity="0.14" stroke="#059669" stroke-width="2.5"/>
+      <text x="726" y="166" font-size="10" fill="#71717a">x₁</text>
+      <text x="648" y="66" font-size="10" fill="#71717a">x₂</text>
+      <text x="640" y="270" font-size="12" text-anchor="middle" fill="#52525b">max(|x₁|, |x₂|) ≤ 1</text>
+    </g>
+  </g>
+</svg>

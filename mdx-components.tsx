@@ -77,6 +77,7 @@ import OnPolicyDistillLoop from "@/components/viz/OnPolicyDistillLoop";
 import ExposureBiasWalk from "@/components/viz/ExposureBiasWalk";
 import ReverseKLBar from "@/components/viz/ReverseKLBar";
 import EfficiencyCompare from "@/components/viz/EfficiencyCompare";
+import DistanceMetricExplorer from "@/components/viz/DistanceMetricExplorer";
 import MixedDistillDial from "@/components/viz/MixedDistillDial";
 import GRPOAdvantageViz from "@/components/viz/GRPOAdvantageViz";
 import BornAgainCurve from "@/components/viz/BornAgainCurve";
@@ -216,6 +217,7 @@ export function useMDXComponents(components: MDXComponents): MDXComponents {
     ExposureBiasWalk,
     ReverseKLBar,
     EfficiencyCompare,
+    DistanceMetricExplorer,
     MixedDistillDial,
     GRPOAdvantageViz,
     BornAgainCurve,

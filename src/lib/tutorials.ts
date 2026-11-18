@@ -56,6 +56,14 @@ export const tutorials: Tutorial[] = [
     icon: "🔢",
   },
   {
+    slug: "distance-metrics",
+    title: "距离度量：从欧氏距离到 Wasserstein",
+    navTitle: "距离度量",
+    desc: "欧氏、曼哈顿、余弦、马氏、Hamming、Jaccard、编辑距离、DTW、KL/JS 与 Wasserstein——常用距离度量的公式、几何直觉、适用场景与踩坑清单，附交互式最近邻实验。",
+    category: "基础理论",
+    icon: "📐",
+  },
+  {
     slug: "information-theory-overview",
     title: "信息论总览：熵、交叉熵与 KL",
     navTitle: "信息论总览",

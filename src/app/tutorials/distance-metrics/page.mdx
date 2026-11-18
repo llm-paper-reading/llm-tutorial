@@ -1,0 +1,253 @@
+import { tutorialMetadata } from "@/lib/tutorials";
+
+export const metadata = tutorialMetadata("distance-metrics");
+
+# 📐 距离度量：从欧氏距离到 Wasserstein
+
+距离是机器学习里最隐蔽的超参数。KNN 用距离投票，K-means 用距离分配簇，向量检索用距离排序，异常检测用距离定义「远」，知识蒸馏与 RLHF 又用 KL 这类「距离」约束模型。换一把尺子，最近邻、聚类边界和损失曲面都会变——但很多流程默认 Euclidean 或 cosine，从不检查它是否适合当前数据。<Cite n={[1,2]} />这篇教程按「向量 → 集合与序列 → 概率分布」三组，整理常用度量的公式、几何直觉、适用场景与踩坑清单。
+
+> 📌 前置：站内 [KNN](/tutorials/knn-classification) 与 [K-means](/tutorials/kmeans-clustering) 都直接依赖距离；分布之间的 KL 见 [交叉熵与 KL 散度](/tutorials/cross-entropy-kl)。
+
+先看一段 16 秒的动画总览：同一个「两个对象有多远」的问题，在 10 种度量下分别是什么样子。视频依次演示欧氏、曼哈顿、切比雪夫、闵可夫斯基、余弦、马氏、Hamming、Jaccard、编辑距离与 KL 散度，后面的章节会逐个拆开。<Cite n={13} />
+
+<figure className="my-6">
+  <video autoPlay loop muted playsInline controls preload="metadata" poster="./distance-metrics-poster.jpg" aria-label="十种常用距离度量的动画对比" className="mx-auto block h-auto w-full max-w-[420px] rounded-lg border border-zinc-200 shadow-sm dark:border-zinc-800">
+    <source src="./distance-metrics-overview.mp4" type="video/mp4" />
+    你的浏览器不支持 HTML5 视频播放。
+  </video>
+  <figcaption className="mt-2 text-center text-xs text-zinc-500 dark:text-zinc-400">
+    <span className="figure-caption-main">十种常用距离度量的动画对比：每个面板用二维点、单位球、集合或字符串演示「距离」如何定义，等距形状与最近邻如何随之改变</span>
+    <span className="figure-caption-source">视频来源：小红书 <a href="https://www.xiaohongshu.com/explore/6afb75da000000002b0364a3?xsec_token=CBnmf0yoIzHI8ycZt_Y0KfCfQfoHKLEVnmykG80t7-WVg=&amp;xsec_source=app_share">@momo（小红书号 761372160）《常用距离度量》</a></span>
+  </figcaption>
+</figure>
+
+## 距离、相似度与散度：先分清三件事
+
+严格意义上的**度量**（metric）要满足四条：非负性、同一性（距离为 0 当且仅当两点相同）、对称性、三角不等式。<Cite n={2} />因此：
+
+- **距离**：越小越近，满足上述条件，如欧氏距离、曼哈顿距离。
+- **相似度**：越大越近，如余弦相似度、点积、Dice 系数。可以转成距离（如 $1-\text{sim}$），但转换后不一定还是度量。
+- **散度**：衡量两个分布的差异，如 KL 散度，通常不对称、不满足三角不等式，不能当几何距离用。<Cite n={2} />
+
+| 概念 | 方向 | 典型例子 | 能否直接用于依赖度量的索引 |
+|---|---|---|---|
+| 距离（metric） | 越小越近 | 欧氏、曼哈顿、Jaccard、编辑距离 | 可以（满足四条件） |
+| 相似度 | 越大越近 | 余弦、点积、Dice | 需先转换/归一化 |
+| 散度 | 不保证对称 | KL；JS 的平方根才是度量 | 通常不行 |
+
+为什么要较真？KD-tree、ball-tree、度量剪枝以及部分聚类加速都依赖三角不等式；把非度量当成度量喂进去，索引可能给出错误结果，而不只是变慢一点。<Cite n={[2,3]} />
+
+## 闵可夫斯基家族：L1、L2、L∞
+
+最常用的一族由 Minkowski 距离统一：
+
+$$
+d_p(x,y)=\left(\sum_{i=1}^{d}|x_i-y_i|^p\right)^{1/p}
+$$
+
+$p=1$ 是曼哈顿（L1）距离，$p=2$ 是欧氏（L2）距离，$p\to\infty$ 时取各维差的最大值，得到切比雪夫（L∞）距离。<Cite n={1} />
+
+对 $x=(1,2)$、$y=(4,6)$：L1 为 $3+4=7$，L2 为 $\sqrt{9+16}=5$，L∞ 为 $\max(3,4)=4$。同一个「远近」，三种尺子给出三个答案。
+
+<figure className="my-6">
+  <img src="./unit-balls.svg" alt="三种范数的单位球：L1 到原点距离不超过 1 的点集是菱形，L2 是圆，L∞ 是正方形；p 越小形状越尖，越靠近坐标轴" className="mx-auto h-auto max-w-full rounded-lg border border-zinc-200 shadow-sm dark:border-zinc-800" />
+  <figcaption className="mt-2 text-center text-xs text-zinc-500 dark:text-zinc-400">
+    <span className="figure-caption-main">三种范数的单位球：到原点距离不超过 1 的点集。L1 是菱形，L2 是圆，L∞ 是正方形；p 越小等距面越往坐标轴方向尖</span>
+    <span className="figure-caption-source">本站绘制</span>
+  </figcaption>
+</figure>
+
+单位球暴露了几何差异：$p$ 越小，等距面越往坐标轴方向「尖」，单个维度的大差异被更温和地累计；$p$ 越大越接近「只看最大单维差异」。落到使用场景：
+
+- **L1**：对离群点更稳健（不做平方放大），适合稀疏特征与需要逐维累加解释的场景。
+- **L2**：大偏差被平方放大，适合稠密、尺度可比的向量，也是最小二乘与高斯噪声假设下的自然选择。
+- **L∞**：只关心「最坏的那一维」，适合容差/最大误差约束。
+
+两条常见坑：一是**量纲**，收入（万级）会淹没年龄（十级），用距离前先标准化；二是**高维**，维度升高时最近邻与最远邻的距离比趋近 1，L2 的区分度下降，L1、甚至分数范数（$p<1$，但不再满足三角不等式）往往更稳。<Cite n={5} />
+
+## 余弦相似度与点积：只看方向
+
+余弦相似度定义为夹角余弦：
+
+$$
+\cos(x,y)=\frac{x\cdot y}{\|x\|\,\|y\|},\qquad d_{\cos}(x,y)=1-\cos(x,y)
+$$
+
+它只关心方向、不关心长度，因此在高维文本与嵌入检索里很常见；向量空间模型正是用它做文档相似度。<Cite n={[2,12]} />当两个向量都归一化到单位长度时，余弦相似度等于点积，且欧氏距离与余弦距离满足 $\|x-y\|^{2}=2-2\cos(x,y)$——此时按 L2 与按 cosine 排序等价。
+
+但**点积不是距离**：$\langle x,y\rangle$ 会随模长增大，长度本身会左右排序。向量检索里的 inner product（IP）与 cosine 是两种目标：FAISS 明确区分 L2 与 IP，并提醒 IP 只有在向量归一化后才等价于余弦相似度。<Cite n={3} />推荐系统常用 IP，因为「热门/强偏好」的模长本身携带信息；语义检索通常先把向量归一化，再用 IP 或 cosine。
+
+另一个细节：$1-\cos$ 不是严格度量——两个同方向但长度不同的向量距离为 0，违背同一性；需要度量性质时用角距离 $\arccos(\cos)/\pi$ 或 $\sqrt{2-2\cos}$。零向量没有方向，余弦也无定义，工程上要单独处理。<Cite n={[2,3]} />
+
+## 马氏距离：把协方差算进来
+
+欧氏距离默认各维等权、互不相关。马氏距离用协方差矩阵 $S$ 做白化：
+
+$$
+d_M(x,y)=\sqrt{(x-y)^\top S^{-1}(x-y)}
+$$
+
+直觉是：先把数据变换到「各维方差为 1、彼此不相关」的空间，再量欧氏距离；沿着数据实际变化大的方向走，距离增长得慢，沿着几乎没有变化的方向走，距离增长得快。<Cite n={4} />因此它同时处理尺度与相关性，常用于异常检测（卡方阈值）、高斯判别和需要考虑特征相关性的分类。
+
+代价是需要估计协方差：$S$ 奇异（维度高于样本数、特征共线）时无法直接求逆，要改用伪逆或加正则；而且它假设分布形状大致由协方差刻画，重尾或多峰数据上未必合适。
+
+## 集合、离散串与序列
+
+前几类度量都假设数据是欧氏空间里的向量。但很多时候数据是集合、字符串或时间序列：
+
+| 数据形态 | 度量 | 定义/做法 | 典型场景 |
+|---|---|---|---|
+| 等长离散串 | Hamming 距离 | 逐位比较，统计不同位的个数 | 纠错码、类别特征、定长二进制指纹 |
+| 集合 / 二元稀疏特征 | Jaccard 距离 | 交集大小与并集大小之比，不看共同缺失 | 文档去重、集合相似、MinHash/LSH |
+| 变长字符串 | 编辑距离（Levenshtein） | 最少插入/删除/替换次数 | 拼写纠错、模糊匹配、生物序列 |
+| 时间序列 | DTW（动态时间规整） | 允许时间轴扭曲的对齐距离 | 语音、传感器、形状匹配 |
+
+Hamming 距离只数「不同位的个数」，是严格度量；Jaccard 距离定义为 $1-\frac{|A\cap B|}{|A\cup B|}$，不看共同缺失，适合稀疏二元特征，同样满足度量性质。<Cite n={[6,7]} />编辑距离用动态规划求解，复杂度 $O(mn)$：
+
+$$
+D_{i,j}=\min\bigl(D_{i-1,j}+1,\;D_{i,j-1}+1,\;D_{i-1,j-1}+\mathbf{1}[a_i\neq b_j]\bigr)
+$$
+
+它同样是度量（插入、删除、替换代价为 1 时）。<Cite n={8} />
+
+DTW 则允许两个序列在时间轴上「拉伸/压缩」后再对齐，递推形式为：
+
+$$
+D_{i,j}=|a_i-b_j|+\min\bigl(D_{i-1,j},\;D_{i,j-1},\;D_{i-1,j-1}\bigr)
+$$
+
+它适合存在相位差、速度差的时间序列，但一般不满足三角不等式，不是严格度量；朴素的 $O(nm)$ 计算也较慢，实践中常加 Sakoe-Chiba 带宽约束或下界剪枝。<Cite n={9} />
+
+## 概率分布之间：KL、JS 与 Wasserstein
+
+当数据点本身是概率分布（词频、软标签、生成模型输出），逐坐标的几何距离就不够用了。
+
+**KL 散度**：
+
+$$
+D_{\mathrm{KL}}(P\|Q)=\sum_i p_i\log\frac{p_i}{q_i}
+$$
+
+它衡量「用 Q 编码 P」的额外代价，非负、不对称，也不满足三角不等式，是散度而不是距离。<Cite n={10} />方向很重要：$D_{\mathrm{KL}}(P\|Q)$ 会惩罚「Q 在 P 有质量处没有质量」，常用于 VAE、知识蒸馏与 RLHF 的 KL 约束；若 Q 在 P 的支撑外为 0，KL 会发散到无穷。
+
+**JS 散度**把 KL 对称化：
+
+$$
+\mathrm{JS}(P,Q)=\tfrac12 D_{\mathrm{KL}}(P\|M)+\tfrac12 D_{\mathrm{KL}}(Q\|M),\quad M=\tfrac12(P+Q)
+$$
+
+它对称、有界（以 2 为底时上界为 1），且 $\sqrt{\mathrm{JS}}$ 是严格度量，SciPy 的 `jensenshannon` 返回的正是这个距离。<Cite n={1} />
+
+**Wasserstein 距离**（最优传输/推土机距离）把分布看作「土堆」，计算把一堆土搬成另一堆的最小代价：
+
+$$
+W_p(P,Q)=\left(\inf_{\gamma\in\Pi(P,Q)}\int \|x-y\|^p\,d\gamma(x,y)\right)^{1/p}
+$$
+
+它满足度量性质（$p\ge1$），即使两个分布支撑不重叠也能给出有限、且反映几何远近的值；代价是计算更贵，一维有闭式解，高维通常用 Sinkhorn 等近似。<Cite n={11} />
+
+| 度量 | 对称 | 三角不等式 | 支撑不重叠 | 计算成本 | 典型用途 |
+|---|---|---|---|---|---|
+| KL | 否 | 否 | 可能为 ∞ | 逐点求和，快 | 训练正则、蒸馏、变分推断 |
+| JS（平方根） | 是 | 是 | 有界 | 逐点求和，快 | 分布相似度、GAN 评估 |
+| Wasserstein | 是 | 是（$p\ge1$） | 有限 | 解 OT，较慢 | 分布迁移、生成模型、几何敏感场景 |
+
+## 怎么选：按数据类型做决定
+
+| 数据 | 优先尝试 | 理由 |
+|---|---|---|
+| 稠密低维、尺度可比 | L2 | 几何直观，KD-tree/ball-tree 可用 |
+| 稀疏或存在离群点 | L1 / 余弦 | 不被单个大偏差或模长主导 |
+| 文本/嵌入检索 | 余弦（或归一化后 IP） | 只比语义方向，忽略长度 |
+| 特征相关、需要统计意义 | 马氏距离 | 用协方差白化 |
+| 集合 / 二元稀疏 | Jaccard | 不把共同缺失算成相似 |
+| 等长离散串 | Hamming | 只数不同位，简单严格 |
+| 变长字符串 | 编辑距离 | 允许增删改 |
+| 时间序列有相位/速度差 | DTW | 允许时间轴扭曲 |
+| 两个概率分布 | KL（训练）/ JS、Wasserstein（比较） | 性质与成本不同 |
+
+三条工程建议：
+
+1. **先标准化，再谈距离**。用训练集统计量拟合 scaler，避免验证/测试泄漏；量纲差异大时，距离会被大尺度特征垄断。
+2. **确认算法是否需要度量性质**。KD-tree、ball-tree、基于三角不等式的剪枝都要求度量；FAISS 主要支持 L2 与 IP，非度量目标要么改写，要么换索引。<Cite n={3} />
+3. **用下游任务校验**。距离只是代理目标：检索看 recall@k，聚类看轮廓系数或业务指标，分类看验证集；不要因为「默认欧氏」就一直用它。
+
+高维还要额外小心：距离集中会让「最近」和「最远」差别变小，此时降维、学习度量（metric learning）或换余弦往往比调参更有效。<Cite n={5} />
+
+## 动手实验：换一把尺子，最近邻会变
+
+下面的二维平面里有 A–E 五个候选点和一个橙色查询点 Q。点击图中任意位置移动 Q，再切换 L1、L2、L∞ 与余弦——注意最近邻可能在余弦下换成另一个点，因为余弦只看 Q 与各点相对原点的方向，完全不关心距离长短。
+
+<DistanceMetricExplorer />
+
+## 常见误区
+
+| 误区 | 更准确的说法 |
+|---|---|
+| KL 是距离 | 它不对称、不满足三角不等式，是散度 |
+| 余弦距离一定是度量 | $1-\cos$ 不满足同一性；需要度量时用 $\sqrt{2-2\cos}$ 或角距离 |
+| 点积是距离 | 不是；模长会改变排序，归一化后才与余弦一致 |
+| DTW 是度量 | 一般不满足三角不等式，不能直接用于度量索引 |
+| 距离不需要标准化 | 量纲大的特征会主导结果，先标准化 |
+| 高维下欧氏最稳 | 距离集中会让 L2 区分度下降，L1/余弦可能更稳 |
+| JS 和 KL 差不多 | JS 对称有界，KL 非对称且可能发散 |
+
+## 用 scipy 算一遍
+
+```python
+import numpy as np
+from scipy.spatial.distance import (
+    euclidean, cityblock, chebyshev, cosine, mahalanobis, hamming, jaccard,
+)
+from scipy.stats import wasserstein_distance
+
+x = np.array([1.0, 2.0])
+y = np.array([4.0, 6.0])
+print(euclidean(x, y), cityblock(x, y), chebyshev(x, y))  # 5.0 7.0 4.0
+print(cosine(x, y))  # 1 - cos，越小越接近
+
+# 马氏距离需要协方差矩阵的逆
+X = np.random.default_rng(0).normal(size=(200, 3))
+VI = np.linalg.inv(np.cov(X.T))
+print(mahalanobis(X[0], X[1], VI))
+
+a = np.array([1, 0, 1, 0], dtype=bool)
+b = np.array([1, 1, 0, 0], dtype=bool)
+print(hamming(a, b), jaccard(a, b))  # 0.5 0.6667
+
+p = np.array([0.4, 0.6])
+q = np.array([0.5, 0.5])
+print(wasserstein_distance([0, 1], [0, 1], p, q))
+```
+
+## 小结
+
+- 先分清 metric、similarity、divergence：只有 metric 满足四条件，才能安全用于依赖三角不等式的索引与剪枝。
+- 向量数据优先考虑 L1/L2/L∞、余弦/点积与马氏距离；集合、字符串、时间序列分别用 Jaccard、编辑距离、DTW。
+- 概率分布用 KL（训练正则）、JS（对称有界）或 Wasserstein（几何敏感、可处理不重叠支撑）；性质不同，不能混用。
+- 选距离的三步：按数据类型筛、按是否需要度量性质筛、用下游指标验证；标准化与高维距离集中是两个最常见的隐形坑。
+
+## 延伸阅读
+
+- 站内 [KNN](/tutorials/knn-classification)：距离度量直接决定投票结果。
+- 站内 [K-means](/tutorials/kmeans-clustering)：L2 与「最近中心」的假设。
+- 站内 [交叉熵与 KL](/tutorials/cross-entropy-kl)：KL 为什么不是距离。
+- 站内 [PCA](/tutorials/pca-dimensionality-reduction)：白化与马氏距离的关系。
+
+## 参考资料
+
+<References>
+1. SciPy. *Distance computations (scipy.spatial.distance)*. [docs.scipy.org](https://docs.scipy.org/doc/scipy/reference/spatial.distance.html)。—— 各度量的定义与实现清单；`jensenshannon` 返回 JS 距离（平方根）。
+2. scikit-learn. *Pairwise metrics, Affinities and Kernels*. [scikit-learn.org](https://scikit-learn.org/stable/modules/metrics.html)。—— 度量的四个条件、余弦相似度定义及 pairwise 度量说明。
+3. FAISS. *Notes on MetricType and distances*. [GitHub Wiki](https://github.com/facebookresearch/faiss/wiki/MetricType-and-distances)。—— L2 与 inner product 的区别、归一化与余弦相似度的关系、索引支持的度量。
+4. Mahalanobis, P. C. (1936). *On the Generalised Distance in Statistics*. Proceedings of the National Institute of Sciences of India, 2(1), 49–55. —— 马氏距离的原始文献（无稳定在线链接）。
+5. Aggarwal, C. C., Hinneburg, A., Keim, D. A. (2001). *On the Surprising Behavior of Distance Metrics in High Dimensional Space*. ICDT 2001. [DOI](https://doi.org/10.1007/3-540-44503-X_27)。—— 高维空间中 L1/L2 与分数范数的行为差异。
+6. Hamming, R. W. (1950). *Error Detecting and Error Correcting Codes*. Bell System Technical Journal, 29(2), 147–160. [DOI](https://doi.org/10.1002/j.1538-7305.1950.tb00463.x)。—— Hamming 距离的原始文献。
+7. Jaccard, P. (1912). *The Distribution of the Flora in the Alpine Zone*. New Phytologist, 11(2), 37–50. [DOI](https://doi.org/10.1111/j.1469-8137.1912.tb05611.x)。—— Jaccard 系数的原始文献。
+8. Levenshtein, V. I. (1966). *Binary Codes Capable of Correcting Deletions, Insertions, and Reversals*. Soviet Physics Doklady, 10(8), 707–710. —— 编辑距离的原始文献（无稳定在线链接）。
+9. Sakoe, H., Chiba, S. (1978). *Dynamic Programming Algorithm Optimization for Spoken Word Recognition*. IEEE Transactions on Acoustics, Speech, and Signal Processing, 26(1), 43–49. [DOI](https://doi.org/10.1109/TASSP.1978.1163055)。—— DTW 与 Sakoe-Chiba 带宽约束。
+10. Kullback, S., Leibler, R. A. (1951). *On Information and Sufficiency*. Annals of Mathematical Statistics, 22(1), 79–86. [DOI](https://doi.org/10.1214/aoms/1177729694)。—— KL 散度的原始文献。
+11. Peyré, G., Cuturi, M. (2019). *Computational Optimal Transport*. Foundations and Trends in Machine Learning, arXiv: [1803.00567](https://arxiv.org/abs/1803.00567)。—— Wasserstein 距离、Sinkhorn 与最优传输计算。
+12. Salton, G., Wong, A., Yang, C. S. (1975). *A Vector Space Model for Automatic Indexing*. Communications of the ACM, 18(11), 613–620. [DOI](https://doi.org/10.1145/361219.361220)。—— 向量空间模型与余弦相似度。
+13. momo (2026). 《常用距离度量》[视频]. 小红书，小红书号 761372160，2026-11-17. [原帖分享链接](https://www.xiaohongshu.com/explore/6afb75da000000002b0364a3?xsec_token=CBnmf0yoIzHI8ycZt_Y0KfCfQfoHKLEVnmykG80t7-WVg=&xsec_source=app_share)。—— 教程开头的十种距离度量动画总览。
+</References>
