@@ -162,12 +162,17 @@ function TopicGroup<L extends NavLeaf>({
   basePath: string;
   showLeafIcons: boolean;
 }) {
-  const [userOpen, setUserOpen] = useState(false);
-  const open = activeHere || userOpen;
+  // 当前叶子所在主题默认展开;但允许用户手动折叠(临时覆盖默认)。
+  // 软导航换页或切换组织方式时重置覆盖,回到「活跃主题默认展开」。
+  const [override, setOverride] = useState<boolean | null>(null);
+  useEffect(() => {
+    setOverride(null);
+  }, [pathname, activeHere]);
+  const open = override ?? activeHere;
   return (
     <div>
       <button
-        onClick={() => setUserOpen((v) => !v)}
+        onClick={() => setOverride(!open)}
         aria-expanded={open}
         className={`flex w-full items-center gap-1.5 rounded-md px-2 py-1 text-sm font-semibold transition ${
           activeHere
