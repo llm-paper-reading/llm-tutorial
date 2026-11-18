@@ -11,6 +11,15 @@ const faq = [
     "takeaway": "GRPO 用组内相对表现替代 critic 基线。"
   },
   {
+    "id": "origin",
+    "question": "GRPO 最早是哪篇论文提出的？",
+    "answer": [
+      "GRPO 不是 DeepSeek-R1 首创，而是 DeepSeekMath（arXiv:2402.03300，2024 年 2 月）在第 4.1 节提出的，目的就是去掉 PPO 的 critic、降低显存开销。",
+      "DeepSeekMath 当时用 outcome / process reward model 给回答打分；R1 把奖励换成可验证规则（RLVR），并把 GRPO 从数学任务扩展到通用推理，才让它广为人知。"
+    ],
+    "takeaway": "GRPO 出自 DeepSeekMath，R1 的贡献是把 GRPO 与 RLVR 组合成通用推理训练范式。"
+  },
+  {
     "id": "group-advantage",
     "question": "“组相对优势”直觉是什么？",
     "answer": [
