@@ -5,10 +5,10 @@ import TableOfContents from "@/components/TableOfContents";
 import Comments from "@/components/Comments";
 import { getFrontierNav, getFrontierNavFlat } from "@/lib/frontier";
 
-// 前沿追踪区三栏布局,镜像 papers/layout.tsx:
-//   左 = 报告「之间」的导航(全部报告列表,默认不分组按时间倒序;关键词分组可切换)
-//   中 = 正文(调研报告 MDX)
-//   右 = 报告「之内」的章节目录(本页 h2/h3,带滚动高亮)
+// 博客区三栏布局,镜像 papers/layout.tsx:
+//   左 = 文章「之间」的导航(全部文章列表,默认按时间倒序;关键词分组可切换)
+//   中 = 正文(博客 MDX)
+//   右 = 文章「之内」的章节目录(本页 h2/h3,带滚动高亮)
 export default function FrontierLayout({ children }: { children: ReactNode }) {
   return (
     <div className="mx-auto flex w-full max-w-7xl gap-8 px-4 py-8">
@@ -17,7 +17,7 @@ export default function FrontierLayout({ children }: { children: ReactNode }) {
           <Sidebar
             tree={getFrontierNavFlat()}
             basePath="/frontier"
-            heading="前沿追踪"
+            heading="博客"
             treeLabel="时间"
             altTree={getFrontierNav()}
             altLabel="关键词"

@@ -1,0 +1,128 @@
+import { frontierMetadata } from "@/lib/frontier";
+
+export const metadata = frontierMetadata("attention-evolution");
+
+# 从 MHA、MQA、GQA 到 MLA：注意力结构怎么省 KV cache
+
+自回归推理时，每生成一个 token 都要把历史 token 的 Key / Value 缓存下来，避免重复计算。这个 **KV cache** 决定了显存占用、并发数和解码吞吐——注意力结构的很多演进，本质上都是在回答同一个问题：**能不能少存一点 K/V，同时不把效果和训练稳定性搭进去？**
+
+MHA → MQA → GQA → MLA 就是这条主线上的四个代表性答案。它们不是四个孤立技巧，而是「KV 头数」与「K/V 表示方式」的连续取舍；苏剑林的博客对这条演进有更完整的推导。<Cite n={7} />
+
+> 📌 相关阅读：MHA 的原始论文见 [Attention Is All You Need](/papers/attention-transformer)；MLA 的模型细节见 [DeepSeek-V3 精读](/papers/deepseek-v3)（MLA 最早在 DeepSeek-V2 提出）；KV cache 的系统优化见 [vLLM](/papers/vllm) 与 [FlashAttention](/papers/flash-attention)。
+
+## 先把账算清楚：KV cache 到底有多大
+
+对标准 MHA，每层每个 token 需要缓存所有头的 K 和 V。设层数 $L$、头数 $H$、每头维度 $d$、每个元素 2 字节（fp16），单条序列的 KV cache 约为：
+
+$$
+\text{cache} \approx L \times 2 \times H \times d \times 2\ \text{bytes}
+$$
+
+取 $L=32$、$H=32$、$d=128$：每个 token 约 $32\times2\times32\times128\times2 \approx 0.5$ MiB；8K context 就是约 **4 GiB**，而且 batch 里每条序列都要单独一份。解码阶段又是 memory-bandwidth bound，cache 越大，能同时跑的请求越少、每步读显存越慢。这就是 MQA/GQA/MLA 要动刀的地方。<Cite n={[1]} />
+
+## MHA：每个 Q 头配一个 KV 头
+
+多头注意力把输入投影到 $H$ 组 Q/K/V：
+
+$$
+Q_i = XW_Q^i,\quad K_i = XW_K^i,\quad V_i = XW_V^i,\quad i=1,\dots,H
+$$
+
+每个头独立做缩放点积注意力，最后拼接。表达力最强，但 K/V 头数等于 Q 头数，cache 也最大。<Cite n={1} />
+
+## MQA：所有 Q 头共享一个 KV 头
+
+MQA（Multi-Query Attention）只保留**一组** K/V，所有 Q 头都 attend 到同一份 K/V 上。<Cite n={2} />
+
+$$
+Q_i = XW_Q^i,\quad K = XW_K,\quad V = XW_V,\quad i=1,\dots,H
+$$
+
+KV cache 从 $2Hd$ 降到 $2d$，直接缩小 $H$ 倍；解码时读的 K/V 更少，吞吐提升明显。代价是表达力受限：论文报告 MQA 可能出现质量下降与训练不稳定，通常需要更谨慎的训练或从 MHA 模型「uptrain」转换。<Cite n={2} />它适合把**解码延迟**放在第一位、且能接受一定质量折中的场景。
+
+## GQA：把 Q 头分组，每组共享一个 KV 头
+
+GQA（Grouped-Query Attention）在 MHA 与 MQA 之间插值：把 $H$ 个 Q 头分成 $G$ 组，每组只保留一组 K/V。<Cite n={3} />
+
+$$
+Q_{g,j}=XW_Q^{g,j},\quad K_g = XW_K^g,\quad V_g = XW_V^g,\quad g=1,\dots,G
+$$
+
+- $G=H$ 退化为 MHA；
+- $G=1$ 退化为 MQA；
+- 常见设置是 $G=H/8$ 或 $H/4$。
+
+KV cache 变为 $2Gd$，相对 MHA 缩小 $H/G$ 倍。GQA 论文还给出从 MHA checkpoint「uptraining」的路线：用原预训练约 5% 的算力把多头 KV 合并成组，就能得到接近 MHA 质量、接近 MQA 速度的模型。<Cite n={3} />这也是它成为工业界默认选择的原因——Llama 2 70B 与 Llama 3 全系都采用 GQA。<Cite n={[5,6]} />
+
+
+## MLA：不共享头，而是压缩 K/V 本身
+
+MLA（Multi-head Latent Attention）换了一个维度：不减少 KV 头数，而是把 K/V **联合压缩到一个低秩 latent 向量**，推理时只缓存 latent，再上投影出 K/V。DeepSeek-V2 用这套结构把 KV cache 压到很小。<Cite n={4} />
+
+对隐藏状态 $h_t$：
+
+$$
+c_t^{KV}=W^{DKV}h_t,\qquad
+k_t^C=W^{UK}c_t^{KV},\qquad
+v_t^C=W^{UV}c_t^{KV}
+$$
+
+位置信息不塞进 latent，而是单独走一条 **decoupled RoPE** 分支：
+
+$$
+k_t^R=\operatorname{RoPE}(W^{KR}h_t),\qquad
+k_t=[k_t^C;k_t^R],\qquad v_t=v_t^C
+$$
+
+于是每个 token、每层只需缓存 $c_t^{KV}$ 与 $k_t^R$，大小是 $d_c+d_R$，而不是 MHA 的 $2Hd$。DeepSeek-V2 报告：相对 DeepSeek 67B，KV cache 减少 **93.3%**，最大生成吞吐提升 **5.76 倍**，同时模型效果更强。<Cite n={4} />DeepSeek-V3 继续沿用 MLA，站内精读见 [DeepSeek-V3](/papers/deepseek-v3) 与 [DeepSeek-V3.2](/papers/deepseek-v3-2)。
+
+## 四种结构对比
+
+DeepSeek-V2 论文原版的对比图把四种结构放在同一张图里：斜线阴影表示推理时需要缓存的 K/V，MLA 只缓存压缩后的 latent：
+
+<figure className="my-6">
+  <img src="./deepseek-v2-figure3.svg" alt="DeepSeek-V2 论文中的四种注意力结构对比：MHA 每个 Q 头对应一组 K/V；GQA 将 Q 头分组、每组共享 K/V；MQA 所有 Q 头共享同一组 K/V；MLA 将 K/V 联合压缩为 latent 向量，只缓存压缩后的 latent" className="mx-auto h-auto max-w-full rounded-lg border border-zinc-200 shadow-sm dark:border-zinc-800" />
+  <figcaption className="mt-2 text-center text-xs text-zinc-500 dark:text-zinc-400">
+    <span className="figure-caption-main">DeepSeek-V2 论文中的四种注意力结构对比：MHA 每个 Q 头对应一组 K/V；GQA 按组共享；MQA 所有 Q 头共享一组；MLA 把 K/V 联合压缩成 latent 向量，只缓存压缩后的 latent。斜线阴影表示推理时需要缓存的部分</span>
+    <span className="figure-caption-source">图源：DeepSeek-AI, <em>DeepSeek-V2</em>（arXiv:2405.04434）Figure 3</span>
+  </figcaption>
+</figure>
+
+| 结构 | KV 头数 | 每 token 每层 cache | 相对 MHA | 质量 / 训练 | 代表模型 |
+|---|---|---|---|---|---|
+| MHA | $H$ | $2Hd$ | 1× | 表达力最强，训练最直接 | Transformer、GPT-3 |
+| MQA | 1 | $2d$ | $1/H$ | 可能有质量损失、训练不稳 | MQA 论文、部分推理优化模型 |
+| GQA | $G$ | $2Gd$ | $G/H$ | 接近 MHA，可从 MHA uptrain | Llama 2 70B、Llama 3 |
+| MLA | latent | $d_c+d_R$ | 远小于 MHA | 效果与缓存兼得，实现/内核更复杂 | DeepSeek-V2 / V3 / V3.2 |
+
+几点容易混淆的地方：
+
+- **MQA/GQA 减少的是「KV 头数」**，每个头仍是完整的 $d$ 维 K/V；**MLA 减少的是「每个头的表示」**，把头维度压进低秩 latent。两者的数学机制不同，不能只按 cache 数字直接横比效果。
+- **GQA 不是训练出来的新结构**，它可以从已有 MHA checkpoint 转换（uptraining），这让存量模型迁移成本很低。<Cite n={3} />
+- **MLA 的 latent 不是普通的低秩近似**：它和 decoupled RoPE 一起设计，目的是在压缩 cache 的同时保住位置信息；实现上需要专门的内核与矩阵吸收，工程复杂度高于 GQA。<Cite n={4} />
+
+## 怎么选
+
+1. **新模型默认先试 GQA**：质量接近 MHA，推理接近 MQA，生态支持（FlashAttention、推理框架、张量并行）最成熟；Llama 2/3 已经把这条路走通。<Cite n={[3,5,6]} />
+2. **长上下文、cache 是硬瓶颈时看 MLA**：它把 cache 压到 latent 级别，适合长序列与高并发；代价是实现复杂、需要模型侧配套。<Cite n={4} />
+3. **MQA 适合延迟极敏感的推理**：单 KV 头最省带宽，但要接受质量与训练稳定性的折中，通常配合蒸馏或 uptrain 使用。<Cite n={2} />
+4. **MHA 仍是最好的 baseline**：小模型、短上下文、或需要最大表达力时，MHA 的简单与稳定仍然有价值；GQA 的收益要在 cache 真正成为瓶颈时才明显。
+
+## 小结
+
+- 四种结构可以按「KV 头数」和「K/V 表示」两个维度理解：MHA → MQA/GQA 在减少头数，MLA 在压缩表示。
+- MHA 的 cache 是 $2Hd$；MQA 是 $2d$；GQA 是 $2Gd$；MLA 只缓存 latent 与 RoPE key，DeepSeek-V2 报告 cache 降低 93.3%。
+- GQA 是当前工业界最稳妥的默认选择；MLA 是长上下文与高吞吐场景的结构级答案；MQA 是解码延迟优先时的极端取舍。
+- 比较不同结构的数字时，先确认模型规模、训练数据与评测口径——cache 大小可以横比，效果不能脱离模型条件直接排名。
+
+## 参考资料
+
+<References>
+1. Vaswani, A., Shazeer, N., Parmar, N., Uszkoreit, J., Jones, L., Gomez, A. N., Kaiser, Ł., Polosukhin, I. (2017). *Attention Is All You Need*. NeurIPS 2017, arXiv: [1706.03762](https://arxiv.org/abs/1706.03762)。—— MHA 与缩放点积注意力的原始论文。
+2. Shazeer, N. (2019). *Fast Transformer Decoding: One Write-Head is All You Need*. arXiv: [1911.02150](https://arxiv.org/abs/1911.02150)。—— MQA：所有 Q 头共享一组 K/V，减少解码时的 cache 与带宽。
+3. Ainslie, J., Lee-Thorp, J., de Jong, Z., Zemlyanskiy, Y., Lebrón, F., Sanghai, S. (2023). *GQA: Training Generalized Multi-Query Transformer Models from Multi-Head Checkpoints*. arXiv: [2305.13245](https://arxiv.org/abs/2305.13245)。—— GQA 的分组共享、从 MHA checkpoint uptraining 与实验对比。
+4. DeepSeek-AI (2024). *DeepSeek-V2: A Strong, Economical, and Efficient Mixture-of-Experts Language Model*. arXiv: [2405.04434](https://arxiv.org/abs/2405.04434)。—— MLA、decoupled RoPE，以及 KV cache 降低 93.3%、吞吐提升 5.76 倍的报告。
+5. Touvron, H., Martin, L., Stone, K., Albert, P., Almahairi, A., Babaei, Y., et al. (2023). *Llama 2: Open Foundation and Fine-Tuned Chat Models*. arXiv: [2307.09288](https://arxiv.org/abs/2307.09288)。—— Llama 2 70B 采用 GQA。
+6. Llama Team, AI @ Meta (2024). *The Llama 3 Herd of Models*. arXiv: [2407.21783](https://arxiv.org/abs/2407.21783)。—— Llama 3 全系采用 GQA。
+7. 苏剑林 (2024). *缓存与效果的极限拉扯：从MHA、MQA、GQA到MLA*. 科学空间，2024-05-13. [spaces.ac.cn/archives/10091](https://spaces.ac.cn/archives/10091)。—— 从 KV cache 视角梳理 MHA→MQA→GQA→MLA 的演进，补充 MLA 的设计直觉（技术博客，二手资料，用于理解性补充）。
+</References>

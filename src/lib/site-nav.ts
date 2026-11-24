@@ -11,7 +11,7 @@ export function getSiteLinks(): SiteLink[] {
     { href: "/", label: "首页" },
     { href: `/tutorials/${getFirstTutorial().slug}`, label: "教程", matchPrefix: "/tutorials/" },
     { href: "/papers", label: "论文", matchPrefix: "/papers/" },
-    { href: "/frontier", label: "前沿追踪", matchPrefix: "/frontier/" },
+    { href: "/frontier", label: "博客", matchPrefix: "/frontier/" },
     { href: "/resources", label: "资源" },
     { href: "/about", label: "关于" },
   ];

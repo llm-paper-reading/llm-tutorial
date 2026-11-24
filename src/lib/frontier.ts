@@ -1,9 +1,9 @@
-// 前沿追踪注册表 —— 单一数据源。
+// 博客注册表 —— 单一数据源。
 // 与 tutorials.ts / papers.ts 同构:导航栏、侧边栏、落地页、上一篇/下一篇都从这里读取,
 // 避免多处维护不一致。
-// 这里登记「调研报告」:对新模型、新论文、新趋势的追踪笔记与横向对比分析。
-// 注册表顺序即展示顺序,新报告插在最上面(新→旧),与论文区的旧→新相反——
-// 前沿追踪更关心「最新发生了什么」。
+// 这里登记博客文章:技术路线梳理、结构对比、模型分析、调研方法与工程笔记。
+// 注册表顺序即展示顺序,新文章插在最上面(新→旧),与论文区的旧→新相反——
+// 博客更关心「最近写了什么」。
 
 import { SITE_URL } from "@/lib/site";
 
@@ -31,7 +31,7 @@ export const TAGS: { name: string; icon: string; hint?: string }[] = [
   {
     name: "调研方法",
     icon: "🧭",
-    hint: "前沿追踪的工作流:信源分层、核查原则与报告写作",
+    hint: "做技术调研的工作流:信源分层、核查原则与写作结构",
   },
   {
     name: "模型发布",
@@ -44,22 +44,37 @@ export const TAGS: { name: string; icon: string; hint?: string }[] = [
     hint: "某个技术方向(注意力、蒸馏、RL、Agent 等)的路线梳理",
   },
   {
-    name: "评测榜单",
+    name: "评测与分析",
     icon: "🏆",
     hint: "benchmark 口径、榜单变化与能力评估分析",
+  },
+  {
+    name: "基础结构",
+    icon: "🧱",
+    hint: "Transformer、注意力、位置编码等基础结构的横向梳理",
   },
 ];
 
 export const reports: Report[] = [
   {
+    slug: "attention-evolution",
+    title: "从 MHA、MQA、GQA 到 MLA：注意力结构怎么省 KV cache",
+    navTitle: "注意力结构演进",
+    desc: "同一条主线上看四种注意力：MHA 的完整 KV、MQA 的单 KV、GQA 的分组共享，以及 MLA 的低秩 latent cache；公式、显存账与代表模型。",
+    tags: ["基础结构", "技术趋势"],
+    icon: "🧩",
+    date: "2026-11",
+    scope: "MHA → MQA → GQA → MLA 的机制与 KV cache 对比",
+  },
+  {
     slug: "research-workflow",
-    title: "前沿调研方法:信源、核查与报告写作",
+    title: "技术调研方法:信源、核查与写作",
     navTitle: "调研方法",
-    desc: "这个板块怎么用:一手信源与二手解读的分层、追踪节奏、数字必须可溯源的核查原则,以及一篇调研报告的标准结构。",
+    desc: "博客里的调研笔记怎么写:一手信源与二手解读的分层、追踪节奏、数字可溯源的核查原则,以及一篇调研文章的标准结构。",
     tags: ["调研方法"],
     icon: "🔭",
     date: "2026-10",
-    scope: "本站前沿追踪板块的使用指南",
+    scope: "本站博客板块的写作与核查指南",
   },
   {
     slug: "model-reasoning-planning",
@@ -94,12 +109,12 @@ export function getAllTags(): string[] {
   return seen;
 }
 
-/** 按发布时间倒序的报告列表(注册表本身已按新→旧排列,这里做稳定防御)。 */
+/** 按发布时间倒序的文章列表(注册表本身已按新→旧排列,这里做稳定防御)。 */
 export function getReportsByDate(): Report[] {
   return [...reports].sort((a, b) => b.date.localeCompare(a.date));
 }
 
-/** 某关键词下的报告(注册表顺序)。tag 不存在时返回空数组。 */
+/** 某关键词下的文章(注册表顺序)。tag 不存在时返回空数组。 */
 export function getReportsByTag(tag: string): Report[] {
   return reports.filter((r) => r.tags.includes(tag));
 }
@@ -114,13 +129,13 @@ export function getTagHint(tag: string): string | undefined {
 
 /**
  * 侧边栏导航树之一(默认):不分组,按时间倒序(新→旧)的平铺列表。
- * 前沿追踪以「最新」为先,与论文区的正序相反。
+ * 博客以「最新」为先,与论文区的正序相反。
  */
 export function getFrontierNavFlat() {
   return [
     {
-      name: "全部报告",
-      icon: "📡",
+      name: "全部文章",
+      icon: "📝",
       topics: [
         {
           name: null,
@@ -159,7 +174,7 @@ export function getFirstReport(): Report {
   return reports[0];
 }
 
-/** 返回上一篇(更旧)/ 下一篇(更新),用于报告底部导航 */
+/** 返回上一篇(更旧)/ 下一篇(更新),用于文章底部导航 */
 export function getReportNeighbors(slug: string): {
   prev: Report | null;
   next: Report | null;
@@ -173,8 +188,8 @@ export function getReportNeighbors(slug: string): {
 }
 
 /**
- * 由注册表生成单篇报告的页面 metadata(title/description/openGraph)。
- * 在各报告 page.mdx 里 `export const metadata = frontierMetadata("<slug>")` 即可。
+ * 由注册表生成单篇文章的页面 metadata(title/description/openGraph)。
+ * 在各文章 page.mdx 里 `export const metadata = frontierMetadata("<slug>")` 即可。
  */
 export function frontierMetadata(slug: string) {
   const r = getReport(slug);

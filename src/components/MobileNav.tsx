@@ -44,7 +44,7 @@ export default function MobileNav() {
         ? getTutorialsNav()
         : [];
   const basePath = isPapers ? "/papers" : isFrontier ? "/frontier" : "/tutorials";
-  const heading = isPapers ? "全部论文" : isFrontier ? "前沿追踪" : isTutorials ? "全部教程" : "站点导航";
+  const heading = isPapers ? "全部论文" : isFrontier ? "博客" : isTutorials ? "全部教程" : "站点导航";
 
   useEffect(() => {
     setOpen(false);
