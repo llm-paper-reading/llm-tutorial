@@ -51,6 +51,7 @@ import kimiK3 from "@/app/papers/kimi-k3/meta";
 import minimaxM3 from "@/app/papers/minimax-m3/meta";
 import oneFitsAll from "@/app/papers/one-fits-all/meta";
 import timeLlm from "@/app/papers/time-llm/meta";
+import timehf20 from "@/app/papers/timehf-2-0/meta";
 
 export interface Paper {
   slug: string;
@@ -129,6 +130,7 @@ export const papers: Paper[] = [
   minimaxM3,
   oneFitsAll,
   timeLlm,
+  timehf20,
 ];
 
 /** 所有出现过的 keyword（保持注册表中的出现顺序）。 */

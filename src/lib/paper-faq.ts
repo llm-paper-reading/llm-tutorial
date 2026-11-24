@@ -44,6 +44,7 @@ import tmlOpdFAQ from "@/app/papers/tml-opd/faq";
 import uiTars2FAQ from "@/app/papers/ui-tars-2/faq";
 import oneFitsAllFAQ from "@/app/papers/one-fits-all/faq";
 import timeLlmFAQ from "@/app/papers/time-llm/faq";
+import timehf20FAQ from "@/app/papers/timehf-2-0/faq";
 
 export interface PaperFAQItem {
   id: string;
@@ -102,6 +103,7 @@ const paperFAQBySlug: Partial<Record<string, PaperFAQ>> = {
   "ui-tars-2": uiTars2FAQ,
   "one-fits-all": oneFitsAllFAQ,
   "time-llm": timeLlmFAQ,
+  "timehf-2-0": timehf20FAQ,
 };
 
 export function getPaperFAQ(slug: string): PaperFAQ {
