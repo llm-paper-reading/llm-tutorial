@@ -7,7 +7,7 @@ export const metadata = paperMetadata(paper);
 
 # DPO：无需奖励模型与 RL 的偏好对齐
 
-RLHF 的标准流水线分两步：先用人类偏好数据拟合一个奖励模型 $r_\phi(x,y)$，再用 [PPO](/tutorials/policy-gradient) 优化策略去最大化这个奖励。<Cite n={[2,3,4]} />这条链路复杂、不稳，还要在 RL 阶段在线采样。DPO（Direct Preference Optimization）的洞见是：**奖励与最优策略之间本来就有闭式关系**，把它代回去，就能跳过显式奖励模型和 RL，直接从偏好对优化策略。<Cite n={1} />
+RLHF 的标准流水线分两步：先用人类偏好数据拟合一个奖励模型 $r_\phi(x,y)$，再用 [PPO](/tutorials/ppo) 优化策略去最大化这个奖励。<Cite n={[2,3,4]} />这条链路复杂、不稳，还要在 RL 阶段在线采样。DPO（Direct Preference Optimization）的洞见是：**奖励与最优策略之间本来就有闭式关系**，把它代回去，就能跳过显式奖励模型和 RL，直接从偏好对优化策略。<Cite n={1} />
 
 论文原版的全景对比图：左侧是标准 RLHF 流水线（偏好数据 → 拟合奖励模型 → RL 优化，通常还要加 KL 约束采样），右侧是 DPO——同一个偏好数据集直接进策略模型，用简单的分类损失一步到位，隐式奖励模型内嵌在策略里：<Cite n={1} />
 

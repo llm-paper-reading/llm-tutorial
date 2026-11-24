@@ -687,7 +687,7 @@ print("  -> (sup)^H 指数增长; ordinary 方差随 H 指数爆炸; PDIS 每步
 | 连续任务？ | 不行（要回合边界） | 可以 |
 | 自举？ | 不（不依赖其他估计） | 是 |
 
-TD 用「下一步的猜测」修正「这一步的猜测」，方差小但引入偏差；MC 用「真实整条回报」，无偏但抖。这正是[策略梯度篇 GAE](/tutorials/policy-gradient#常见问题-faq)里 $\lambda=1$（MC 端）与 $\lambda=0$（TD 端）的偏差–方差谱两端。
+TD 用「下一步的猜测」修正「这一步的猜测」，方差小但引入偏差；MC 用「真实整条回报」，无偏但抖。这正是[策略梯度篇 GAE](/tutorials/actor-critic#gae在偏差与方差之间连续插值)里 $\lambda=1$（MC 端）与 $\lambda=0$（TD 端）的偏差–方差谱两端。
 
 ### 同一 Blackjack 上跑 MC vs TD：偏差–方差权衡的实证
 

@@ -14,7 +14,7 @@ export const metadata = tutorialMetadata("offline-rl");
 
 | | 数据来源 | 能否继续交互 |
 |---|---|---|
-| on-policy([SARSA](/tutorials/reinforcement-learning)、[PPO](/tutorials/policy-gradient)) | 当前策略刚跑的 | ✅ 能，但策略一更新旧数据就作废 |
+| on-policy([SARSA](/tutorials/reinforcement-learning)、[PPO](/tutorials/ppo)) | 当前策略刚跑的 | ✅ 能，但策略一更新旧数据就作废 |
 | off-policy([Q-learning](/tutorials/reinforcement-learning)、[DQN](/tutorials/dqn)) | 行为策略采的 + 经验回放 | ✅ 能，旧数据可复用 |
 | **offline RL** | 一份**固定**日志 | ❌ **完全不能交互** |
 

@@ -99,7 +99,7 @@ for method in ["TD", "MC"]:
 print("-> TD 用'走一步的新信息'持续微调,方差小、收敛快;MC 要等整条回报,噪声大")
 `} />
 
-> 💡 **为什么 TD 方差更小？** MC 的目标 $G_t$ 累积了**整条轨迹**上每一步的随机性，无偏但抖得厉害；TD 的目标 $r+\gamma V(s')$ 只含**一步**的随机奖励与转移，方差小得多——代价是引入了偏差（因为 $V(s')$ 是估计值，不是真值）。这正是[策略梯度篇](/tutorials/policy-gradient#常见问题-faq)里 GAE 用 $\lambda$ 调和的**偏差–方差权衡**；TD（0） 和 MC 就是 $\lambda=0$ 与 $\lambda=1$ 的两个端点，中间是 **n 步 TD**。
+> 💡 **为什么 TD 方差更小？** MC 的目标 $G_t$ 累积了**整条轨迹**上每一步的随机性，无偏但抖得厉害；TD 的目标 $r+\gamma V(s')$ 只含**一步**的随机奖励与转移，方差小得多——代价是引入了偏差（因为 $V(s')$ 是估计值，不是真值）。这正是[Actor-Critic 与 GAE](/tutorials/actor-critic#gae在偏差与方差之间连续插值)里 GAE 用 $\lambda$ 调和的**偏差–方差权衡**；TD（0） 和 MC 就是 $\lambda=0$ 与 $\lambda=1$ 的两个端点，中间是 **n 步 TD**。
 
 ## TD（0） 预测的收敛性：自举凭什么不跑偏
 
@@ -443,7 +443,7 @@ print("   使在线逐步严格等价前向 lambda-return (ordinary 只在离线
 
 > 💡 **何时用真在线？** 表格型小任务上两者几乎无差（如上）。但在**函数逼近 + 在线 + 大学习率**（神经网络 Critic、每步立即更新参数）时，ordinary 半梯度 TD（λ） 的「前向-后向等价」失效会累积成可观偏差，真在线 TD（λ） 靠校正项维持精确等价——这是它在深度 RL 资格迹实现里被偏爱的根本原因。van Seijen & Sutton 2014 证明：真在线 TD（λ） 在**每一步**都对前向 λ-return 目标做精确梯度下降，而 ordinary 只在回合末才精确。
 
-> 💡 **与 GAE 同源**：[策略梯度篇](/tutorials/policy-gradient#常见问题-faq)的 GAE 用同样的 $\lambda$ 在「一步优势」与「整条回报」之间插值，偏差–方差权衡的直觉完全一致。区别在于 GAE 估的是**优势** $A$、面向策略梯度；TD（λ） 估的是**状态价值** $V$、面向预测。两者共享同一套 $\lambda$-几何加权的数学骨架——理解了资格迹，再看 GAE 就是换了个被估量。
+> 💡 **与 GAE 同源**：[Actor-Critic 与 GAE](/tutorials/actor-critic#gae在偏差与方差之间连续插值)的 GAE 用同样的 $\lambda$ 在「一步优势」与「整条回报」之间插值，偏差–方差权衡的直觉完全一致。区别在于 GAE 估的是**优势** $A$、面向策略梯度；TD（λ） 估的是**状态价值** $V$、面向预测。两者共享同一套 $\lambda$-几何加权的数学骨架——理解了资格迹，再看 GAE 就是换了个被估量。
 
 ## TD（λ） 预测的收敛性：λ 改变什么、不改变什么
 
@@ -909,7 +909,7 @@ print("   替换迹重访即重置=1, 有上界 <=1, 比 accumulating 更稳 (Sa
 | 场景 | TD 的角色 |
 |---|---|
 | **[Q-learning / DQN](/tutorials/dqn)** | 更新式 $r+\gamma\max_{a'}Q(s',a')-Q(s,a)$ 就是 TD 误差 |
-| **[Actor-Critic](/tutorials/policy-gradient)** | Critic 用 TD 误差估优势 $A$，再喂给 Actor |
+| **[Actor-Critic](/tutorials/actor-critic)** | Critic 用 TD 误差估优势 $A$，再喂给 Actor |
 | **神经科学** | 多巴胺信号被认为编码了「奖励预测误差」，与 TD 误差高度吻合 |
 | **TD-Gammon(1992)** | 用 TD 学出超越人类的西洋双陆棋 AI，深度 RL 的先声 |
 
@@ -1152,7 +1152,7 @@ TD（0） 只看一步，MC 看到底。**n 步 TD** 看 n 步再自举，是二
 | 真在线 TD(λ) | 加校正项 $\alpha(V(s_t)-V_{\text{old}}(s_t))(e_t-x_t)$，在线逐步精确等价前向（van Seijen & Sutton 2014） |
 | Sarsa(λ) | TD（λ） 的控制版：迹扩成 $e(s,a)$，$\delta_t$ 沿 $(s,a)$ 迹倒推，稀疏奖励下比一步 Sarsa 快 |
 
-> 🎯 一句话记住：**TD = 用「下一步的猜测」修正「这一步的猜测」，不要模型、不等回合、走一步学一步——它是动态规划与蒙特卡洛的私生子，也是 [Q-learning](/tutorials/reinforcement-learning)、[DQN](/tutorials/dqn)、[Actor-Critic](/tutorials/policy-gradient) 共同的心脏。** 而**资格迹 + TD（λ）** 把这个私生子与蒙特卡洛正式统一：用一条衰减的短期记忆向量，把「一步 TD」与「整条 MC」之间的所有折中点一并用 $O(1)$ 内存在线实现——$\lambda=0$ 是 TD(0)、$\lambda=1$ 是 MC，中间任意插值。
+> 🎯 一句话记住：**TD = 用「下一步的猜测」修正「这一步的猜测」，不要模型、不等回合、走一步学一步——它是动态规划与蒙特卡洛的私生子，也是 [Q-learning](/tutorials/reinforcement-learning)、[DQN](/tutorials/dqn)、[Actor-Critic](/tutorials/actor-critic) 共同的心脏。** 而**资格迹 + TD（λ）** 把这个私生子与蒙特卡洛正式统一：用一条衰减的短期记忆向量，把「一步 TD」与「整条 MC」之间的所有折中点一并用 $O(1)$ 内存在线实现——$\lambda=0$ 是 TD(0)、$\lambda=1$ 是 MC，中间任意插值。
 
 ## 延伸阅读
 

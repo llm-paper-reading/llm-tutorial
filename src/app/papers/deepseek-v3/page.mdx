@@ -9,7 +9,7 @@ export const metadata = paperMetadata(paper);
 
 2024 年 12 月，DeepSeek 发布 V3：一个 671B 参数的 MoE（混合专家）模型，每 token 只激活 37B，却在 14.8T token 上用 **2.788M H800 GPU 小时**(约 $5.58M 租卡成本)完成全部训练——同期 Llama-3.1-405B 用了 **30.84M GPU 小时**，相差 11 倍。<Cite n={[1,4]} />这份技术报告的看点不只是「便宜」：MLA 注意力把 KV cache 压掉一个数量级、无辅助损失的负载均衡首次在大规模落地、FP8 混合精度训练首次在超大规模模型上验证成功。<Cite n={1} />争议也随之而来：成本数字只算官方训练、不含前期调研与消融实验；蒸馏 R1 数据的做法也让人追问「V3 的推理能力到底是学来的还是继承来的」。这篇笔记拆解这三件事，并交代 V3-Base 如何成为一个月后震动业界的 R1-Zero 的底座。<Cite n={2} />
 
-> 📌 前置：熟悉 [PPO 与策略梯度](/tutorials/policy-gradient) 和 [知识蒸馏](/tutorials/knowledge-distillation) 会帮助理解后训练部分；MoE 与注意力部分自包含。
+> 📌 前置：熟悉 [PPO](/tutorials/ppo) 与 [策略梯度](/tutorials/policy-gradient) 和 [知识蒸馏](/tutorials/knowledge-distillation) 会帮助理解后训练部分；MoE 与注意力部分自包含。
 
 ## 一、动机：把「性价比」做成架构问题
 

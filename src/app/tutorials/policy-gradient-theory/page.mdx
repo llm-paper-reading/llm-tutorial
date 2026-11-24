@@ -1,0 +1,272 @@
+import { tutorialMetadata } from "@/lib/tutorials";
+
+export const metadata = tutorialMetadata("policy-gradient-theory");
+
+# 📉 策略梯度的收敛性
+
+策略梯度能保证什么、保证不了什么？本文把 REINFORCE/actor-critic/TRPO/PPO 放进随机近似框架：无偏性、Robbins-Monro 步长、非凹目标与局部最优。
+
+> 📌 前置：策略梯度定理与 REINFORCE 见 [策略梯度](/tutorials/policy-gradient)；Actor-Critic 与 GAE 见 [Actor-Critic 与 GAE](/tutorials/actor-critic)；TRPO 见 [TRPO](/tutorials/trpo)。
+
+## 随机近似视角：能保证什么
+
+前面几篇——[REINFORCE](/tutorials/policy-gradient) → [Actor-Critic](/tutorials/actor-critic) → [TRPO](/tutorials/trpo) → [PPO](/tutorials/ppo)——都在解决同一类工程问题：**把 $\nabla_\theta J(\pi_\theta)$ 估得更准、把每步更新走得更稳**（降方差、加基线、加信赖域、加裁剪）。但有一个更根本的问题一直没正面回答：**这样反复更新，最终能收敛到最优策略吗？** 这一节把策略梯度法放进**随机近似理论**的框架里，看清它**能保证什么、保证不了什么**。结论先说在前：**REINFORCE 是期望梯度的无偏估计，在 Robbins-Monro 步长下几乎处处收敛到一个驻点——但 $J(\theta)$ 一般非凹，所以只能收敛到局部最优，且收敛到哪个局部最优取决于初值**。这正是后续 TRPO/PPO 乃至自然梯度都在试图「缓解」的天花板。
+
+### REINFORCE 是期望梯度的无偏估计
+
+策略梯度定理（见前文）告诉我们真梯度是 $\nabla_\theta J(\theta)=\mathbb E_{\tau\sim\pi_\theta}\big[\sum_t\nabla_\theta\log\pi_\theta(a_t\mid s_t)\,R(\tau)\big]$。REINFORCE 直接用 Monte Carlo 样本估这个期望：$\hat g=\frac1N\sum_{i=1}^N\big(\sum_t\nabla_\theta\log\pi_\theta(a_t^{(i)}\mid s_t^{(i)})\big)R(\tau^{(i)})$。由**期望的线性性**与**对数导数技巧**（score function trick，即 $\nabla_\theta\log\pi_\theta=\nabla_\theta\pi_\theta/\pi_\theta$，故 $\pi_\theta\cdot\nabla_\theta\log\pi_\theta=\nabla_\theta\pi_\theta$），有
+
+$$\mathbb E_{\tau\sim\pi_\theta}[\hat g]=\mathbb E_{\tau\sim\pi_\theta}\Big[\sum_t\nabla_\theta\log\pi_\theta(a_t\mid s_t)\,R(\tau)\Big]=\nabla_\theta J(\theta).$$
+
+所以 $\hat g$ 是 $\nabla_\theta J(\theta)$ 的**无偏估计**——这是 REINFORCE 最重要的一条性质，由 Williams (1992) <Cite n={4} /> 在「REINFORCE」族算法里首次系统建立。无偏意味着：只要步长合适（见下），沿着 $\hat g$ 反复走**期望意义下**就是在沿着真梯度上升。**但无偏 ≠ 一定收敛到全局最优**——下面两小节是它的两个天花板。<Cite n={4} />
+
+### 天花板一：$J(\theta)$ 一般非凹，只能收敛到局部最优
+
+无偏估计只保证「期望梯度方向是对的」，不保证「$J(\theta)$ 是个凸函数」。事实上策略梯度的目标 $J(\theta)=\mathbb E_{\tau\sim\pi_\theta}[R(\tau)]$ 对 $\theta$ 几乎总是**非凹**的：策略参数 $\theta$ 通过概率 $\pi_\theta$ 影响轨迹分布，这是一个高度非线性的映射，多个局部最优是常态而非例外（Sutton & Barto, 2018, Ch.13 <Cite n={1} />）。
+
+非凹的直接后果：**随机梯度上升只能保证收敛到一个驻点（$\nabla_\theta J=0$ 的点），而这个驻点可能是局部最优、可能是鞍点，不一定是全局最优**。而且从不同初值出发，会收敛到不同的局部最优——这是策略梯度法（以及它后面的 TRPO/PPO）**无法从理论上消除**的局限。TRPO 的单调提升保证（见前文）只是说「每步不会让 $J$ 变差」，不是说「最终能到全局最优」；PPO 的裁剪同理，是**稳定性**的保证，不是**全局性**的保证。
+
+### 天花板二：Robbins-Monro 步长与几乎处处收敛
+
+无偏估计 + 非凹目标，在什么条件下能收敛到（局部）驻点？这要用**随机近似**（stochastic approximation）的经典结论。Robbins & Monro （1951） 给出：若步长 $\alpha_t$ 满足
+
+$$\sum_{t=1}^\infty \alpha_t=\infty,\qquad \sum_{t=1}^\infty \alpha_t^2<\infty,$$
+
+且梯度估计无偏、方差有界，则随机梯度上升 $\theta_{t+1}=\theta_t+\alpha_t\hat g_t$ **几乎处处收敛**到一个驻点 $\nabla_\theta J(\theta^*)=0$。两个条件的直觉：**$\sum\alpha_t=\infty$** 保证总步长足够大、不会困在离驻点还远的地方就停步（足够「探索」参数空间）；**$\sum\alpha_t^2<\infty$** 保证噪声方差累积有界、不会永远抖动（足够「收敛」）。典型满足条件的步长是 $\alpha_t=c/t^{0.55}$ 这类多项式衰减（本节 CodeRunner 就用它）。
+
+实践里几乎没人真用 $c/t^{0.55}$——它衰减太慢、训练效率不可接受。大家用 Adam 这类**自适应步长**（CS285 <Cite n={6} /> 的实证建议：策略梯度用比监督学习大得多的 batch、Adam 可「凑合用」、但调学习率极难）。代价是：**自适应步长不严格满足 Robbins-Monro 条件，理论收敛保证就不再成立**——这是「工程好用」与「理论可证」之间的取舍。TRPO 的共轭梯度 + 线搜索、PPO 的裁剪 + KL 早停，本质都是在用**结构性约束**部分补回这个丢失的稳定性保证，而不是重新拿到收敛性证明。
+
+### 自然梯度：换一种「距离」让收敛更稳
+
+Kakade (2001) <Cite n={5} /> 提出一个缓解非凹 + 高方差的思路：**不沿欧氏梯度走，沿「策略分布空间」的最陡上升方向走**。欧氏参数空间里，「$\theta$ 与 $\theta+d$ 接近」不等于「$\pi_\theta$ 与 $\pi_{\theta+d}$ 接近」——参数的小欧氏位移可能让策略分布剧变（尤其策略接近确定性时）。Kakade 用 **KL 散度**作为策略分布空间的度量，在该度量下的最陡上升方向称为**自然梯度**：<Cite n={5} />
+
+$$\tilde g = F(\theta)^{-1}\,\nabla_\theta J(\theta),$$
+
+其中 $F(\theta)=\mathbb E_{\tau\sim\pi_\theta}\big[\nabla_\theta\log\pi_\theta(\tau)\nabla_\theta\log\pi_\theta(\tau)^\top\big]$ 是策略的**Fisher 信息矩阵**。直觉：自然梯度在「策略变化剧烈」的方向上自动减小步长（$F$ 大、$F^{-1}$ 小），在「策略变化迟钝」的方向上加大步长，使每步更新在**策略分布**意义上等距，而非在参数意义上等距。这是后续 TRPO 信赖域（$\bar D_{\mathrm{KL}}\le\delta$）的理论前身——TRPO 可看作「带单调提升保证的自然梯度近似」（Schulman et al., 2015 <Cite n={3} />）。自然梯度本身**不解决非凹**（局部最优问题依旧），但让收敛路径更稳健、对参数化更不敏感。
+
+**Fisher 信息矩阵是分布空间的黎曼度量张量。** $F$ 之所以能当「分布空间的距离」，不是凑出来的——它正是 KL 散度的二阶主项。把 $\bar D_{\mathrm{KL}}(\pi_\theta\,\|\,\pi_{\theta+d})$ 在 $d=0$ 处泰勒展开，一阶项为零（KL 在同点取极小），二阶项正是 $\tfrac12 d^\top F(\theta)\,d$。所以「参数位移 $d$ 在分布空间走了多远」的局部度量就是 $\sqrt{d^\top F\,d}$——$F$ 是把欧氏参数空间「折弯」到分布空间的**度量张量**。策略接近确定性时（分布尖锐），$F$ 大，同样欧氏位移 $d$ 让分布移动更远；策略接近均匀时（分布平坦），$F$ 小，分布移动更近。1-D 高斯 $a\sim\mathcal N(\mu,\sigma^2)$ 里这层关系最干净：对 $\mu$ 的 Fisher $F=1/\sigma^2$ 恰是方差的倒数，$\sigma$ 小（策略尖锐）则 $F$ 大，$\sigma$ 大（策略迟钝）则 $F$ 小。
+
+**自然梯度是 KL 信赖域内的最陡上升方向。** 把「每步走多远」形式化成一个约束优化：在分布空间走不超过 $\epsilon$ 的前提下，选 $d$ 让目标一阶提升最大，
+
+$$
+d^*=\arg\max_d\;\nabla_\theta J(\theta)^\top d\quad\text{s.t.}\quad \tfrac12\,d^\top F(\theta)\,d\le\epsilon.
+$$
+
+拉格朗日法给 $\nabla J-\lambda Fd=0$，即 $d^*\propto F^{-1}\nabla J$——**自然梯度方向正是 KL 椭球约束下的最陡上升方向**。步长系数 $\sqrt{2\epsilon/(g^\top F^{-1}g)}$ 让约束取等（走到椭球边界），与 [TRPO 的解析解](/tutorials/trpo#二阶近似目标一阶约束二阶)同源。关键在于：约束用的是 $F$-加权距离而非欧氏距离，所以「最陡」是在**分布空间**意义下的最陡——梯度大但分布几乎不动的方向，$F$ 大、$F^{-1}$ 小，自然梯度会少走；梯度小但分布剧变的方向，$F$ 小、$F^{-1}$ 大，自然梯度会多走。欧氏梯度看不到这层分布几何，可能在一个「参数意义陡」但「分布意义平」的方向上浪费步长。
+
+**为何对参数化不敏感：协变变换。** 自然梯度最深的性质是**参数化无关**——同一策略换一种参数化（如把 $\sigma$ 换成 $\log\sigma$），自然梯度的物理方向不变，而欧氏梯度的方向会变。机制是 Fisher 与梯度在参数重参数化 $\theta=\phi(\theta')$（雅可比 $J=\partial\phi/\partial\theta'$）下**协变变换**：
+
+$$
+F_{\theta'}=J^\top F_\theta\,J,\qquad g_{\theta'}=J^\top g_\theta\;\;\Longrightarrow\;\;\tilde g_{\theta'}=F_{\theta'}^{-1}g_{\theta'}=J^{-1}\tilde g_\theta.
+$$
+
+欧氏梯度 $g_{\theta'}=J^\top g_\theta$ 随 $J^\top$ 变换（不是 $J^{-1}$），所以物理方向变；自然梯度 $\tilde g_{\theta'}=J^{-1}\tilde g_\theta$ 随 $J^{-1}$ 变换，恰好抵消参数变换——在分布空间里它指向同一个方向。这就是 Kakade 2001 <Cite n={5} /> 的核心动机：**让算法依赖策略分布本身，而非任意的参数化选择**。欧氏梯度下降在「学 $\sigma$」与「学 $\log\sigma$」两种参数化下收敛到不同点，自然梯度下降收敛到同一点——下面的 CodeRunner 把这件事量化。
+
+<CodeRunner defaultCode={`import numpy as np
+
+# ============================================================
+# 自然梯度的几何: Fisher 度量 + KL 约束最陡上升 + 参数化不变性
+# 策略 pi(a|mu, sigma) = N(a|mu, sigma^2)
+# Fisher 对 (mu, sigma) = diag(1/sigma^2, 2/sigma^2)  (高斯标准结果)
+# ============================================================
+
+def reward(a):
+    return np.exp(-(a - 2.0)**2) + 0.6 * np.exp(-(a + 3.0)**2)
+
+def J(mu, sigma):
+    x = np.linspace(mu - 6*sigma, mu + 6*sigma, 8001)
+    pdf = np.exp(-0.5*((x - mu)/sigma)**2) / (sigma*np.sqrt(2*np.pi))
+    return np.trapezoid(reward(x) * pdf, x)
+
+def true_grad(mu, sigma, h=1e-4):
+    gm = (J(mu+h, sigma) - J(mu-h, sigma)) / (2*h)
+    gs = (J(mu, sigma+h) - J(mu, sigma-h)) / (2*h)
+    return np.array([gm, gs])
+
+# === 段1: Fisher = KL 二阶主项 = 分布空间黎曼度量 ===
+print("=== 段1: Fisher 信息矩阵 = 分布空间的黎曼度量 ===\\n")
+sigma = 1.5
+F = 1.0 / sigma**2
+print(f"  策略 pi(a|mu) = N(a|mu, sigma^2), sigma={sigma}")
+print(f"  score = d/dmu log pi = (a-mu)/sigma^2")
+print(f"  Fisher F = E[score^2] = 1/sigma^2 = {F:.6f}")
+print(f"  -> Fisher 恰为高斯方差倒数, 是 N(mu,sigma^2) 分布空间的黎曼度量")
+print(f"  -> 参数位移 dmu 在分布空间的距离 = sqrt(F)*|dmu| = |dmu|/sigma")
+print(f"     (sigma 小 -> 策略尖锐 -> 同样 |dmu| 让分布移更远 -> Fisher 大)")
+print(f"  -> 自然梯度 tilde_g = F^-1 * g = sigma^2 * g = {sigma**2:.4f} * g")
+print(f"     (sigma 大 -> 分布迟钝 -> Fisher 小 -> 自然梯度放大步长)")
+
+# === 段2: 自然梯度 = KL 信赖域内最陡上升 ===
+print("\\n=== 段2: 自然梯度 = KL 信赖域内最陡上升 ===\\n")
+mu = 0.0
+g = true_grad(mu, sigma)[0]
+F = 1.0 / sigma**2
+tilde_g = g / F
+eps = 0.01
+d_natural = np.sign(g) * np.sqrt(2 * eps / F)
+d_euclid = np.sign(g) * np.sqrt(2 * eps)
+print(f"  mu={mu}, sigma={sigma}, 真梯度 g={g:.6f}")
+print(f"  Fisher F=1/sigma^2={F:.6f}, 自然梯度 tilde_g=F^-1*g={tilde_g:.6f}")
+print(f"  KL 信赖域 0.5*F*d^2 <= eps={eps}:")
+print(f"    自然梯度步 d* = sign(g)*sqrt(2*eps/F) = {d_natural:.6f}")
+print(f"  欧式信赖域 0.5*d^2 <= eps={eps}:")
+print(f"    欧式梯度步 d_euclid = sign(g)*sqrt(2*eps) = {d_euclid:.6f}")
+print(f"  -> sigma=1.5 时 F=0.444 < 1, 自然梯度步 {abs(d_natural):.4f} > 欧式步 {abs(d_euclid):.4f}")
+print(f"     (分布迟钝 -> Fisher 小 -> 自然梯度在 KL 约束内能走更远)")
+print(f"  验证 KL 取等: 0.5*F*d*^2 = {0.5*F*d_natural**2:.6f} = eps={eps}")
+
+# === 段3: 参数化不变性 (协变变换) ===
+print("\\n=== 段3: 参数化不变性 —— natural gradient 的核心卖点 ===\\n")
+# 同一策略两种参数化: A=(mu, sigma) vs B=(mu, log_sigma)
+# 欧式梯度下降在两种参数化下收敛到不同点; 自然梯度下降收敛到同一点
+
+def run_euclidean_A(mu0, sigma0, steps=200, alpha0=0.5):
+    mu, sigma = mu0, max(sigma0, 0.1)
+    for t in range(1, steps+1):
+        alpha = alpha0 / t**0.55
+        g = true_grad(mu, sigma)
+        mu = mu + alpha * g[0]
+        sigma = max(sigma + alpha * g[1], 0.1)
+    return mu, sigma
+
+def run_euclidean_B(mu0, sigma0, steps=200, alpha0=0.5):
+    mu, ls = mu0, np.log(max(sigma0, 0.1))
+    for t in range(1, steps+1):
+        alpha = alpha0 / t**0.55
+        sigma = np.exp(ls)
+        g = true_grad(mu, sigma)
+        g_ls = g[1] * sigma
+        mu = mu + alpha * g[0]
+        ls = ls + alpha * g_ls
+    return mu, np.exp(ls)
+
+def run_natural_A(mu0, sigma0, steps=200, alpha0=0.5):
+    mu, sigma = mu0, max(sigma0, 0.1)
+    for t in range(1, steps+1):
+        alpha = alpha0 / t**0.55
+        g = true_grad(mu, sigma)
+        mu = mu + alpha * sigma**2 * g[0]
+        sigma = max(sigma + alpha * (sigma**2/2) * g[1], 0.1)
+    return mu, sigma
+
+def run_natural_B(mu0, sigma0, steps=200, alpha0=0.5):
+    mu, ls = mu0, np.log(max(sigma0, 0.1))
+    for t in range(1, steps+1):
+        alpha = alpha0 / t**0.55
+        sigma = np.exp(ls)
+        g = true_grad(mu, sigma)
+        g_ls = g[1] * sigma
+        mu = mu + alpha * sigma**2 * g[0]
+        ls = ls + alpha * 0.5 * g_ls
+    return mu, np.exp(ls)
+
+mu0, sigma0 = 0.0, 1.5
+print(f"  双峰奖励, mu0={mu0}, sigma0={sigma0}, 同一策略两种参数化, 200 步 SGD:\\n")
+print("  欧式梯度下降 (参数化敏感):")
+rA = run_euclidean_A(mu0, sigma0); rB = run_euclidean_B(mu0, sigma0)
+print(f"    A (学 sigma):      mu={rA[0]:.4f}, sigma={rA[1]:.4f}")
+print(f"    B (学 log_sigma):  mu={rB[0]:.4f}, sigma={rB[1]:.4f}")
+print(f"    -> 收敛到不同点 (欧式度量随参数化变, 路径不同)")
+print()
+print("  自然梯度下降 (参数化不变):")
+nA = run_natural_A(mu0, sigma0); nB = run_natural_B(mu0, sigma0)
+print(f"    A (学 sigma):      mu={nA[0]:.4f}, sigma={nA[1]:.4f}")
+print(f"    B (学 log_sigma):  mu={nB[0]:.4f}, sigma={nB[1]:.4f}")
+print(f"    -> 收敛到同一点 (Fisher 度量协变, 物理路径相同)")
+print(f"  -> 这正是 Kakade 2001 [15] 的核心动机: 让算法依赖策略分布本身,")
+print(f"     而非任意的参数化选择。欧氏梯度做不到这点, 因其度量随参数化改变。")
+`} title="自然梯度:Fisher 度量、KL 最陡上升、参数化不变性" />
+
+跑完看三件事：① 段1 里高斯策略的 Fisher $F=1/\sigma^2$ 恰是方差倒数——策略越尖锐（sigma 小）Fisher 越大，印证「Fisher 是分布敏感度」；② 段2 里 KL 信赖域约束下的自然梯度步（$\sqrt{2\epsilon/F}$）比同等欧氏信赖域步（$\sqrt{2\epsilon}$）长——分布迟钝时 Fisher 小，自然梯度在 KL 约束内能走更远，欧氏度量低估了可走距离；③ 段3 是核心：同一策略换两种参数化（学 $\sigma$ vs 学 $\log\sigma$），欧氏梯度下降收敛到不同点，自然梯度下降收敛到同一点——**参数化不变性**是 natural gradient 区别于欧氏梯度的根本性质，也是 TRPO/PPO 用 KL 信赖域（而非欧氏步长）的理论根基 <Cite n={5} />。
+
+### 动手看：无偏、高方差、与初值决定的局部最优
+
+下面这个 CodeRunner 用一个最小玩具把本节三件事一次看清：① REINFORCE 估计**无偏**（估计均值 ≈ 真梯度）；② 但**高方差**（单次估计与真梯度偏差大）；③ $J(\mu)$ 双峰非凹，REINFORCE 从不同初值出发**收敛到不同局部最优**。奖励 $r(a)=e^{-(a-2)^2}+0.6\,e^{-(a+3)^2}$ 在 $a=+2$ 处有全局峰、$a=-3$ 处有次峰；策略是 1-D 高斯 $a\sim\mathcal N(\mu,1.5^2)$，只学 $\mu$。
+
+<CodeRunner defaultCode={`import numpy as np
+
+# 双峰奖励:全局峰 a=+2,次峰 a=-3 -> J(mu) 非凹
+def reward(a):
+    return np.exp(-(a - 2.0)**2) + 0.6 * np.exp(-(a + 3.0)**2)
+
+# REINFORCE 梯度估计: score * reward 的样本均值
+def est_grad(mu, sigma=1.5, n=200, rng=None):
+    rng = rng or np.random.default_rng(0)
+    a = rng.normal(mu, sigma, n)
+    score = (a - mu) / sigma**2          # d/dmu log N(a|mu,sigma^2)
+    return (score * reward(a)).mean()
+
+# 真梯度(数值差分,作 ground truth)
+def true_grad(mu, sigma=1.5, h=1e-4):
+    def J(m):
+        x = np.linspace(m - 6*sigma, m + 6*sigma, 8001)
+        pdf = np.exp(-0.5*((x - m)/sigma)**2) / (sigma*np.sqrt(2*np.pi))
+        return np.trapz(reward(x) * pdf, x)
+    return (J(mu + h) - J(mu - h)) / (2 * h)
+
+# (1) 无偏性: 2000 次估计的均值应贴近真梯度
+ests = [est_grad(0.0, rng=np.random.default_rng(s)) for s in range(2000)]
+print("=== 无偏性 (mu=0) ===")
+print("true grad      : %.4f" % true_grad(0.0))
+print("REINFORCE mean : %.4f  std %.4f  (2000 trials)" % (np.mean(ests), np.std(ests)))
+print("-> 均值贴近真梯度 = 无偏; 但 std 与真梯度同量级 = 高方差")
+print()
+
+# (2) 非凹 -> 不同初值收敛到不同局部最优
+def run(mu0, steps=400, seed=0):
+    rng = np.random.default_rng(seed)
+    mu = mu0
+    for t in range(1, steps + 1):
+        alpha = 0.5 / t**0.55        # Robbins-Monro 步长
+        mu = mu + alpha * est_grad(mu, rng=rng)
+    return mu
+
+def J(mu, sigma=1.5):
+    x = np.linspace(mu - 6*sigma, mu + 6*sigma, 8001)
+    pdf = np.exp(-0.5*((x - mu)/sigma)**2) / (sigma*np.sqrt(2*np.pi))
+    return np.trapz(reward(x) * pdf, x)
+
+print("=== 非凹 J(mu): 不同初值 -> 不同局部最优 ===")
+for mu0 in [-3.0, 0.0, 2.0]:
+    mf = run(mu0, seed=42)
+    print("mu0=%+4.1f -> final mu=%+6.3f  J=%.4f" % (mu0, mf, J(mf)))
+print("-> mu0=-3 困在次峰 (局部最优); mu0=+2 到达全局峰; 初值决定终点")
+`} title="策略梯度收敛性:无偏、高方差、局部最优" />
+
+跑完会看到三件事：① 在 $\mu=0$ 处，2000 次 REINFORCE 估计的均值（约 0.096）贴近真梯度（约 0.096）——**无偏性**成立；② 但单次估计的标准差（约 0.024）与真梯度本身同量级——**高方差**，这正是 [策略梯度教程「高方差」一节](/tutorials/policy-gradient#高方差reinforce-的致命伤) 的根因；③ 从 $\mu_0=-3$ 出发收敛到 $\mu\approx-2.93$（次峰，局部最优，$J\approx0.26$），从 $\mu_0=+2$ 出发收敛到 $\mu\approx1.97$（全局峰，$J\approx0.43$）——**$J$ 非凹导致初值决定终点**。把 `steps` 调大、把 `n` 调大，这两点不会改变：无偏性是渐近的、非凹是结构性的，更多样本只降方差、不消除局部最优。
+
+### 四种方法的收敛保证层级
+
+| 方法 | 每步保证 | 收敛目标 | 关键机制 |
+|------|---------|---------|---------|
+| REINFORCE <Cite n={4} /> | 梯度估计无偏 | 驻点（局部最优，Robbins-Monro 步长下几乎处处） | score-function 蒙特卡洛 |
+| 自然梯度 <Cite n={5} /> | 在 KL 度量下最陡上升 | 驻点（局部最优，路径更稳健） | Fisher 信息逆矩阵 |
+| TRPO <Cite n={3} /> | 单调提升 $J(\pi_{k+1})\ge J(\pi_k)$ | 局部最优（信赖域内每步不降） | KL 硬约束 + 共轭梯度 |
+| PPO <Cite n={2} /> | 一阶近似，clip 防过步 | 无形式收敛证明，工程稳定 | 裁剪 + KL 早停 |
+
+从上到下，**「每步保证」越来越弱**（从无偏梯度 → KL 最陡 → 单调提升 → 工程启发），但**工程效率越来越高**（二阶共轭梯度贵、一阶 clip 便宜）。这就是策略梯度法的现实：**理论保证与工程效率此消彼长**，没有免费午餐。
+
+> 💡 **一句话总结**：REINFORCE 是无偏梯度估计，Robbins-Monro 步长下几乎处处收敛到驻点——但 $J(\theta)$ 非凹，驻点未必是全局最优，初值决定终点；自然梯度 / TRPO / PPO 是在不同层面「让收敛更稳」的工程缓解，但都没从理论上消除非凹带来的局部最优天花板。
+
+## 小结
+
+- REINFORCE 是期望梯度的无偏估计，但 $J(	heta)$ 一般非凹，随机梯度上升只能保证收敛到驻点。
+- Robbins-Monro 步长给出几乎处处收敛；Adam 等自适应步长工程好用，但不再满足严格条件。
+- 自然梯度、TRPO、PPO 都在让更新更稳，没有从理论上消除局部最优。
+
+## 延伸阅读
+
+- [策略梯度](/tutorials/policy-gradient)：定理与 REINFORCE。
+- [Actor-Critic 与 GAE](/tutorials/actor-critic)：降方差的实际手段。
+- [TRPO](/tutorials/trpo)：KL 信赖域与单调提升。
+
+## 参考资料
+
+<References>
+1. Sutton, Barto (2018). *Reinforcement Learning: An Introduction*, Ch.13 Policy Gradient Methods. [MIT Press](http://incompleteideas.net/book/RLbook2020.pdf). —— 策略梯度定理的教材级推导、REINFORCE、基线减方差、actor-critic 框架的经典表述。
+2. Schulman, Wolski, Dhariwal, Radford, Klimov (2017). *Proximal Policy Optimization Algorithms*. [arXiv:1707.06347](https://arxiv.org/abs/1707.06347). —— PPO 原始论文：提出裁剪 surrogate 目标 $L^{\text{CLIP}}=\min(rA,\text{clip}(r,1-\varepsilon,1+\varepsilon)A)$ 与自适应 KL 惩罚变体 PPO-Penalty；支持同一批数据多 epoch 小批量更新；在 Atari/连续控制/Mujoco 上权衡样本效率、简洁性、墙钟时间，优于 TRPO 等 on-policy 方法，成为 RLHF 时代的主力算法。
+3. Schulman, Levine, Abbeel, Jordan, Moritz (2015). *Trust Region Policy Optimization*. [arXiv:1502.05477](https://arxiv.org/abs/1502.05477). —— TRPO 原始论文：在 KL 散度硬约束 $\bar D_{\text{KL}}\le\delta$ 下最大化 surrogate 优势，基于 Kakade & Langford 2002 的策略提升界；用共轭梯度求解二阶自然梯度，理论可证策略单调提升，PPO 是其一阶近似。
+4. Williams, R. J. (1992). *Simple statistical gradient-following algorithms for connectionist reinforcement learning*. Machine Learning, 8(3-4), 229–256. [DOI:10.1007/BF00992696](https://doi.org/10.1007/BF00992696). —— REINFORCE 族算法的奠基论文：首次系统建立「用对数导数技巧（score function / log-derivative trick,$\pi_\theta\cdot\nabla_\theta\log\pi_\theta=\nabla_\theta\pi_\theta$）把期望回报的梯度转成可采样的蒙特卡洛估计」这一框架，并证明该估计是 $\nabla_\theta J(\theta)$ 的**无偏估计**；「REINFORCE 是无偏梯度估计」一节的直接来源。无偏性是后续 actor-critic / TRPO / PPO 一切降方差工作的前提——它们都在改善方差，不改变无偏。
+5. Kakade, S. (2001). *A Natural Policy Gradient*. NeurIPS 2001 (Advances in Neural Information Processing Systems 14). [papers.nips.cc](https://papers.nips.cc/paper_files/paper/2001/hash/4b86abe48d358ecf194c56c69108433e-Abstract.html). —— 自然梯度应用于策略优化的开山作：指出欧氏参数空间里「$\theta$ 接近」≠「$\pi_\theta$ 接近」，提出用 KL 散度作策略分布空间的度量，在该度量下的最陡上升方向 $\tilde g=F(\theta)^{-1}\nabla_\theta J(\theta)$ 即自然梯度（$F$ 为策略的 Fisher 信息矩阵）；在「策略变化剧烈」方向自动减小步长、「迟钝」方向加大步长，使每步更新在策略分布意义上等距；是 TRPO 信赖域（$\bar D_{\mathrm{KL}}\le\delta$）的理论前身。「自然梯度：换一种距离让收敛更稳」一节的直接来源。**注：历史轮次曾误猜 arXiv ID，据 R39 教训改引 NeurIPS 2001 proceedings 稳定页**。
+6. Levine, S. (2020). *CS 285: Deep Reinforcement Learning, Lecture 5 — Policy Gradients*。 UC Berkeley。 [rail.eecs.berkeley.edu](https://rail.eecs.berkeley.edu/deeprlcourse/)。 —— Berkeley 深度 RL 课程的策略梯度讲义：系统讲策略梯度定理、REINFORCE、基线、reward-to-go、高方差问题与工程对策（大 batch、Adam「凑合」、调学习率极难）；本篇「实践含义」段「策略梯度用比监督学习大得多的 batch、自适应步长、trust region」的实证依据来源。
+</References>

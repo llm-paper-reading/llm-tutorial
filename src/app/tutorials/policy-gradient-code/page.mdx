@@ -1,0 +1,144 @@
+import { tutorialMetadata } from "@/lib/tutorials";
+
+export const metadata = tutorialMetadata("policy-gradient-code");
+
+# 🔍 策略梯度源码走读
+
+把策略梯度定理、GAE 与 PPO 裁剪落到真实代码：本文对照 OpenAI Spinning Up、CleanRL 单文件 PPO 与 Stable-Baselines3 三份实现。
+
+> 📌 前置：策略梯度定理见 [策略梯度](/tutorials/policy-gradient)；GAE 见 [Actor-Critic 与 GAE](/tutorials/actor-critic)；PPO 裁剪见 [PPO](/tutorials/ppo)。
+
+## 三份实现对照
+
+前面各节的 CodeRunner 都是为教学手写的玩具，这一节换一个视角：**到真实项目的代码里，看策略梯度定理、GAE、PPO 裁剪落地后长什么样**。挑三份有代表性的实现——OpenAI Spinning Up 的 VPG/PPO（官方教学标杆，代码极简）、CleanRL 的单文件 PPO（「一个文件读懂整个算法」的典范，注释与配套实验文档极全）、Stable-Baselines3 的 PPO（生产库，向量化环境/回调/日志全家桶）。三份代码定位不同，但内核完全同构：**采集整批轨迹 → GAE 算优势 → 优势归一化 → 裁剪目标多 epoch 小批量更新**——正是「[策略梯度定理](/tutorials/policy-gradient) → [Actor-Critic](/tutorials/actor-critic) → GAE → [PPO](/tutorials/ppo)」这条推导链的工程化身。<Cite n={[1,3,4]} />
+
+| 实现 | 定位 | 篇幅 | 适合谁读 |
+|---|---|---|---|
+| [Spinning Up](https://github.com/openai/spinningup) `spinup/algos/pytorch/vpg/vpg.py` | OpenAI 官方教学实现，VPG/PPO 共用一套骨架（TRPO 仅 TF1 版） | ~350 行/文件 | 想看「教材公式 ↔ 代码」逐行对应的人 |
+| [CleanRL](https://github.com/vwxyzjn/cleanrl/blob/master/cleanrl/ppo.py) `cleanrl/ppo.py` | 单文件 PPO，配套 [docs.cleanrl.dev](https://docs.cleanrl.dev/rl-algorithms/ppo/#ppopy) 逐行实验文档 | ~310 行 | 想一次读懂「采集 + GAE + 裁剪 + 多 epoch」全流程的人 |
+| [Stable-Baselines3](https://github.com/DLR-RM/stable-baselines3/blob/master/stable_baselines3/ppo/ppo.py) `stable_baselines3/ppo/ppo.py` | 生产级通用 RL 库，单测覆盖 95% 代码 | ~320 行 + 框架层 | 想直接在项目里用、或研究工程加固细节的人 |
+
+### VPG 损失：对数导数技巧的最终代码形态
+
+先看 Spinning Up 的 VPG（vanilla policy gradient）——它就是 REINFORCE + GAE 优势 + Actor/Critic 分开优化的完整版。整份文件的心脏只有这几行：<Cite n={1} />
+
+```python
+# spinup/algos/pytorch/vpg/vpg.py（节选，注释为本站所加）
+    # Set up function for computing VPG policy loss
+    def compute_loss_pi(data):
+        obs, act, adv, logp_old = data['obs'], data['act'], data['adv'], data['logp']
+
+        # Policy loss
+        pi, logp = ac.pi(obs, act)
+        # 策略梯度定理的最终形态:∇J = E[∇logπ · A]
+        # logp = logπ_θ(a|s)(对采样动作重算 log 概率),adv 即 GAE 优势
+        # 取负号是因为优化器做梯度下降,而我们要梯度上升
+        loss_pi = -(logp * adv).mean()
+
+        # Useful extra info(监控用,不参与损失)
+        approx_kl = (logp_old - logp).mean().item()
+        ent = pi.entropy().mean().item()
+        pi_info = dict(kl=approx_kl, ent=ent)
+
+        return loss_pi, pi_info
+```
+
+[策略梯度定理](/tutorials/policy-gradient)的四步推导——轨迹似然分解、对数导数技巧、EGLP 减基线、reward-to-go 因果性——穿过全部数学之后，落到代码里就是 `-(logp * adv).mean()` 这一行：`logp` 是 $\log\pi_\theta(a_t\mid s_t)$（autograd 自动给出 $\nabla_\theta\log\pi$），`adv` 是权重 $\hat A_t$（buffer 里已用 GAE 算好并归一化），`.mean()` 用 batch 均值估期望。**推导链上的每一步降方差（reward-to-go、减 $V$ 基线、GAE 插值），在这里都只剩一个更干净的 `adv`，乘法本身从未变过。**
+
+值得注意的还有它的更新方式：策略损失只走**一步**梯度（`pi_optimizer.step()` 一次），随后 Critic 用同一批数据跑 `train_v_iters=80` 步 MSE 回归。原因正是 [Actor-Critic 与 GAE](/tutorials/actor-critic) 讲的 on-policy 约束——策略一变，旧数据的分布就过期了，VPG 没有 PPO 那样的裁剪保护，多走一步就偏离推导成立的前提；而 Critic 回归的是 $V(s)$ 对回报的拟合，与策略新旧无关，可以放心多步。
+
+### GAE：CleanRL 的前向递推
+
+GAE 小节给出的定义是求和形式 $\hat A_t^{\mathrm{GAE}}=\sum_{l\ge0}(\gamma\lambda)^l\delta_{t+l}$，实现里没人真的存下所有 $\delta$ 再加权求和——统一写成**从轨迹末尾倒着走的递推**。CleanRL 的版本连 `dones`（episode 边界切断自举）都一并处理了：<Cite n={3} />
+
+```python
+# cleanrl/ppo.py（节选，注释为本站所加）
+        # bootstrap value if not done
+        with torch.no_grad():
+            # 轨迹在 num_steps 步被硬截断(不是自然终止)时,用 V(s_T) 自举,
+            # 而不是错当成终止状态(价值记 0)
+            next_value = agent.get_value(next_obs).reshape(1, -1)
+            advantages = torch.zeros_like(rewards).to(device)
+            lastgaelam = 0
+            # 从最后一步倒着走:递推 A_t = δ_t + γλ·A_{t+1}
+            for t in reversed(range(args.num_steps)):
+                if t == args.num_steps - 1:
+                    nextnonterminal = 1.0 - next_done
+                    nextvalues = next_value
+                else:
+                    # done[t+1]=1 说明 t+1 是新 episode 起点:切断自举,
+                    # δ_t 不再借下一个 episode 的价值给自己「买单」
+                    nextnonterminal = 1.0 - dones[t + 1]
+                    nextvalues = values[t + 1]
+                # TD 误差 δ_t = r_t + γV(s_{t+1}) - V(s_t)
+                delta = rewards[t] + args.gamma * nextvalues * nextnonterminal - values[t]
+                # 递推展开恰是 GAE 定义:Σ(γλ)^l δ_{t+l} 一行写完
+                advantages[t] = lastgaelam = delta + args.gamma * args.gae_lambda * nextnonterminal * lastgaelam
+            # TD(λ) 目标:returns = A + V,作价值损失的回归目标
+            returns = advantages + values
+```
+
+三处细节值得对着教程概念细看：
+
+- **`delta = rewards[t] + gamma * nextvalues * nextnonterminal - values[t]`**：就是 GAE 定义里的 TD 误差 $\delta_t=r_t+\gamma V(s_{t+1})-V(s_t)$，一行原文。[Actor-Critic 与 GAE](/tutorials/actor-critic) 的 CodeRunner 演示的「前向累加 `A = delta + g*lam*A`」，在真实实现里就是这个 `lastgaelam` 变量——从后往前一遍循环，$\sum_l(\gamma\lambda)^l\delta_{t+l}$ 就地展开，不需要任何显式求和。
+- **`nextnonterminal`**：episode 边界处把自举项归零。这与 [PPO 训练骨架](/tutorials/ppo#可运行-ppo-训练循环骨架) 里「轨迹被步数截断而非自然结束」的 bootstrap 处理是同一件事的两面——截断用 $V(s_T)$ 续账（`next_value`），自然终止把账结清（乘 0）。混着多个 episode 的批量 buffer 里，这两行判断就是 GAE 不跨 episode 泄漏的保证。
+- **`returns = advantages + values`**：GAE 小节讲过 $\hat A^{\mathrm{GAE}(\gamma,\lambda)}$ 与 TD(λ) 价值目标的关系——优势加上基线 $V$ 恰是 $\hat R_t$ 的估计，直接拿来当价值损失的回归目标，不必另算一遍 reward-to-go。
+
+### PPO 裁剪目标：三份实现，同一行公式
+
+PPO 小节的核心公式 $L^{\text{CLIP}}=\min(rA,\text{clip}(r,1-\varepsilon,1+\varepsilon)A)$，在 CleanRL 里是这样（注意它把取负号搬到了每一支上，用 `max` 而非 `min`）：<Cite n={[2,3]} />
+
+```python
+# cleanrl/ppo.py（节选，注释为本站所加）
+                _, newlogprob, entropy, newvalue = agent.get_action_and_value(
+                    b_obs[mb_inds], b_actions.long()[mb_inds])
+                # ratio = π_θ(a|s) / π_θold(a|s) = exp(logπ_new - logπ_old)
+                # 存 log 概率再取指数,避免直接存概率的数值下溢
+                logratio = newlogprob - b_logprobs[mb_inds]
+                ratio = logratio.exp()
+
+                with torch.no_grad():
+                    # k3 近似 KL:(ratio - 1) - logratio ≥ 0,比朴素的 -logratio 更稳
+                    approx_kl = ((ratio - 1) - logratio).mean()
+                    clipfracs += [((ratio - 1.0).abs() > args.clip_coef).float().mean().item()]
+
+                mb_advantages = b_advantages[mb_inds]
+                # 优势归一化:论文没写、工程标配,降方差「免费午餐」
+                if args.norm_adv:
+                    mb_advantages = (mb_advantages - mb_advantages.mean()) / (mb_advantages.std() + 1e-8)
+
+                # Policy loss
+                # 两支都取负号(max of 负 = 负的 min),clamp 即 clip(r, 1-ε, 1+ε)
+                pg_loss1 = -mb_advantages * ratio
+                pg_loss2 = -mb_advantages * torch.clamp(ratio, 1 - args.clip_coef, 1 + args.clip_coef)
+                pg_loss = torch.max(pg_loss1, pg_loss2).mean()
+```
+
+对照 Spinning Up 的同一段（`spinup/algos/pytorch/ppo/ppo.py` 的 `compute_loss_pi`），公式一个字符不差，只是写法取向不同：Spinning Up 存正目标取 `min` 再加负号，CleanRL 两支先取负再取 `max`——数学上完全等价。而「KL 早停」小节里那个 `target_kl` 熔断，两份实现也都原样保留：CleanRL 在每个 epoch 结束后检查 `approx_kl > args.target_kl` 即 `break`，Spinning Up 则放在每步梯度之前并留了 1.5 倍余量（`kl > 1.5 * target_kl` 才停）。<Cite n={1} />
+
+真正把「生产库」与「教学实现」区分开的，是 CleanRL 与 SB3 都默认带上、而教程伪代码省略的那些工程加固：**价值损失裁剪**（把 $V_\theta$ 的新预测也拴在旧值附近，CleanRL 的 `clip_vloss=True`）、**梯度范数裁剪**（`max_grad_norm=0.5`，防离群批量把参数推飞）、**正交初始化**（`layer_init`，actor 输出层 `std=0.01` 让初始策略接近均匀）、**学习率退火**（`anneal_lr` 随进度线性衰减）。SB3 的 `PPO.train()` 里还能看到 `clip_range` 支持传函数（随训练进度动态调整 $\varepsilon$）、`clip_range_vf` 可选开启价值裁剪、`target_kl` 早停同样在列——每一项都对应 [PPO 教程的工程超参数表](/tutorials/ppo#工程超参数表) 里的一行，只是生产库把它们做成了可配置项而非硬编码。<Cite n={4} />
+
+> 💡 **三份实现怎么选着读**：先读 Spinning Up 的 `vpg.py`（350 行看懂「定理 → 一行损失」），再读 CleanRL 的 `ppo.py`（把 GAE 递推、裁剪、多 epoch 小批量、工程加固串成完整闭环，配套文档逐行给实验结果），最后翻 SB3（看同一算法如何被包进向量化环境、回调与日志体系变成生产件）。顺带一提：PPO 精读页的[源码走读](/papers/ppo-schulman)从 SB3 与 TRL 两个实现再走了一遍裁剪目标，并延伸到 RLHF 场景下的 token 级 GAE 与 KL 惩罚奖励，可与本节对照。
+
+三份实现的源码：[Spinning Up vpg.py / ppo.py](https://github.com/openai/spinningup/tree/master/spinup/algos/pytorch)（注意仓库内目录是 `spinup` 而非 `spinningup`；PyTorch 版 TRPO 尚未实现，TF1 版在 `spinup/algos/tf1/trpo/`）、[cleanrl/ppo.py](https://github.com/vwxyzjn/cleanrl/blob/master/cleanrl/ppo.py)、[stable_baselines3/ppo/ppo.py](https://github.com/DLR-RM/stable-baselines3/blob/master/stable_baselines3/ppo/ppo.py)。想自己动手改，从 CleanRL 起步最省力：把 `clip_coef` 调到 1.0 感受裁剪的作用、把 `norm_adv` 关掉看方差变化、把 `gae_lambda` 从 0.95 拖到 0 和 1 对照 GAE 两端退化——「动手作业」的几个实验它都装得下。
+
+## 小结
+
+- Spinning Up 的 VPG 最适合看「定理 → 一行损失」的对应。
+- CleanRL 把采集、GAE 递推、裁剪、多 epoch 小批量与工程加固串成完整闭环。
+- SB3 展示同一算法如何进入向量化环境、回调与日志体系；三份实现的裁剪目标同构。
+
+## 延伸阅读
+
+- [策略梯度](/tutorials/policy-gradient)：定理与 REINFORCE。
+- [Actor-Critic 与 GAE](/tutorials/actor-critic)：GAE 的推导。
+- [PPO](/tutorials/ppo)：裁剪目标与训练循环。
+
+## 参考资料
+
+<References>
+1. OpenAI Spinning Up — *Intro to Policy Optimization* 与 *Key Equations in RL*。 [spinningup.openai.com](https://spinningup.openai.com/en/latest/spinningup/rl_intro3.html)。 —— 策略梯度定理的现代化讲解：EGLP lemma、基线 $V^\pi$ 的方差缩减、$V_\psi$ 的 MSE 训练目标、reward-to-go;VPG/TRPO/PPO/A2C 共用同一 Critic 套路。
+2. Schulman, Wolski, Dhariwal, Radford, Klimov (2017). *Proximal Policy Optimization Algorithms*. [arXiv:1707.06347](https://arxiv.org/abs/1707.06347). —— PPO 原始论文：提出裁剪 surrogate 目标 $L^{\text{CLIP}}=\min(rA,\text{clip}(r,1-\varepsilon,1+\varepsilon)A)$ 与自适应 KL 惩罚变体 PPO-Penalty；支持同一批数据多 epoch 小批量更新；在 Atari/连续控制/Mujoco 上权衡样本效率、简洁性、墙钟时间，优于 TRPO 等 on-policy 方法，成为 RLHF 时代的主力算法。
+3. Huang, S., Dossa, R. F. J., Ye, C., Braga, J., Chakraborty, D., Mehta, K., Araújo, J. G. M. (2022). *CleanRL: High-quality Single-file Implementations of Deep Reinforcement Learning Algorithms*. JMLR 23(274):1-18. [jmlr.org/papers/v23/21-1342.html](https://jmlr.org/papers/v23/21-1342.html). [cleanrl/ppo.py 源码](https://github.com/vwxyzjn/cleanrl/blob/master/cleanrl/ppo.py). —— 单文件 PPO 实现：`Agent`（actor/critic 双头 MLP + `layer_init` 正交初始化）+ 向量化采集 + GAE 倒序递推（`nextnonterminal` 切断 episode 边界自举）+ ratio 裁剪 + k3 近似 KL + 优势归一化 + 价值损失裁剪 + 梯度范数裁剪 + 学习率退火，全文件 ~310 行可一次读完；配套 [docs.cleanrl.dev](https://docs.cleanrl.dev/rl-algorithms/ppo/#ppopy) 给出逐行对照实验结果。本文是本篇「源码走读」一节 CleanRL GAE 递推与 PPO 裁剪目标片段的直接来源（原始源码 2026-09 经 raw.githubusercontent.com 拉取核对）。
+4. Raffin, A., Hill, A., Gleave, A., Kanervisto, A., Ernestus, M., Dormann, N. (2021). *Stable-Baselines3: Reliable Reinforcement Learning Implementations*. JMLR 22(268):1-8. [jmlr.org/papers/v22/20-1364.html](https://jmlr.org/papers/v22/20-1364.html). [stable_baselines3/ppo/ppo.py 源码](https://github.com/DLR-RM/stable-baselines3/blob/master/stable_baselines3/ppo/ppo.py). —— 生产级通用 RL 库的 PPO 实现：`PPO.train()` 的裁剪策略损失与 SB3 版完全同构，另提供 `clip_range`/`clip_range_vf` 调度（可传函数随进度变化）、`normalize_advantage`、`target_kl` 早停（1.5 倍余量）、`max_grad_norm` 梯度裁剪等可配置工程加固；GAE 在 `RolloutBuffer.compute_returns_and_advantage()` 中递推。库带自动化单元测试（覆盖 95% 代码）并对标参考实现基准测试。本文是本篇「源码走读」一节 SB3 工程加固描述的直接来源（原始源码 2026-09 经 raw.githubusercontent.com 拉取核对）。
+</References>

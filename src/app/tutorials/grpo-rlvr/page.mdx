@@ -4,7 +4,7 @@ export const metadata = tutorialMetadata("grpo-rlvr");
 
 # 🧠 GRPO 与可验证奖励：训练会推理的大模型
 
-上一篇 [RLHF](/tutorials/rlhf) 里，让大模型「听话」靠的是**奖励模型**：先从人类偏好学一个打分器 $r_\phi$，再用 [PPO](/tutorials/policy-gradient) 去最大化它的分数。但当任务是**数学题、写代码**这类有标准答案的场景，还需要学一个奖励模型吗？——答案对不对，程序跑不跑得过，**规则就能判**。
+上一篇 [RLHF](/tutorials/rlhf) 里，让大模型「听话」靠的是**奖励模型**：先从人类偏好学一个打分器 $r_\phi$，再用 [PPO](/tutorials/ppo) 去最大化它的分数。但当任务是**数学题、写代码**这类有标准答案的场景，还需要学一个奖励模型吗？——答案对不对，程序跑不跑得过，**规则就能判**。
 
 2025 年初，DeepSeek-R1 用两件事把大模型的**推理能力**推到了新高度<Cite n={2} />：
 
@@ -13,14 +13,14 @@ export const metadata = tutorialMetadata("grpo-rlvr");
 
 这一篇就把这两件事拆开讲透：GRPO 怎么在没有 critic 的情况下算优势、它和 PPO/DPO 到底差在哪、RLVR 的奖励怎么设计、KL 正则挪到哪去了，以及两个真实存在、论文专门写文章批判的**训练陷阱**（长度偏置、难度偏置）和它们的修法（Dr.GRPO、DAPO）。
 
-> 📌 前置：本篇假设你已经熟悉 [策略梯度与 PPO 裁剪](/tutorials/policy-gradient)、[优势函数](/tutorials/policy-gradient)、以及 [前向/反向 KL](/tutorials/forward-reverse-kl)。GRPO 几乎是站在 PPO 肩上做减法。
+> 📌 前置：本篇假设你已经熟悉 [策略梯度](/tutorials/policy-gradient) 与 [PPO 裁剪](/tutorials/ppo)、[优势函数](/tutorials/actor-critic)、以及 [前向/反向 KL](/tutorials/forward-reverse-kl)。GRPO 几乎是站在 PPO 肩上做减法。
 
 ## 一、先回忆 PPO 的负担：那个 critic
 
 PPO 是 **actor-critic** 算法。它同时要维护：
 
 - **策略网络（actor）** $\pi_\theta$——我们真正想要的东西；
-- **价值网络（critic）** $V_\psi(s)$——用来估计基线、算优势 $A_t = G_t - V_\psi(s_t)$（见[优势估计](/tutorials/policy-gradient)）；
+- **价值网络（critic）** $V_\psi(s)$——用来估计基线、算优势 $A_t = G_t - V_\psi(s_t)$（见[优势估计](/tutorials/actor-critic)）；
 - （RLHF 里还有）**奖励模型** $r_\phi$。
 
 在大模型场景，critic 通常和策略**一样大**（几十亿甚至上百亿参数）。训练时它要和策略同步前向、反向、更新——**显存和算力几乎翻倍**。而且对语言生成来说，给「半句话」估一个准确的价值本身就很难。
@@ -29,7 +29,7 @@ GRPO 的核心追问是：**能不能不要 critic，还能算出一个好用的
 
 ## 二、GRPO 的关键一招：用「一组回答」当基线
 
-回忆[策略梯度里降方差的基线](/tutorials/policy-gradient)：我们要的其实不是「价值」本身，而是一个**参照点**——让「比平均好的动作」被抬高、「比平均差的」被压低。critic 只是估这个参照点的一种方式。
+回忆[策略梯度里降方差的基线](/tutorials/actor-critic)：我们要的其实不是「价值」本身，而是一个**参照点**——让「比平均好的动作」被抬高、「比平均差的」被压低。critic 只是估这个参照点的一种方式。
 
 GRPO 换了个极简的思路：**对同一道题 $q$，一次采样 $G$ 个回答 $o_1,\dots,o_G$，直接用这一组的平均奖励当基线。**<Cite n={1} />
 
@@ -81,7 +81,7 @@ print("\\n答对的被抬高(A>0)、答错的被压低(A<0),基线就是这一�
 
 ## 三、目标函数：PPO 的裁剪外壳 + 组相对优势
 
-有了优势，GRPO 剩下的外壳几乎照抄 [PPO 的裁剪目标](/tutorials/policy-gradient)。对每个 token 定义概率比 $r_{i,t}(\theta)=\dfrac{\pi_\theta(o_{i,t}\mid q,o_{i,<t})}{\pi_{\theta_\text{old}}(o_{i,t}\mid q,o_{i,<t})}$，目标是
+有了优势，GRPO 剩下的外壳几乎照抄 [PPO 的裁剪目标](/tutorials/ppo)。对每个 token 定义概率比 $r_{i,t}(\theta)=\dfrac{\pi_\theta(o_{i,t}\mid q,o_{i,<t})}{\pi_{\theta_\text{old}}(o_{i,t}\mid q,o_{i,<t})}$，目标是
 
 $$
 \mathcal{J}_\text{GRPO}(\theta) = \mathbb{E}\!\left[\frac{1}{G}\sum_{i=1}^{G}\frac{1}{|o_i|}\sum_{t=1}^{|o_i|}

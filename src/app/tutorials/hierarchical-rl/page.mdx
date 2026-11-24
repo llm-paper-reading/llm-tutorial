@@ -817,7 +817,7 @@ print("=> 4 技能分到状态空间 4 个不同区域, I(S;Z)>>0 说明看状�
 | **大模型推理** | 「先列计划→分步执行→检查」是隐式选项链 | process reward + 选项式提示工程 |
 | **星际争霸/多单位控制** | 战略（造什么） vs 战术（怎么打）双时间尺度 | hierarchical macro-action |
 
-> ⚠️ 一个现实：**深度 RL 时代 HRL 的工程口碑复杂**。理论上时间抽象缩短视野、加速学习，但实践中 manager-worker 的训练不稳定、选项发现的质量参差、且很多任务用 [PPO](/tutorials/policy-gradient) + 好的奖励 shaping 就能解决。HRL 的真正杀手级场景是**奖励极稀疏、时间跨度极大**的任务（Montezuma's Revenge、长程导航），在这些场景下分层仍是少数能 work 的思路之一。
+> ⚠️ 一个现实：**深度 RL 时代 HRL 的工程口碑复杂**。理论上时间抽象缩短视野、加速学习，但实践中 manager-worker 的训练不稳定、选项发现的质量参差、且很多任务用 [PPO](/tutorials/ppo) + 好的奖励 shaping 就能解决。HRL 的真正杀手级场景是**奖励极稀疏、时间跨度极大**的任务（Montezuma's Revenge、长程导航），在这些场景下分层仍是少数能 work 的思路之一。
 
 ## 常见问题 FAQ
 

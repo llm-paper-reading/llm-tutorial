@@ -1,0 +1,231 @@
+import { tutorialMetadata } from "@/lib/tutorials";
+
+export const metadata = tutorialMetadata("meta-rl");
+
+# 🧭 元强化学习：学会快速学习
+
+元强化学习要回答的是：能不能从一堆任务里学到先验，让面对新任务时几步就能适配？本文比较 MAML 的「学初始化」与 RL² 的「学算法」。
+
+> 📌 前置：策略梯度见 [策略梯度](/tutorials/policy-gradient)；Actor-Critic 见 [Actor-Critic 与 GAE](/tutorials/actor-critic)。
+
+## 问题：任务分布上的快速适配
+
+前面所有方法——REINFORCE、Actor-Critic、TRPO、PPO——都假设智能体在一个**固定的** MDP 里从零学起，靠成千上万步交互慢慢把策略磨出来。但很多真实场景不是这样：机器人面对新地形、推荐系统面对新用户群、智能体面对新对手——**任务在变，而每个新任务上你没有几百万步可挥霍**。元强化学习（meta-RL）要回答的问题就是：**能不能从一堆过往任务里学到一种「先验」，让面对新任务时几步就适配？** 它不是让单任务学得快，而是**跨任务学到的先验让新任务快速适配**——所谓「学会如何快速学习（learning to learn）」。
+
+### 问题设定：任务分布 p(T)
+
+元 RL 把「单个 MDP」升级成「**任务分布** $p(\mathcal T)$」。每个任务 $\mathcal T_i$ 是一个 MDP（转移/奖励不同，但共享结构——比如都是迷宫但出口位置不同、都是机器人但质量不同）。训练时从 $p(\mathcal T)$ 采样很多任务，学一个**元参数** $\theta$ 使「在采样的新任务上**几步适配**后回报高」。测试时给一个从未见过的新任务 $\mathcal T_{\text{new}}\sim p(\mathcal T)$，只允许少量交互，看 $\theta$ 能否快速适配。这与监督学习的 few-shot learning 同构——那里是「见几张猫就认新猫」，这里是「玩几局新游戏就上手」。
+
+### 两条路：MAML 学初始化，RL² 学算法
+
+元 RL 有两大范式，思路截然不同：
+
+**MAML（Model-Agnostic Meta-Learning,[Finn et al., 2017]<Cite n={1} />）** 学一个「**易微调的初始化**」$\theta$。核心是**双层优化（bi-level optimization）**：<Cite n={1} />
+
+- **内循环（inner loop）**：对采样任务 $\mathcal T_i$,从 $\theta$ 走几步梯度下降,得到任务适配参数 $\theta'_i = \theta - \alpha\nabla_\theta \mathcal L_{\mathcal T_i}(f_\theta)$.在 RL 里 $\mathcal L_{\mathcal T_i}$ 就是 policy gradient 损失（在 $\mathcal T_i$ 上采几条轨迹,REINFORCE 或 actor-critic 更新）.
+- **外循环（outer loop）**：meta 目标评估**适配后**的 $\theta'_i$ 在该任务新轨迹上的泛化损失,$\min_\theta \mathbb E_{\mathcal T_i}[\mathcal L_{\mathcal T_i}(f_{\theta'_i})]$.关键是 **meta 梯度穿过内循环的梯度更新本身**——对原始 $\theta$ 求导时,要算 $\theta'_i$ 如何依赖 $\theta$（$\theta'_i=\theta-\alpha\nabla\mathcal L$,故 $\partial\theta'_i/\partial\theta=I-\alpha\nabla^2\mathcal L$ 含二阶 Hessian 项）.这一阶泰勒近似即 **FOMAML**(first-order MAML),省掉 Hessian 算力.
+
+直觉：MAML 不优化 $\theta$ 在任务上的直接损失，而是优化「**从 $\theta$ 走几步后**的损失」——所以 $\theta$ 被推向参数空间里「几步梯度就能到达好解」的区域，而非「本身就在好解」的区域。
+
+**RL²（[Duan et al., 2016]<Cite n={2} />）** 不手设快速 RL 算法，**把 RL 算法本身编码进 RNN 的权重**。一个 RNN 策略跨 episode 维持隐藏状态（同一个 MDP 内**不重置**隐藏状态），隐藏激活充当「面对未见 MDP 时的算法记忆」。输入是 $(o_t, a_{t-1}, r_{t-1}, \text{done}_{t-1})$——正是普通 RL 算法需要的信息。双时间尺度：训练时**慢速**权重更新学出一个 RNN（用标准 PPO/TRPO 在任务分布上训），测试时**快速**激活更新（按 episode 累积隐藏状态）即可适配新 MDP，无需任何梯度步。<Cite n={2} />
+
+| 范式 | 学什么 | 优化结构 | 梯度阶数 | 算法可解释性 |
+|---|---|---|---|---|
+| **MAML** | 易微调的初始化 $\theta$ | 显式双层（内/外循环） | 二阶（可一阶近似 FOMAML） | 高（就是梯度下降） |
+| **RL²** | RNN 权重 = 学到的算法 | 单层（RNN 跨 episode） | 一阶（靠 RNN 记忆） | 低（算法隐式学出，黑箱） |
+| PEARL（进阶） | 任务上下文后验 $z\sim q_\phi(z\mid c)$ | off-policy + 变分推断 | 一阶 | 中（上下文变量可解释） |
+
+两者本质区别：MAML 显式建模「内循环 = 梯度下降」，meta 学的是**初始化**；RL² 让 RNN 自己学出内循环算法，meta 学的是**算法本身**（藏在 RNN 权重 + 隐藏状态动态里）。MAML 透明但受限于「内循环是梯度下降」这一归纳偏置；RL² 灵活但黑箱、难调试。后续 **PEARL**（[Rakelly et al., 2019]）走第三条路：学一个**上下文变量** $z$ 的后验 $q_\phi(z\mid c)$（$c$ 是任务的一小批 transition），策略 $\pi(a\mid s,z)$ 条件化于 $z$——把「任务身份」显式编码成可推断的潜变量，且是 off-policy（样本效率高）。
+
+### 可运行演示：MAML 内/外循环
+
+用一个一维玩具体会 MAML 双层优化的数学：任务族是「找抛物线顶点」$y=-(x-a)^2+1$，每个任务的顶点位置 $a\sim\text{Uniform}(-2,2)$ 不同。模型就一个参数 $a_0$（初始顶点猜测），内循环 1 步梯度下降适配任务 $a_i$，外循环 meta 梯度对 $a_0$ 求导。损失 $\mathcal L_{\mathcal T_i}(a)=(a-a_i)^2$，故内循环 $a'_i=a_0-2\alpha(a_0-a_i)$，meta 目标 $\mathbb E_{\mathcal T_i}[(a'_i-a_i)^2]=(1-2\alpha)^2\mathbb E[(a_0-a_i)^2]$，meta 梯度 $2(1-2\alpha)^2(a_0-\bar a)$ 指向任务族均值 $\bar a$。
+
+<CodeRunner title="MAML 双层优化：一维抛物线顶点任务族" language="python" defaultCode={`import random
+
+# 任务族: 顶点 a ~ Uniform(-2,2), 模型参数 a0, 内循环 1 步梯度下降
+ALPHA, BETA = 0.1, 0.1  # 内/外循环步长
+
+def inner_adapt(a0, a_i):
+    # a'_i = a0 - alpha * d/da0 (a0-a_i)^2 = a0 - 2*alpha*(a0-a_i)
+    return a0 - 2 * ALPHA * (a0 - a_i)
+
+def meta_step(a0, tasks):
+    # meta 梯度 = 2*(1-2alpha)^2 * (a0 - mean_a)
+    mean_a = sum(tasks) / len(tasks)
+    grad = 2 * (1 - 2 * ALPHA) ** 2 * (a0 - mean_a)
+    return a0 - BETA * grad
+
+# meta 训练: 从远离最优的 a0=5 出发
+random.seed(0)
+a0 = 5.0
+print(f"meta 训练前: a0={a0:.4f}")
+for step in range(500):
+    tasks = [random.uniform(-2, 2) for _ in range(8)]
+    a0 = meta_step(a0, tasks)
+print(f"meta 训练后: a0={a0:.4f} (任务族 a~U(-2,2) 均值=0)")
+
+# 测试: MAML 初始化 vs naive 初始化(a0=5 不 meta 学)在新任务上 1 步适配
+def adapt_err(a0_init, a_i, n_steps=1):
+    a = a0_init
+    for _ in range(n_steps):
+        a = a - 2 * ALPHA * (a - a_i)
+    return abs(a - a_i)
+
+random.seed(42)
+test = [random.uniform(-2, 2) for _ in range(20)]
+maml = sum(adapt_err(a0, t) for t in test) / 20
+naive = sum(adapt_err(5.0, t) for t in test) / 20
+print()
+print(f"新任务 1 步适配误差(20 任务均值):")
+print(f"  MAML init a0={a0:.4f}: {maml:.4f}")
+print(f"  naive init a0=5.0   : {naive:.4f}")
+print(f"  MAML 优势: naive/MAML = {naive/maml:.1f}x")
+`} />
+
+预期输出：
+
+```
+meta 训练前: a0=5.0000
+meta 训练后: a0=-0.0398 (任务族 a~U(-2,2) 均值=0)
+
+新任务 1 步适配误差(20 任务均值):
+  MAML init a0=-0.0398: 0.8465
+  naive init a0=5.0   : 4.3558
+  MAML 优势: naive/MAML = 5.1x
+```
+
+> 💡 **看图要点**：meta 训练把 $a_0$ 从 5.0 拉到 -0.04（趋近任务族均值 0），新任务 1 步适配误差 MAML 0.85 vs naive 4.36——**5.1 倍优势**。但要诚实：这个玩具里 MAML 退化成「学到任务族均值」，因为损失是凸的 $(a-a_i)^2$、任务族对称，最优 $a_0$ 就是均值。真实 MAML 的威力在**非凸的策略神经网络 + 结构更复杂的任务族**（如机器人不同质量/摩擦）：那里「学均值」没用，「学一个几步梯度就到达好解的初始化」才显价值——meta 梯度穿过内循环让 $\theta$ 落在「各任务好解的公共可达邻域」，这是 MAML 区别于「直接在任务族上联合训练取平均」的核心。
+
+> 📌 **MAML vs RL² vs 普通 fine-tune**：普通 fine-tune 在新任务上从随机初始化（或通用预训练初始化）出发走很多步；MAML 从「meta 学到的易微调初始化」出发走几步；RL² 不走梯度，靠 RNN 跨 episode 隐藏状态「记住」新任务的特征。三者对应「不学学先验 / 学初始化先验 / 学算法先验」。MAML 透明可配任意梯度模型但二阶算力贵、受限于梯度下降内循环；RL² 一阶省算力但黑箱、靠 RNN 容量记忆任务。元 RL 与 [课程学习](/tutorials/reinforcement-learning#课程学习从易到难的教学法)、迁移学习同源——都是「用过往任务的结构帮新任务」——但 meta-RL 显式建模任务分布 $p(\mathcal T)$ 与 meta 目标，是「学会学习」的最形式化版本。
+
+### FOMAML：把 meta 梯度的二阶项砍掉
+
+MAML 透明、有原则，但 MAML 的推导里那句「meta 梯度穿过内循环，含二阶 Hessian 项」是它工程上的阿喀琉斯之踵。算 Hessian-向量积 $\nabla^2\mathcal L\,\mathbf v$ 在深度网络里要额外一次反向传播（与 [TRPO 共轭梯度法里的 Hessian-向量积](/tutorials/trpo#二阶近似目标一阶约束二阶)同源），且内循环多步时 Hessian 链式相乘，数值不稳、显存翻倍。Finn et al. 2017 在原论文里就给了一个工程兜底——**FOMAML(first-order MAML)**：把 meta 梯度里的二阶项直接砍掉，只用一阶信息 <Cite n={1} />。
+
+**完整 meta 梯度怎么来。** 单步内循环 $\theta'_i=\theta-\alpha\nabla_\theta\mathcal L_{\mathcal T_i}(\theta)$，meta 目标是 $\min_\theta\mathbb E_{\mathcal T_i}[\mathcal L_{\mathcal T_i}(\theta'_i)]$。对 $\theta$ 求导要穿过内循环的梯度更新本身——链式法则给
+
+$$
+\nabla_\theta\,\mathcal L_{\mathcal T_i}(\theta'_i)\;=\;\underbrace{\left(\frac{\partial\theta'_i}{\partial\theta}\right)^{\!\top}}_{\text{内循环雅可比}}\nabla_{\theta'_i}\,\mathcal L_{\mathcal T_i}(\theta'_i)\;=\;\bigl(I-\alpha\,\nabla^2_\theta\mathcal L_{\mathcal T_i}(\theta)\bigr)^{\!\top}\nabla_{\theta'_i}\,\mathcal L_{\mathcal T_i}(\theta'_i).
+$$
+
+关键是中间那个 $I-\alpha\nabla^2\mathcal L$：它是内循环梯度更新 $\theta'=\theta-\alpha\nabla\mathcal L$ 对 $\theta$ 的雅可比，$\nabla^2\mathcal L$ 是损失在 $\theta$ 处的 **Hessian**。算它要二次反向传播，贵且不稳。多步内循环时雅可比链式相乘 $(I-\alpha H_1)(I-\alpha H_2)\cdots$，更贵。
+
+**FOMAML 的近似。** 把雅可比里的 $\alpha\nabla^2\mathcal L$ 项**直接舍掉**，只留 $I$：
+
+$$
+\nabla_\theta^{\,\text{FO}}\,\mathcal L_{\mathcal T_i}(\theta'_i)\;\approx\;\nabla_{\theta'_i}\,\mathcal L_{\mathcal T_i}(\theta'_i).
+$$
+
+即 FOMAML 直接拿「**适配后参数 $\theta'_i$ 处的损失梯度**」当 meta 梯度——内循环照常走梯度下降得 $\theta'_i$，但外循环对 $\theta$ 更新时假装 $\theta'_i$ 与 $\theta$ 无关（雅可比 $\approx I$）。计算上只要一次反向传播（算 $\nabla_{\theta'}\mathcal L$），与普通 SGD 同价。
+
+**偏差有多大。** 令 $\mathbf g'=\nabla_{\theta'}\mathcal L(\theta'_i)$， $H=\nabla^2\mathcal L(\theta)$，则 MAML 梯度 $=\mathbf g'-\alpha H\mathbf g'$， FOMAML 梯度 $=\mathbf g'$，偏差正是被砍掉的那项：
+
+$$
+\underbrace{\nabla^{\,\text{FO}}}_{\text{FOMAML}}\;-\;\underbrace{\nabla}_{\text{MAML}}\;=\;\alpha\,H\,\mathbf g'.
+$$
+
+这个偏差**沿 $H\mathbf g'$ 方向**，大小正比于 $\alpha$、Hessian 的曲率、以及适配后梯度本身。当 $\alpha$ 小（内循环走一小步，$\theta'\approx\theta$，Hessian 项小）或损失近二次（$H$ 接近常数，梯度方向变化小）时，偏差主要是**幅值缩放**而非方向偏转——FOMAML 与 MAML 的梯度方向高度一致，只是步长略有差异。这正是 FOMAML 在深度 RL 里能用的根因：它没把 meta 梯度方向带歪，只是少校正了一点幅值。
+
+下面三段代码把偏差量化：① 二次损失（Hessian 恒等）看偏差的解析结构；② 非二次损失（Hessian 随 $\theta$ 变）看方向是否仍一致；③ 8 任务 meta 梯度均值对比，看真实 meta 更新方向的偏差。
+
+<CodeRunner defaultCode={`import numpy as np
+
+# ============================================================
+# FOMAML vs MAML: meta 梯度的二阶项偏差
+# 单步内循环 theta' = theta - alpha * grad_L(theta)
+#   MAML  meta 梯度 = (I - alpha*H) * grad_L(theta')
+#   FOMAML meta 梯度 = grad_L(theta')          (舍弃 alpha*H*grad 项)
+#   偏差 = alpha * H * grad_L(theta')
+# ============================================================
+
+# === 段1: 二次损失 L=0.5*(theta-a)^2, Hessian=I (恒等, 解析可算) ===
+print("=== 段1: 二次损失 L=0.5*(theta-a)^2, Hessian=I ===\\n")
+alpha, a_i, theta = 0.1, 1.5, 0.0
+grad_L_theta = theta - a_i
+theta_prime = theta - alpha * grad_L_theta
+grad_L_theta_prime = theta_prime - a_i
+H = 1.0
+maml_grad = (1 - alpha * H) * grad_L_theta_prime
+fomaml_grad = grad_L_theta_prime
+print(f"  theta={theta}, a_i={a_i}, alpha={alpha}")
+print(f"  内循环: theta' = theta - alpha*(theta-a) = {theta_prime:.4f}")
+print(f"  grad_L(theta') = theta' - a = {grad_L_theta_prime:.4f}")
+print(f"  MAML  meta 梯度 = (1-alpha*H)*grad = (1-{alpha}*1)*{grad_L_theta_prime:.4f} = {maml_grad:.4f}")
+print(f"  FOMAML meta 梯度 = grad = {fomaml_grad:.4f}")
+print(f"  偏差 = alpha*H*grad = {alpha*H*grad_L_theta_prime:.4f}")
+print(f"  方向 cos = 1.0 (二次损失 H=1, FOMAML 是 MAML 的 {(1-alpha*H):.2f} 常数倍, 方向完全一致)")
+print(f"  -> 二次损失下 FOMAML 只缩放幅值, 不改方向; 砍二阶项零代价。")
+
+# === 段2: 非二次损失 L=0.5*theta^4 - a*theta, Hessian=3*theta^2 (随 theta 变) ===
+print("\\n=== 段2: 非二次损失 L=0.5*theta^4 - a*theta, Hessian=3*theta^2 ===\\n")
+alpha, a_i, theta = 0.1, 1.5, 0.5
+def grad(t): return t**3 - a_i
+def hess(t): return 3*t**2
+g_theta = grad(theta)
+theta_prime = theta - alpha * g_theta
+g_prime = grad(theta_prime)
+H_prime = hess(theta_prime)
+maml_grad2 = g_prime - alpha * H_prime * g_prime
+fomaml_grad2 = g_prime
+rel = abs(fomaml_grad2 - maml_grad2) / abs(maml_grad2)
+cos = fomaml_grad2*maml_grad2/(abs(fomaml_grad2)*abs(maml_grad2))
+print(f"  theta={theta}, a_i={a_i}, alpha={alpha}")
+print(f"  grad_L(theta) = theta^3 - a = {g_theta:.4f}")
+print(f"  内循环: theta' = {theta_prime:.4f}")
+print(f"  grad_L(theta') = {g_prime:.4f},  Hessian(theta') = 3*theta'^2 = {H_prime:.4f}")
+print(f"  MAML  meta 梯度 = grad' - alpha*H'*grad' = {maml_grad2:.6f}")
+print(f"  FOMAML meta 梯度 = grad' = {fomaml_grad2:.6f}")
+print(f"  偏差 = alpha*H'*grad' = {alpha*H_prime*g_prime:.6f}")
+print(f"  相对偏差 |偏差|/|MAML| = {rel:.4f},  方向 cos = {cos:.6f}")
+print(f"  -> 非二次损失 Hessian 项非零, 相对偏差 ~14%, 但方向 cos=1 (同号),")
+print(f"     FOMAML 仍是 MAML 的幅值缩放, 不改变 meta 更新方向。")
+
+# === 段3: 8 任务 meta 梯度均值对比 (真实 meta 更新) ===
+print("\\n=== 段3: 8 任务 meta 梯度均值 (非二次损失, 真实 meta 更新) ===\\n")
+rng = np.random.default_rng(42)
+theta, alpha = 0.5, 0.1
+tasks = rng.uniform(-2, 2, size=8)
+maml_meta, fomaml_meta = 0.0, 0.0
+for a_i in tasks:
+    g_theta = grad(theta)
+    theta_prime = theta - alpha * g_theta
+    g_prime = grad(theta_prime)
+    H_prime = hess(theta_prime)
+    maml_meta += g_prime - alpha * H_prime * g_prime
+    fomaml_meta += g_prime
+maml_meta /= len(tasks); fomaml_meta /= len(tasks)
+rel = abs(fomaml_meta - maml_meta) / abs(maml_meta)
+cos = fomaml_meta*maml_meta/(abs(fomaml_meta)*abs(maml_meta))
+print(f"  theta={theta}, 8 任务 a~U(-2,2), alpha={alpha}")
+print(f"  MAML  meta 梯度(均值) = {maml_meta:.6f}")
+print(f"  FOMAML meta 梯度(均值) = {fomaml_meta:.6f}")
+print(f"  偏差 = {fomaml_meta-maml_meta:.6f},  相对偏差 = {rel:.4f},  方向 cos = {cos:.6f}")
+print(f"  -> 8 任务聚合后方向仍完全一致 (cos=1), FOMAML 偏差是 ~18% 幅值缩放;")
+print(f"     深度 RL 实践中 alpha 小 + Adam 自适应步长会进一步吸收这种缩放,")
+print(f"     这正是 Finn 2017 原论文发现 FOMAML 与 MAML 性能相当的根因 [9]。")
+`} title="FOMAML vs MAML: meta 梯度二阶项偏差" />
+
+> 💡 **与 TRPO→PPO 的跨篇呼应**：MAML 的二阶 Hessian 算力贵，与 [TRPO 的 Fisher-向量积](/tutorials/trpo#二阶近似目标一阶约束二阶)完全同病——两者都要算 Hessian-向量积（二次反向传播）、都对深度网络数值敏感。FOMAML 砍二阶项保留一阶，与 PPO 砍 KL 约束保留裁剪，是**同一类工程哲学**：牺牲一点理论精度换大幅算力节省与数值稳定。差别在 PPO 用 clip 近似 KL 约束，FOMAML 用 $I$ 近似内循环雅可比——前者近似「分布距离」，后者近似「参数依赖」。两者都靠「近似误差主要是幅值缩放、不改方向」兜底，所以工程上鲁棒。
+
+**FOMAML 何时失准。** 偏差 $\alpha H\mathbf g'$ 在三种情况下不再只是良性的幅值缩放：① **$\alpha$ 大**（内循环走远，$\theta'$ 偏离 $\theta$ 大，Hessian 在两点间变化大，$I$ 近似失真）；② **损失曲面强非凸**（Hessian 方向随 $\theta$ 急剧变化，$H\mathbf g'$ 与 $\mathbf g'$ 不再近似共线，方向偏转出现）；③ **内循环多步**（雅可比链式相乘 $(I-\alpha H_1)\cdots(I-\alpha H_k)$，每步舍掉的 $\alpha H$ 误差累积）。实践中 MAML 用小 $\alpha$ + 1-5 步内循环，这三种失准条件都不严重；但若把内循环步数推到很大或 $\alpha$ 调高，FOMAML 与 MAML 的差距会显现。
+
+**一阶 meta-RL 家族。** FOMAML 不是唯一的一阶近似。**Reptile**（Nichol et al. 2018）走得更远：连外循环的「在 $\theta'$ 处算梯度」都省了，直接把 $\theta$ 沿 $\theta'-\theta$ 方向更新（即「朝适配后的参数走」），完全无需反向传播穿过内循环——它是 FOMAML 的进一步简化，在简单任务族上与 MAML 表现相近。**ANIL**（almost no inner loop,Raghu et al. 2020）则发现内循环只更新网络最后一层就足够，前面层靠外循环一阶梯度自然学出——把 FOMAML「一阶够用」的洞察推到极致。这三者（FOMAML / Reptile / ANIL）构成一阶 meta-RL 的谱系，核心洞见都是 Finn 2017 原论文的那个经验发现：**meta 梯度里二阶项的贡献小到可以忽略** <Cite n={1} />。这也解释了为何工业界 meta-RL 几乎不用完整 MAML——二阶精度的理论收益抵不过一阶近似的工程节省。
+
+## 小结
+
+- MAML 学一个易微调的初始化 $	heta$，内循环几步梯度适配任务，外循环对适配后的表现做元优化。
+- 元梯度穿过内循环会产生二阶项，FOMAML 直接忽略二阶项，用一阶近似换算力。
+- RL² 把快速学习算法编码进 RNN 权重，用隐藏状态充当跨 episode 的算法记忆。
+
+## 延伸阅读
+
+- [Actor-Critic 与 GAE](/tutorials/actor-critic)：MAML 内循环常用的策略梯度估计。
+- [持续学习](/tutorials/continual-learning)：另一个「多任务/非平稳」视角。
+
+## 参考资料
+
+<References>
+1. Finn, Abbeel, Levine (2017). *Model-Agnostic Meta-Learning for Fast Adaptation of Deep Networks*. ICML 2017. [arXiv:1703.03400](https://arxiv.org/abs/1703.03400). —— MAML 原始论文：学一个「易微调的初始化」$\theta$，双层优化（内循环几步梯度得 $\theta'_i$、外循环 meta 梯度穿过内循环对 $\theta$ 求导含二阶 Hessian 项，可用 FOMAML 一阶近似）；模型无关——兼容任意梯度训练模型（分类/回归/RL）；RL 应用内循环用 policy gradient 在任务 $\mathcal T_i$ 几条轨迹上更新、外循环评估适配后策略。本篇「元强化学习」小节 MAML 双层优化的直接来源。
+2. Duan, Schulman, Chen, Bartlett, Sutskever, Abbeel (2016). *RL²: Fast Reinforcement Learning via Slow Reinforcement Learning*. [arXiv:1611.02779](https://arxiv.org/abs/1611.02779). —— RL² 原始论文：把快速 RL 算法本身编码进 RNN 权重（慢速标准 RL 训练学出），RNN 跨 episode 维持隐藏状态（同 MDP 内不重置）充当面对未见 MDP 的算法记忆，输入 $(o_t,a_{t-1},r_{t-1},\text{done}_{t-1})$；双时间尺度（训练慢权重、测试快激活）。本篇「元强化学习」小节 RL² 范式的直接来源。
+</References>

@@ -1222,7 +1222,7 @@ print(f'  机制: lam 是约束价格; 价格太低策略犯规, 太高策略过
 
 ### CPO：把 TRPO 的信赖域扩到带代价约束
 
-Lagrangian 是「软」约束（违反罚钱、不违反不管），要想「**每一步迭代都近似满足约束**」的硬保证，就上 **CPO(Constrained Policy Optimization,Achiam et al. 2017 [4])**。它直接把 [TRPO](/tutorials/policy-gradient#trpo信赖域与单调提升) 的信赖域框架扩到受限设定：在 TRPO「目标一阶 + KL 二阶信赖域」的基础上，**再加一条代价约束的线性近似**——<Cite n={4} />
+Lagrangian 是「软」约束（违反罚钱、不违反不管），要想「**每一步迭代都近似满足约束**」的硬保证，就上 **CPO(Constrained Policy Optimization,Achiam et al. 2017 [4])**。它直接把 [TRPO](/tutorials/trpo) 的信赖域框架扩到受限设定：在 TRPO「目标一阶 + KL 二阶信赖域」的基础上，**再加一条代价约束的线性近似**——<Cite n={4} />
 
 $$
 \max_\theta\; g^\top(\theta-\theta_k)\quad\text{s.t.}\quad \tfrac12(\theta-\theta_k)^\top H(\theta-\theta_k)\le\delta,\;\;\; b^\top(\theta-\theta_k)\le d-J_C(\pi_{\theta_k})
@@ -1516,7 +1516,7 @@ DDPG/TD3/SAC 的 actor 网络 $\mu_\theta(s)$ 学的，在 LQR 能解的情形�
 **不行，必须减 Jacobian 修正项**。高斯给的是 pre-tanh 动作 $u$ 的密度 $\mu(u\mid s)$，但策略损失里要的是压扁后动作 $\tilde a=\tanh(u)$ 的密度 $\pi(\tilde a\mid s)$。$\tanh$ 把支撑从 $\mathbb R$ 压到 $(-1,1)$、扭曲了体积，按换元公式 $\pi(\tilde a\mid s)=\mu(u\mid s)\cdot\frac{1}{1-\tanh(u)^2}$，故 $\log\pi=\log\mu-\log(1-\tanh(u)^2)$（多维求和）。漏掉修正项会让 $\log\pi$ 偏大（尤其在动作接近边界 $|u|$ 大时，偏几甚至几十），熵项 $\alpha\log\pi$ 全跟着错，最大熵目标走形。实现里还要用稳定恒等式 $\log(1-\tanh(u)^2)=2(\log2-u-\text{softplus}(-2u))$ 算，否则 $|u|$ 大时 $1-\tanh^2$ 下溢为 0、$\log(0)=-\infty$ 直接崩。
 
 **Q：这些和 PPO 什么关系？**
-[PPO](/tutorials/policy-gradient) 也能做连续控制（输出高斯策略的均值方差），但它是 **on-policy**、样本效率较低，胜在稳定简单，是 [RLHF](/tutorials/rlhf) 的主力。DDPG/TD3/SAC 是 **off-policy**，样本效率高、更适合与真实机器人交互代价昂贵的场景。
+[PPO](/tutorials/ppo) 也能做连续控制（输出高斯策略的均值方差），但它是 **on-policy**、样本效率较低，胜在稳定简单，是 [RLHF](/tutorials/rlhf) 的主力。DDPG/TD3/SAC 是 **off-policy**，样本效率高、更适合与真实机器人交互代价昂贵的场景。
 
 **Q：既然有 LQR 这种闭式解，为什么还要 DDPG/TD3/SAC?**
 LQR 只在**动力学已知且线性、代价二次**时才有闭式解——这三个假设极强。真实机器人动力学是非线性的（关节耦合、摩擦、气动力）、代价也未必是二次的（撞墙是硬约束不是二次罚）。LQR 的真正用法是在**工作点附近线性化**得到局部 $A,B$ + 二次代价，跑局部最优控制（直升机悬停、机械臂抓取的工业标配）；大范围机动或强非线性时 LQR 失准，才需要 DDPG/TD3/SAC 这类无模型神经方法。二者并非二选一：工程上常常 LQR 做基座、神经方法做改进，或用 MPC（滚动 horizon LQR）在两者之间折中。DDPG/TD3/SAC 的 actor/critic 网络，在 LQR 能解的情形里就是在逼近 $u=-Kx$ 和 $V=x^\top Px$——LQR 划清了「闭式可解」与「必须学习」的边界。

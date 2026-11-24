@@ -11,11 +11,11 @@ export const metadata = paperMetadata(paper);
 
 > 🕰 **论文溯源**：GRPO 最早由 DeepSeekMath（Shao et al., 2024，arXiv:2402.03300）提出，当时的动机就是降低 PPO 的显存开销；R1 论文也明确把 GRPO 归功于该工作。R1 的推进在于把奖励从训练出来的奖励模型换成规则验证，并把 GRPO 用到通用推理任务上。<Cite n={[1,2]} />
 
-> 📌 前置：熟悉 [PPO 裁剪](/tutorials/policy-gradient) 与 [优势函数](/tutorials/policy-gradient) 会很有帮助。GRPO 几乎是站在 PPO 肩上做减法。
+> 📌 前置：熟悉 [PPO 裁剪](/tutorials/ppo) 与 [优势函数](/tutorials/actor-critic) 会很有帮助。GRPO 几乎是站在 PPO 肩上做减法。
 
 ## 一、动机：为什么不要 critic?
 
-[PPO](/tutorials/policy-gradient) 是 actor-critic：除了策略网络 $\pi_\theta$，还要维护一个**价值网络** $V_\psi(s)$ 来算基线、估计优势 $A_t = G_t - V_\psi(s_t)$。<Cite n={3} />在大模型场景，这个 critic 通常和策略**一样大**（几十亿参数），显存与算力近乎翻倍；而且给「半句话」估准确价值本身就难。<Cite n={2} />
+[PPO](/tutorials/ppo) 是 actor-critic：除了策略网络 $\pi_\theta$，还要维护一个**价值网络** $V_\psi(s)$ 来算基线、估计优势 $A_t = G_t - V_\psi(s_t)$。<Cite n={3} />在大模型场景，这个 critic 通常和策略**一样大**（几十亿参数），显存与算力近乎翻倍；而且给「半句话」估准确价值本身就难。<Cite n={2} />
 
 GRPO 的追问是：**能不能不要 critic，还能算出一个好用的基线？**
 

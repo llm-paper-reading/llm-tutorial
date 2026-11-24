@@ -1,0 +1,316 @@
+import { tutorialMetadata } from "@/lib/tutorials";
+
+export const metadata = tutorialMetadata("safe-rl");
+
+# 🛡️ 安全强化学习：带约束的优化
+
+真实系统常常「奖励越大越好，但代价不能越界」。本文把安全 RL 写成 CMDP，比较三种解法：CPO 的信赖域投影、PPO-Lagrangian 的对偶乘子、Recovery RL 的安全滤波。
+
+> 📌 前置：策略梯度见 [策略梯度](/tutorials/policy-gradient)；TRPO 见 [TRPO](/tutorials/trpo)；PPO 见 [PPO](/tutorials/ppo)。
+
+## 问题：奖励之外的代价约束
+
+前面所有方法——REINFORCE、Actor-Critic、TRPO、PPO——都假设「**奖励越大越好**」，智能体可以不择手段地最大化回报。但真实世界很少这样：自动驾驶要快但**不能撞人**（安全约束）、机器人要完成任务但**不能用力过猛扭坏关节**（物理约束）、推荐系统要点击率但**不能推送违规内容**（合规约束）、电网调度要省钱但**不能过载**（运行约束）。这些场景里，有一类「**代价（cost）**」必须压在某个上限之下，奖励再高也不能突破。**安全强化学习（safe RL）** 研究的就是：**在满足代价约束的前提下最大化回报**。
+
+### CMDP：把约束写进问题定义
+
+标准 MDP 只有奖励 $r$。**约束马尔可夫决策过程（Constrained MDP,CMDP）**<Cite n={2} /> 在此基础上加一组辅助代价函数 $C_i:S\times A\times S\to\mathbb R$ 与对应上限 $d_i$。<Cite n={2} />策略的**代价回报**定义为：
+
+$$
+J_{C_i}(\pi)\;=\;\mathbb E_{\tau\sim\pi}\!\left[\sum_{t=0}^{\infty}\gamma^t\,C_i(s_t,a_t,s_{t+1})\right]
+$$
+
+可行策略集是所有代价都不超限的策略：
+
+$$
+\Pi_C\;\doteq\;\bigl\{\pi\in\Pi:\;\forall i,\;J_{C_i}(\pi)\le d_i\bigr\}
+$$
+
+CMDP 的优化问题就是把策略空间从全部 $\Pi$ 收到 $\Pi_C$：
+
+$$
+\pi^*\;=\;\arg\max_{\pi\in\Pi_C}\;J(\pi)
+$$
+
+**与标准 MDP 唯一的本质差别**就是策略空间从「全部」收到「代价不超限的子集」。朴素做法是把代价折进奖励（$r'=r-\sum\lambda_i C_i$，即奖励塑质），但 $\lambda_i$ 要手调、且塑质后最优策略未必满足原约束（potential-based 塑质保证最优策略不变但**不保证约束满足**）。安全 RL 需要专门算法**显式处理约束**。
+
+### 三种解法：CPO 信赖域 / PPO-Lagrangian 对偶 / 奖励塑质
+
+主流安全 RL 有三种把约束融进优化的思路，区别在「约束怎么生效」：
+
+| 方法 | 约束怎么生效 | 代表算法 | 特点 |
+|---|---|---|---|
+| **信赖域硬约束** | 每步更新在 KL 信赖域内**显式投影**到可行集 | CPO(Achiam et al. 2017 <Cite n={1} />) | 每步近约束满足有理论保证，二阶求解复杂 |
+| **拉格朗日对偶** | 把约束上升为对偶变量 $\lambda$，与策略交替优化 | PPO-Lagrangian | 一阶简单，但 $\lambda$ 调参敏感、振荡 |
+| **安全滤波（双策略）** | 任务策略只管奖励，**安全 critic 估违反概率**，超阈值则用**恢复策略**覆盖动作 | Recovery RL(Thanananjeyan et al. 2021 <Cite n={3} />) | 解耦任务与安全，可叠加任意基座算法，需离线数据预学危险区 |
+| **奖励塑质（软）** | $r'=r-\sum\lambda_i C_i$ 折进奖励 | potential-based shaping | 最简单但**不保证约束满足**，只鼓励 |
+
+**CPO(Constrained Policy Optimization)**<Cite n={1} /> 是 TRPO 的约束版——TRPO 在 KL 信赖域 $\bar D_{KL}(\pi\|\pi_k)\le\delta$ 内最大化替代优势，CPO 在同样的信赖域内**同时**满足代价约束。<Cite n={1} />它的局部近似是：
+
+$$
+\pi_{k+1}=\arg\max_{\pi}\;\mathbb E_{\substack{s\sim d^{\pi_k}\\a\sim\pi}}\!\Bigl[A^{\pi_k}(s,a)\Bigr]\quad\text{s.t.}\quad J_{C_i}(\pi_k)+\frac{1}{1-\gamma}\,\mathbb E_{\substack{s\sim d^{\pi_k}\\a\sim\pi}}\!\Bigl[A^{\pi_k}_{C_i}(s,a)\Bigr]\le d_i,\;\;\bar D_{KL}(\pi\|\pi_k)\le\delta
+$$
+
+代价约束用一阶上界近似（代价替代 $\bar C_i(\pi)=J_{C_i}(\pi_k)+\frac{1}{1-\gamma}E[A^{\pi_k}_{C_i}]$），Proposition 2 给出每步约束违反界 $J_{C_i}(\pi_{k+1})\le d_i+\frac{\sqrt{2\delta}\,\gamma\,\epsilon^{\pi_{k+1}}_{C_i}}{(1-\gamma)^2}$——**每次迭代近约束满足**，这是 CPO 相比拉格朗日法的核心优势（后者可能大幅违反再慢慢拉回）。<Cite n={1} />
+
+### CPO 的实用求解：线性-二次凸规划
+
+高维参数下上面那个问题用线性化目标/代价 + 二次 KL 近似转成一个凸规划。记目标梯度 $g$、代价梯度 $b_i$、KL 的 Hessian（ Fisher 信息矩阵）$H$、当前代价余量 $c_i\doteq J_{C_i}(\pi_k)-d_i$（>0 表示已违反）：
+
+$$
+\theta_{k+1}=\arg\max_\theta\;g^\top(\theta-\theta_k)\quad\text{s.t.}\quad c_i+b_i^\top(\theta-\theta_k)\le0,\;\;\tfrac12(\theta-\theta_k)^\top H(\theta-\theta_k)\le\delta
+$$
+
+这是凸规划（线性目标 + 线性/二次约束）。它的对偶（单约束时 $B=b$、$r=g^\top H^{-1}b$、$S=b^\top H^{-1}b$）:
+
+$$
+\max_{\substack{\lambda\ge0\\\nu\succeq0}}\;\frac{-1}{2\lambda}\Bigl(g^\top H^{-1}g-2r^\top\nu+\nu^\top S\nu\Bigr)+\nu^\top c-\frac{\lambda\delta}{2}
+$$
+
+解出对偶变量 $(\lambda^*,\nu^*)$ 后，原问题解为：
+
+$$
+\theta^*=\theta_k+\frac{1}{\lambda^*}\,H^{-1}\bigl(g-B\nu^*\bigr)
+$$
+
+直觉：$\nu^*=0$ 时退化为自然梯度步（约束未激活）；$\nu^*>0$ 时把目标梯度 $g$ 减去代价方向 $B\nu^*$ 再走，即在「奖励提升」与「代价不涨」间权衡。**当线性化本身不可行**（$c_i>0$，当前已违反约束、信赖域内无法修复），CPO 走**可行恢复投影**——放弃奖励、纯降代价：
+
+$$
+\theta^*=\theta_k-\sqrt{\frac{2\delta}{b^\top H^{-1}b}}\,H^{-1}b
+$$
+
+朝 $-b$ 方向走到信赖域边界，先把代价拉回可行域再说奖励。下面这个 toy 演示三种情形：
+
+<CodeRunner defaultCode={`
+import numpy as np
+
+# CPO 线性-二次近似 toy (2 维参数, H=I 简化)
+# 目标: max g.(theta-theta_k)                  (奖励线性近似)
+# 约束: c + b.(theta-theta_k) <= 0              (代价线性近似, c = J_C - d)
+# 信赖域: 0.5 (theta-theta_k)^T H (theta-theta_k) <= delta
+dim = 2
+theta_k = np.array([0.0, 0.0])
+g = np.array([1.0, 0.8])      # 奖励梯度: 朝 (1, 0.8) 走提升奖励
+b = np.array([2.0, 0.0])      # 代价梯度: 朝 +x 走代价升得快
+H = np.eye(dim)               # Fisher 近似为 I
+delta = 0.25                  # KL 信赖域半径
+
+def natural_step(g, H, delta):
+    Hinv_g = np.linalg.solve(H, g)
+    return np.sqrt(2*delta/(g @ Hinv_g)) * Hinv_g
+
+def cpo_feasible(g, b, c, H, delta):
+    Hinv_g = np.linalg.solve(H, g)
+    nat = np.sqrt(2*delta/(g @ Hinv_g)) * Hinv_g
+    if c + b @ nat <= 0:                          # 约束未激活 -> 自然梯度步
+        return nat, "natural (constraint slack)"
+    # 约束激活: 二分找 nu 使 c + b.step(nu) = 0
+    def viol(nu):
+        d = g - nu*b; Hd = np.linalg.solve(H, d)
+        return c + b @ (np.sqrt(2*delta/(d @ Hd)) * Hd)
+    lo, hi = 0.0, 1e4
+    for _ in range(200):
+        mid = 0.5*(lo+hi)
+        if viol(mid) > 0: lo = mid
+        else: hi = mid
+    nu = 0.5*(lo+hi)
+    d = g - nu*b; Hd = np.linalg.solve(H, d)
+    step = np.sqrt(2*delta/(d @ Hd)) * Hd
+    return step, f"boundary (nu*={nu:.3f})"
+
+def cpo_recovery(b, H, delta):                    # 不可行: 纯降代价步
+    Hinv_b = np.linalg.solve(H, b)
+    return -np.sqrt(2*delta/(b @ Hinv_b)) * Hinv_b
+
+print("=== CPO vs naive natural gradient ===")
+print(f"theta_k={theta_k.tolist()}, delta={delta}")
+print(f"reward grad g={g.tolist()}, cost grad b={b.tolist()}\\n")
+
+nat = natural_step(g, H, delta)
+print("[naive] reward only, ignore cost:")
+print(f"  theta = {np.round(nat,4).tolist()}, reward +{g@nat:.4f}, cost {b@nat:+.4f} (rises!)\\n")
+
+for name, c in [("A feasible (c=-0.05)", -0.05), ("B infeasible (c=+0.05)", 0.05)]:
+    print(f"[Case {name}]")
+    if c <= 0:
+        step, how = cpo_feasible(g, b, c, H, delta)
+        print(f"  CPO {how}")
+    else:
+        step = cpo_recovery(b, H, delta)
+        print(f"  CPO recovery: pure cost-reduction")
+    print(f"  theta = {np.round(step,4).tolist()}, reward {g@step:+.4f}, cost {b@step:+.4f}\\n")
+
+print("naive: reward-only -> cost rises -> violation;")
+print("CPO A (feasible): walk along constraint boundary (reward up, cost <= limit);")
+print("CPO B (infeasible): abandon reward, pure cost reduction (feasibility recovery).")
+`} title="CPO: 信赖域内带代价约束的策略更新" />
+
+跑一下看三种情形：**朴素自然梯度步**只追奖励不管代价，代价变化 $+1.10$（持续升，迟早越界）；**Case A（可行，$c\le0$）** CPO 沿约束边界走——奖励涨 $+0.59$ 但代价只涨 $+0.05$（恰好补到上限，不再超）；**Case B（不可行，$c>0$）** CPO 放弃奖励（奖励 $-0.71$）纯降代价（$-1.41$，把已违反的代价拉回可行域）。这就是 CPO 相比朴素 PPO 的本质：**在「奖励提升」与「代价守界」间显式权衡，违反时优先修复**。
+
+### PPO-Lagrangian：一阶对偶的工程友好版
+
+CPO 的二阶凸规划（Fisher 矩阵 + 共轭梯度，继承自 TRPO）工程复杂。**PPO-Lagrangian** 把约束用拉格朗日对偶处理，直接套用 PPO 的一阶优化：把约束 $J_{C_i}(\pi)\le d_i$ 上升为乘子 $\lambda_i\ge0$，构造拉格朗日函数：
+
+$$
+\mathcal L(\pi,\lambda)=J(\pi)-\sum_i\lambda_i\bigl(J_{C_i}(\pi)-d_i\bigr)
+$$
+
+策略最大化 $\mathcal L$（即 PPO 优化 $r-\sum\lambda_i C_i$ 的塑质奖励），乘子 $\lambda_i$ 对偶上升（约束违反则增大 $\lambda_i$、满足则减小）:
+
+$$
+\lambda_i\leftarrow\max\!\bigl(0,\;\lambda_i+\eta\,(J_{C_i}(\pi)-d_i)\bigr)
+$$
+
+两者交替：固定 $\lambda$ 跑几步 PPO 更新策略，再用新策略的代价回报更新 $\lambda$。优点是一阶（复用 PPO 工程）、实现简单；缺点是 $\lambda$ 学习率 $\eta$ 敏感——太大振荡、太小收敛慢，且不像 CPO 有每步近约束满足的理论保证（可能大幅违反再慢慢拉回）。实践中 PPO-Lagrangian 因工程友好更常用，CPO 因理论保证用在安全关键场景。
+
+### Recovery RL：安全滤波的双策略分解
+
+CPO 和 PPO-Lagrangian 都是**单策略**框架——同一个 $\pi_\theta$ 既要追奖励又要守约束，约束只能通过修改目标（塑质）或更新规则（信赖域投影）间接介入。**Recovery RL**<Cite n={3} /> 换了个思路：**把任务和安全拆给两个策略**，任务策略 $\pi_{\text{task}}$ 完全无视约束只管奖励，一个**安全 critic** $\hat Q^{\pi}_{\text{risk}}(s,a)$ 估当前 $(s,a)$ 的未来违反概率，超阈值就把动作**覆盖**成恢复策略 $\pi_{\text{rec}}$ 输出的安全动作——这就是「安全滤波（safety filter）」。<Cite n={3} />
+
+先看约束设定。Recovery RL 把代价函数限定为**二元违反指示** $C:S\to\{0,1\}$（$C(s)=1$ 表示该状态违反约束，如碰撞/越界），并引入一个**独立于奖励折扣的 $\gamma_{\text{risk}}$** 折扣未来违反。安全 critic 估的是**当前策略 $\pi$ 下、从 $(s,a)$ 出发的未来违反折扣概率**：
+
+$$
+Q^{\pi}_{\text{risk}}(s_t,a_t)=\mathbb E_\pi\!\Bigl[\sum_{t'=t}^{\infty}\gamma_{\text{risk}}^{\,t'-t}\,c_{t'}\;\Big|\;s_t,a_t\Bigr]
+$$
+
+关键在于「episode 在 $c_t=1$ 时终止」（一违反就结束），所以它的 Bellman 目标比标准 Q 多一个「未违反才 bootstrap」的闸：
+
+$$
+Q^{\pi}_{\text{risk}}(s_t,a_t)=c_t+(1-c_t)\,\gamma_{\text{risk}}\,\mathbb E_{a\sim\pi}\!\bigl[Q^{\pi}_{\text{risk}}(s_{t+1},a_{t+1})\bigr]
+$$
+
+$(1-c_t)$ 这项保证：一旦 $c_t=1$ 就不再 bootstrap（违反后没有未来），这正是「终止于违反」的数学体现。安全 critic 用 MSE 训练（目标网络稳住）：
+
+$$
+J_{\text{risk}}=\tfrac12\Bigl(\hat Q^{\pi}_{\text{risk}}(s_t,a_t)-\bigl[c_t+(1-c_t)\,\gamma_{\text{risk}}\,\mathbb E_{a\sim\pi}\hat Q^{\pi}_{\text{risk}}(s_{t+1},a_{t+1})\bigr]\Bigr)^2
+$$
+
+有了安全 critic 就能定义**安全集**与**恢复集**——把状态-动作空间按「未来违反概率是否超阈值 $\varepsilon_{\text{risk}}$」二分：
+
+$$
+\mathcal T^{\pi}_{\text{safe}}=\bigl\{(s,a):Q^{\pi}_{\text{risk}}(s,a)\le\varepsilon_{\text{risk}}\bigr\},\qquad \mathcal T^{\pi}_{\text{rec}}=S\times A\setminus\mathcal T^{\pi}_{\text{safe}}
+$$
+
+**推理时的安全滤波规则**——任务策略提议 $a^{\pi_{\text{task}}}$，若 $(s,a^{\pi_{\text{task}}})$ 落在安全集就执行它，否则用恢复策略覆盖：
+
+$$
+a_t=\begin{cases}a_t^{\pi_{\text{task}}} & \text{若 }(s_t,a_t^{\pi_{\text{task}}})\in\mathcal T^{\pi}_{\text{safe}}\\[2pt] a_t^{\pi_{\text{rec}}} & \text{若 }(s_t,a_t^{\pi_{\text{task}}})\in\mathcal T^{\pi}_{\text{rec}}\end{cases}
+$$
+
+三个组件各自训练、各司其职：**任务策略 $\pi_{\text{task}}$** 用任意基座算法（原文用 SAC）只优化奖励，完全不碰约束；**恢复策略 $\pi_{\text{rec}}$** 是个 RL agent 但目标是**最小化**安全 critic $\hat Q^{\pi}_{\text{risk}}(s,\pi_{\text{rec}}(s))$（确定性策略梯度下降，把动作推向低违反区）；**安全 critic** 用上面的 MSE 训练。一个工程细节很关键——**动作重标号**：当 $\pi_{\text{rec}}$ 覆盖了 $\pi_{\text{task}}$ 的动作，环境里执行的是 $a^{\pi_{\text{rec}}}$，但喂给 $\pi_{\text{task}}$ 训练的 transition 要把动作**改回 $a^{\pi_{\text{task}}}$**，否则 $\pi_{\text{task}}$ 会以为「我提的动作产生了这个结果」而持续提同样的危险动作（实际上是被 $\pi_{\text{rec}}$ 改写过）。
+
+还有一处与 CPO/PPO-Lagrangian 截然不同的设计——**离线预学危险区**。安全 critic 和 $\pi_{\text{rec}}$ 在任何在线交互前，先用一批离线数据 $D_{\text{offline}}$ 预训练（这批数据不必展示任务成功，只需展示「怎么会违反约束」）。这让智能体在碰真实环境前就已「知道哪里危险」，在线时直接用这个先验做滤波，不必拿真实违反去试错——这是 Recovery RL 在机器人接触丰富任务上比 CPO/PPO-Lagrangian 违反率低 2-20 倍的关键。
+
+<CodeRunner defaultCode={`
+import numpy as np
+
+# Recovery RL 安全滤波 toy (1-D 状态, 二元违反指示)
+# 状态 s in [-1, 1]; 约束违反区 s > 0.7 (如悬崖边)
+# 动作 a in [-1, 1]; 转移 s' = clip(s + 0.3*a, -1, 1)
+# 任务策略: 朝 +s 走追奖励 r = s (越靠右奖励越高, 但越靠右越危险)
+# 恢复策略: 朝 -s 走降违反
+# 安全 critic: 估未来违反折扣概率 (查表近似)
+
+S = np.linspace(-1, 1, 21)          # 21 个离散状态
+A = np.linspace(-1, 1, 11)          # 11 个离散动作
+violate = (S > 0.7).astype(float)   # C(s): s>0.7 视为违反
+gamma_risk = 0.9
+eps_risk = 0.15                     # 安全阈值
+
+def step(s, a):
+    s2 = np.clip(s + 0.3*a, -1, 1)
+    c = float(s2 > 0.7)
+    return s2, c
+
+# --- 训练安全 critic Q_risk(s,a) (值迭代, 终止于违反) ---
+Q_risk = np.zeros((len(S), len(A)))
+for _ in range(200):
+    Qnew = np.zeros_like(Q_risk)
+    for si, s in enumerate(S):
+        for ai, a in enumerate(A):
+            s2, c = step(s, a)
+            si2 = int(np.argmin(np.abs(S - s2)))
+            if c == 1:
+                Qnew[si, ai] = 1.0           # 违反: 终止, Q=1
+            else:
+                Qnew[si, ai] = c + (1-c)*gamma_risk*Q_risk[si2].min()
+    Q_risk = Qnew
+
+# --- 三策略 ---
+def pi_task(s):                       # 任务策略: 朝右追奖励
+    return 1.0
+def pi_rec(s):                        # 恢复策略: 最小化 Q_risk(s,a)
+    si = int(np.argmin(np.abs(S - s)))
+    return A[int(np.argmin(Q_risk[si]))]
+
+def safe(s, a):
+    si = int(np.argmin(np.abs(S - s)))
+    ai = int(np.argmin(np.abs(A - a)))
+    return Q_risk[si, ai] <= eps_risk
+
+def composite(s):
+    a_task = pi_task(s)
+    if safe(s, a_task):
+        return a_task, "task"
+    return pi_rec(s), "RECOVERY"
+
+# --- 模拟从 s0=-1 跑 12 步, 看滤波是否守住边界 ---
+print("=== Recovery RL 安全滤波 (eps_risk=%.2f) ===" % eps_risk)
+s = -1.0
+total_r, total_c = 0.0, 0
+print(f"{'step':>4} {'s':>7} {'a_task':>7} {'a_exec':>7} {'mode':>9} {'Q_risk(s,a_task)':>17}")
+for t in range(12):
+    a_task = pi_task(s)
+    a_exec, mode = composite(s)
+    si = int(np.argmin(np.abs(S - s))); ai_task = int(np.argmin(np.abs(A - a_task)))
+    q_task = Q_risk[si, ai_task]      # 看「任务提议动作」的危险度, 高则触发恢复
+    s2, c = step(s, a_exec)
+    total_r += s2; total_c += c
+    print(f"{t:>4} {s:>7.3f} {a_task:>7.2f} {a_exec:>7.2f} {mode:>9} {q_task:>17.3f}")
+    s = s2
+    if c == 1:
+        print(f"  -> VIOLATION at step {t}")
+        break
+
+print(f"\\n总奖励 {total_r:.3f}, 违反次数 {total_c}")
+
+# --- 对照: 无滤波 (纯任务策略硬冲) ---
+print("\\n=== 对照: 无滤波 (纯任务策略硬冲) ===")
+s = -1.0; tc = 0
+for t in range(12):
+    a = pi_task(s)
+    s2, c = step(s, a); tc += c; s = s2
+    if c == 1:
+        print(f"  -> 第 {t} 步越界 (s={s:.3f} > 0.7), 违反")
+        break
+print(f"无滤波违反次数 {tc} (Recovery RL {total_c})")
+`} title="Recovery RL: 安全 critic + 恢复策略的安全滤波" />
+
+跑一下看滤波怎么守住边界：任务策略 $\pi_{\text{task}}$ 一直提议 $a=1$（朝右追奖励），状态从 $-1$ 一路右移。**未到危险区**时 $Q_{\text{risk}}(s,1)\le\varepsilon_{\text{risk}}$，滤波放行，$\pi_{\text{task}}$ 自由追奖励；**靠近悬崖**（$s$ 接近 $0.7$）时 $Q_{\text{risk}}(s,1)>\varepsilon_{\text{risk}}$ 触发恢复，$\pi_{\text{rec}}$ 输出朝左动作把状态拉回安全区。对照无滤波纯任务策略硬冲——几步内 $s$ 越过 $0.7$ 直接违反。**Recovery RL 的本质**：不让任务策略「学会害怕」，而是外挂一个安全 critic 当「刹车」，任务策略只管踩油门，刹车由独立模块按阈值接管。
+
+**与 CPO / PPO-Lagrangian 的对照**：三者把约束融进学习的位置不同——CPO 在**更新规则**层（每步信赖域内显式投影到可行集，改的是 $\theta$ 怎么走）；PPO-Lagrangian 在**目标函数**层（把约束上升为乘子 $\lambda$ 塑质奖励，改的是优化什么）；Recovery RL 在**执行层**（任务策略照常学、照常提动作，只在动作执行前用安全 critic 滤一道，改的是「做不做」）。前两者是「内化约束」（策略本身变安全），Recovery RL 是「外挂约束」（策略不变、外挂滤波器）——后者好处是**可叠加任意基座算法**（SAC、PPO、DQN 都能当 $\pi_{\text{task}}$），坏处是需要离线数据预学危险区、且二元违反指示 $C(s)$ 比 shaped cost 更难获得。
+
+### 与 TRPO/PPO 的关系
+
+CPO 是 TRPO 的约束版——两者都用 KL 信赖域 $\bar D_{KL}\le\delta$ + 二阶 Fisher 求解，CPO 多了代价约束与可行恢复投影。PPO-Lagrangian 是 PPO 的约束版——两者都是一阶多 epoch 小批量更新，PPO-Lagrangian 多了拉格朗日乘子 $\lambda$ 的对偶上升。所以学完 TRPO/PPO 再看安全 RL，只是给原更新规则「加一道代价约束的闸」——TRPO 的闸是「KL 别迈太大」，CPO/PPO-Lagrangian 在此之上再加「代价别超限」。安全 RL 的难点不在算法本身，而在**约束估计**（代价回报 $J_{C_i}$ 也是期望、需用 critic 估）与**约束违反的容忍度**（硬约束 vs 软约束、单次违反的代价）。
+
+## 小结
+
+- CMDP 在 MDP 上增加代价函数 $C_i$ 与上限 $d_i$，目标是约束下的奖励最大化。
+- CPO 在 TRPO 的 KL 信赖域上加代价约束，用线性-二次凸规划求解，并在不可行时做恢复投影。
+- PPO-Lagrangian 把约束上升为乘子 $\lambda$，交替优化策略与对偶变量，工程简单但对 $\lambda$ 学习率敏感。
+- Recovery RL 把任务与安全拆成两个策略，用安全 critic 与恢复策略做动作滤波。
+
+## 延伸阅读
+
+- [TRPO](/tutorials/trpo)：CPO 的信赖域基础。
+- [PPO](/tutorials/ppo)：PPO-Lagrangian 的一阶优化基础。
+- [策略梯度的收敛性](/tutorials/policy-gradient-theory)：约束优化的理论背景。
+
+## 参考资料
+
+<References>
+1. Achiam, Held, Tamar, Abbeel (2017). *Constrained Policy Optimization*. ICML 2017. [arXiv:1705.10528](https://arxiv.org/abs/1705.10528). —— CPO 原始论文：在 TRPO 的 KL 信赖域 $\bar D_{KL}\le\delta$ 上加代价约束，得到 CMDP 下的 trust-region 更新；局部线性-二次近似把每步更新转成凸规划（线性目标 + 线性代价约束 + 二次 KL 约束），对偶求解后原问题解 $\theta^*=\theta_k+\frac1{\lambda^*}H^{-1}(g-B\nu^*)$；当线性化不可行（$c_i>0$）走可行恢复投影 $\theta^*=\theta_k-\sqrt{2\delta/(b^\top H^{-1}b)}\,H^{-1}b$ 纯降代价；Proposition 2 给出每步约束违反界 $J_{C_i}(\pi_{k+1})\le d_i+\frac{\sqrt{2\delta}\gamma\epsilon^{\pi_{k+1}}_{C_i}}{(1-\gamma)^2}$，即每次迭代近约束满足。本篇「安全强化学习」小节 CPO 推导与 CodeRunner toy 的直接来源。
+2. Altman, E. (1999). *Constrained Markov Decision Processes*. Chapman & Hall/CRC, Stochastic Modeling Series. ISBN 1-58488-009-8. —— CMDP 理论专著：系统建立约束马尔可夫决策过程框架——在标准 MDP 的奖励 $r$ 之上引入辅助代价函数 $C_i$ 与上限 $d_i$，可行策略集 $\Pi_C=\{\pi:\forall i,J_{C_i}(\pi)\le d_i\}$，优化目标 $\pi^*=\arg\max_{\pi\in\Pi_C}J(\pi)$；涵盖线性规划/拉格朗日对偶求解、约束下策略迭代、凸性分析等理论基础。本篇「CMDP：把约束写进问题定义」小节问题设定的权威出处。
+3. Thananjeyan, Balakrishna, Nair, Luo, Srinivasan, Hwang, Gonzalez, Ibarz, Finn, Goldberg (2021). *Recovery RL: Safe Reinforcement Learning with Learned Recovery Zones*. IEEE Robotics and Automation Letters (RA-L) / ICRA 2021. [arXiv:2010.15920](https://arxiv.org/abs/2010.15920). —— Recovery RL 原始论文：把任务与安全拆给两个策略——任务策略 $\pi_{\text{task}}$ 用任意基座算法（原文 SAC）只优化奖励；安全 critic $\hat Q^{\pi}_{\text{risk}}(s,a)=E_\pi[\sum\gamma_{\text{risk}}^{t'-t}c_{t'}]$ 估未来违反折扣概率，终止于违反的 Bellman 目标 $Q_{\text{risk}}=c+(1-c)\gamma_{\text{risk}}E[Q_{\text{risk}}]$；恢复策略 $\pi_{\text{rec}}$ 最小化 $\hat Q_{\text{risk}}(s,\pi_{\text{rec}}(s))$；安全滤波规则按阈值 $\varepsilon_{\text{risk}}$ 二分安全集/恢复集决定是否覆盖动作；离线数据预学危险区使在线违反率比 CPO/PPO-Lagrangian 等 5 种方法低 2-20 倍。本篇「Recovery RL：安全滤波的双策略分解」小节三策略 + Bellman 目标 + 滤波规则 + CodeRunner toy 的直接来源。
+</References>

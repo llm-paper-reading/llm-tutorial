@@ -321,7 +321,7 @@ print("-> 没学价值表,直接把'好动作'的概率推高了")
 | 旧数据 | 策略一更新就作废 | 存进缓冲区反复用 |
 | 样本效率 | 较低 | 较高 |
 | 稳定性 / 贴合度 | 更稳，直接评估「真实在跑的策略」 | 需技巧防发散（见[致命三元组](/tutorials/dqn)） |
-| 代表算法 | SARSA、[PPO](/tutorials/policy-gradient) | Q-learning、[DQN](/tutorials/dqn) |
+| 代表算法 | SARSA、[PPO](/tutorials/ppo) | Q-learning、[DQN](/tutorials/dqn) |
 
 **为什么 Q-learning 是 off-policy？** 它更新时用 $\max_{a'}Q(s',a')$——**假设下一步一定走最优**（目标策略是贪心的），可它实际探索时却在 ε-贪心地乱走（行为策略带探索）。学的和跑的不是一个策略，所以 off。而 SARSA 用**实际走的**那个 $a'$ 更新，学的就是「自己带探索地在跑的策略」，所以 on。
 
@@ -511,7 +511,7 @@ $$
 
 **① 非情景内在回报（non-episodic intrinsic return）。** 这是最反直觉的一点。标准 RL 里，回合结束（智能体死亡）就把回报截断、return 归零——这叫 **episodic** return。若把 intrinsic reward 也按 episodic 处理，智能体会学到一种「**怕死**」的行为：死亡会清零它辛苦累积的内在回报，于是它宁愿停在一个「已经见过但还能反复蹭点 $r^i$」的局部区域，也不敢深入新区域去探索（因为路上可能死掉，累积的 intrinsic 分全没了）。这与上面「朴素 shaping 陷阱」里智能体在 $s_0/s_1$ 间来回蹭是**同一个病**——optimization pressure 钻了奖励设计的空子。RND 的解法：把 intrinsic return 当 **non-episodic**——死亡**不截断** intrinsic 的 bootstrap，$\gamma_I$ 继续累积。换句话说，智能体「死后的内在回报」仍算数，这样它就不怕死了。
 
-**② 单策略 + 双价值头 $V=V_E+V_I$。** 因为 extrinsic 是 episodic（死亡截断）、intrinsic 是 non-episodic（死亡不截断），两套 return 的**性质根本不同**，不能塞进同一个价值函数。RND 用**一个策略**配**两个价值头**：$V_E$ 拟合 episodic extrinsic return、$V_I$ 拟合 non-episodic intrinsic return，合并 $V=V_E+V_I$。优势也对应相加 $A=A_E+A_I$，PPO 用这个合并优势更新那唯一的策略。两个价值头分别拟合各自的 return，但策略只有一个——这是「**返回报性质不同时，分头估价值、合头用优势**」的通用模式（后面 [SAC 篇](/tutorials/policy-gradient) 会看到最大熵 RL 里也有类似的「两项相加」结构）。原文最佳配置用 $\gamma_E=0.99$、$\gamma_I=0.999$（intrinsic 更长视，鼓励长程探索），extrinsic 系数 2、intrinsic 系数 1。<Cite n={3} />
+**② 单策略 + 双价值头 $V=V_E+V_I$。** 因为 extrinsic 是 episodic（死亡截断）、intrinsic 是 non-episodic（死亡不截断），两套 return 的**性质根本不同**，不能塞进同一个价值函数。RND 用**一个策略**配**两个价值头**：$V_E$ 拟合 episodic extrinsic return、$V_I$ 拟合 non-episodic intrinsic return，合并 $V=V_E+V_I$。优势也对应相加 $A=A_E+A_I$，PPO 用这个合并优势更新那唯一的策略。两个价值头分别拟合各自的 return，但策略只有一个——这是「**返回报性质不同时，分头估价值、合头用优势**」的通用模式（后面 [SAC 篇](/tutorials/continuous-control) 会看到最大熵 RL 里也有类似的「两项相加」结构）。原文最佳配置用 $\gamma_E=0.99$、$\gamma_I=0.999$（intrinsic 更长视，鼓励长程探索），extrinsic 系数 2、intrinsic 系数 1。<Cite n={3} />
 
 **③ 内在奖励归一化（除以 running std）。** intrinsic reward 的量级会随训练**大幅下降**——预测器越拟合，见过的状态误差越小，$r^i$ 整体往下掉。若不归一化，后期 $r^i\to 0$，探索信号**熄灭**，智能体又变回「没动力探索」。RND 用一个 **running estimate of the standard deviation of the intrinsic returns** 来除当前 intrinsic reward，把它拉回 $O(1)$ 量级。关键：running std 是**跟踪当前量级**的移动估计（不是全历史的标准差），所以 raw reward 暴跌时 std 跟着降，归一化后信号保持稳定——预测器拟合得越好，raw $r^i$ 越小，但归一化后的探索驱动不衰减。
 
@@ -833,7 +833,7 @@ $$
 E_t(s) = \gamma\lambda\, E_{t-1}(s) + \mathbb 1[s=s_t], \qquad V(s) \leftarrow V(s) + \alpha\,\delta_t\, E_t(s)
 $$
 
-$\lambda=0$ 退化成单步 TD（只有 $s_t$ 有痕迹）；$\lambda=1$ 退化成 MC（所有到访状态等权留痕）。**$\lambda$ 就是时序信用分配的「视野」旋钮**：越大，功劳传得越远越均匀；越小，越集中在近邻。同一根 $\lambda$ 旋钮在策略梯度里以 **GAE（广义优势估计，Schulman et al.， 2016）** 的面貌重现——GAE 用 $(\gamma\lambda)^l$ 加权 n-step 优势，把回报的信用按时间衰减分配给各步动作，是现代 PPO/Actor-Critic 的事实标准（详见 [策略梯度篇 GAE 小节](/tutorials/policy-gradient) 与 [时序差分篇资格迹小节](/tutorials/temporal-difference)）。
+$\lambda=0$ 退化成单步 TD（只有 $s_t$ 有痕迹）；$\lambda=1$ 退化成 MC（所有到访状态等权留痕）。**$\lambda$ 就是时序信用分配的「视野」旋钮**：越大，功劳传得越远越均匀；越小，越集中在近邻。同一根 $\lambda$ 旋钮在策略梯度里以 **GAE（广义优势估计，Schulman et al.， 2016）** 的面貌重现——GAE 用 $(\gamma\lambda)^l$ 加权 n-step 优势，把回报的信用按时间衰减分配给各步动作，是现代 PPO/Actor-Critic 的事实标准（详见 [策略梯度篇 GAE 小节](/tutorials/actor-critic#gae在偏差与方差之间连续插值) 与 [时序差分篇资格迹小节](/tutorials/temporal-difference)）。
 
 下面这个玩具把「奖励延迟 + 信用回灌」的差异画出来：一条 5 状态链，只有终点给 $+1$，看单步 TD（0） 与 TD（λ） 资格迹在**少量回合内**把信用传到起点 s0 的速度。
 
@@ -1216,7 +1216,7 @@ print("两条历史不同, 只要信念相同, 更新后完全一致 -> 信念�
 Q-learning 用一张表存 $Q(s,a)$，状态一多就存不下（围棋有 $10^{170}$ 种局面）。**DQN** 用一个神经网络去**近似** $Q(s,a)$，输入状态、输出各动作的 Q 值——这就是 2015 年 DeepMind 用来玩 Atari 的方法。表格版是理解一切的基础；[DQN:用神经网络逼近 Q 表](/tutorials/dqn) 会把经验回放、目标网络讲透。
 
 **Q：策略梯度（Policy Gradient）又是什么？**
-Q-learning 是「学价值、再导出策略」（value-based）。策略梯度**直接**优化策略 $\pi_\theta(a\mid s)$ 的参数（policy-based），用梯度上升最大化期望回报——上面「🎯 策略梯度」标签就是最小的 REINFORCE 例子。下一篇 [策略梯度:直接学策略](/tutorials/policy-gradient) 会把 REINFORCE、Actor-Critic、PPO 讲透；PPO 及 RLHF 都属于这一类。
+Q-learning 是「学价值、再导出策略」（value-based）。策略梯度**直接**优化策略 $\pi_\theta(a\mid s)$ 的参数（policy-based），用梯度上升最大化期望回报——上面「🎯 策略梯度」标签就是最小的 REINFORCE 例子。下一篇 [策略梯度](/tutorials/policy-gradient) 会把 REINFORCE、Actor-Critic、PPO 讲透；PPO 及 RLHF 都属于这一类。
 
 **Q：Q-learning 和 SARSA 到底差在哪？**
 只差更新目标里那一项：Q-learning 用 $\max_{a'}Q(s',a')$（假设下一步走最优，**off-policy**），SARSA 用实际走的 $Q(s',a')$（评估自己带探索的真实策略，**on-policy**）。后果是 SARSA 更**保守**——在悬崖/陷阱旁会主动选离危险更远的路，而 Q-learning 敢贴着最优边界走。上面两个标签跑出的路径能看出这个差别。

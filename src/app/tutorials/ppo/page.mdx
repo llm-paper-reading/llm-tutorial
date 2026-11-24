@@ -1,0 +1,299 @@
+import { tutorialMetadata } from "@/lib/tutorials";
+
+export const metadata = tutorialMetadata("ppo");
+
+# ✂️ PPO：别让一步迈太大
+
+PPO（Proximal Policy Optimization）是 TRPO 的一阶近似：丢掉二阶 Hessian 与共轭梯度，用一个裁剪目标把「分布空间约束」翻译成「概率比约束」，从而能用普通 SGD/Adam 在同一批数据上多 epoch 更新。<Cite n={[1,3]} />它从 Atari 一路用到 RLHF，是当前对齐大模型的主力算法。
+
+> 📌 前置：策略梯度定理、Actor-Critic、GAE 与 TRPO 见 [策略梯度](/tutorials/policy-gradient)；PPO 去掉 critic 的后续变体见 [GRPO 与 RLVR](/tutorials/grpo-rlvr)。
+
+## 裁剪目标：别让概率比跑出信任域
+
+先定义新旧策略的概率比 $r=\dfrac{\pi_\theta(a\mid s)}{\pi_{\text{old}}(a\mid s)}$，PPO 的裁剪目标是：<Cite n={1} />
+
+$$
+L^{\text{CLIP}} = \min\Big(r\,A,\;\; \text{clip}(r,\,1-\varepsilon,\,1+\varepsilon)\,A\Big)
+$$
+
+**拖动 $\varepsilon$、切换优势正负**，看裁剪如何为更新「封顶」：
+
+<PPOClipExplorer />
+
+关键是那个 $\min$ 的**非对称**性：当动作是好的（$A>0$），概率比涨过 $1+\varepsilon$ 后目标封顶、梯度归零——不再奖励「贪心地把概率推到天上」；但如果更新方向**错了**（把好动作反而压低），走的是未裁剪那一支，照罚不误。于是每步都被温柔地拴在旧策略附近，训练又快又稳。这正是 RLHF 里对齐大模型的主力算法。
+
+## 完整目标：裁剪 + 价值 + 熵
+
+上面那个 $L^{\text{CLIP}}$ 只是策略部分。实际实现里，PPO 每步同时优化三件事——策略变好、价值估计准、别太确定（保持探索）——拼成一个组合目标：<Cite n={1} />
+
+$$
+L^{\text{CLIP+VF+S}}(\theta)=\underbrace{\mathbb{E}_t\big[\min(r_t A_t,\,\text{clip}(r_t,1-\varepsilon,1+\varepsilon)A_t)\big]}_{\text{策略裁剪 }L^{\text{CLIP}}}\;-\;c_v\underbrace{\mathbb{E}_t\big[\big(V_\theta(s_t)-\hat R_t\big)^2\big]}_{\text{价值损失 }L^{\text{VF}}}\;+\;c_s\underbrace{\mathbb{E}_t\big[S[\pi_\theta](s_t)\big]}_{\text{熵奖励 }S}
+$$
+
+三项的职责清晰分开：
+
+1. **$L^{\text{CLIP}}$**（策略）：用裁剪把策略更新拴在旧策略附近，上一节讲过；
+2. **$L^{\text{VF}}$**（价值）：让 $V_\theta$ 拟合 reward-to-go $\hat R_t$。注意 PPO 的价值损失也常带裁剪 $c_v\cdot\text{clip}\big((V_\theta-\hat R_t)^2,(1-\varepsilon_v)V_{\text{old}}\text{-}V)^2\big)$，与策略裁剪同理——防止价值网络一步跳太远；不少实现为简洁起见省掉价值裁剪，直接用 MSE;
+3. **$S$**（熵奖励）：策略分布的熵 $S1=-\sum_a\pi(a\mid s)\log\pi(a\mid s)$，鼓励策略**别太尖**——熵高=探索多。$c_s$ 通常取 $0.01$，小但不为零，是防止策略过早坍缩成确定性策略的保险丝。
+
+三个系数 $c_v\approx0.5$、$c_s\approx0.01$ 是 Spinning Up 等参考实现的常用量级<Cite n={[1,2]} />。**符号约定**：策略部分求最大（梯度上升），价值和熵部分以「减去损失 / 加上熵」并入，故同一个 Adam 步同时调三者的梯度。
+
+## 裁剪目标的偏差-方差分析：ε 改变什么、不改变什么
+
+前面把 $L^{\text{CLIP}}$ 当成一个「防一步迈太大」的工程技巧讲。但裁剪本质上是用一个**有偏目标**去近似**无偏的策略梯度** $L^{\text{PG}}=\mathbb E[r_t A_t]$——裁剪支把越界样本的梯度截断了，这必然引入偏差。这一小节把这个偏差形式化，看清 ε 调的到底是什么、与 [GAE 的形式化偏差界](/tutorials/actor-critic#gae-的形式化偏差界critic-误差如何传导给优势)如何对仗。
+
+**无偏与有偏的分界。** 把裁剪目标写成期望：$L^{\text{CLIP}}=\mathbb E_t[\min(r_t A_t,\,\text{clip}(r_t,1-\varepsilon,1+\varepsilon)A_t)]$。逐样本看，$\min$ 的选择**非对称**：
+
+- 当 $A>0$（好动作，想增大概率）：$r>1+\varepsilon$ 时走**裁剪支**（封顶在 $(1+\varepsilon)A$，梯度归零，有偏差）；$r<1-\varepsilon$ 时走**未裁剪支**（$rA$ 本就比 $(1-\varepsilon)A$ 小，$\min$ 选 $rA$，无偏差）。
+- 当 $A<0$（坏动作，想减小概率）：对称地反过来——$r<1-\varepsilon$ 时走裁剪支，$r>1+\varepsilon$ 时走未裁剪支。
+
+精妙之处正在这种非对称：**裁剪只在「更新过头」方向截断，「更新不足」方向放行**。把好动作概率推得太高（$r>1+\varepsilon$）会被叫停，但把好动作压低了（$r<1-\varepsilon$）不会——后者本就是错的方向，任由梯度纠正。
+
+**形式化偏差界。** 用 $L^{\text{PG}}=\mathbb E[rA]$ 与 $L^{\text{CLIP}}$ 的期望差度量裁剪引入的偏差。逐样本上，裁剪支与未裁剪支的差仅在越界时为非零，且等于 $|A|\cdot|r-1|-\varepsilon|A|$（被截掉的部分）。对期望取上界，得：
+
+$$
+\big|\mathbb E[L^{\text{CLIP}}]-\mathbb E[L^{\text{PG}}]\big|\;\le\;\mathbb E\Big[\,|A_t|\cdot|r_t-1|\cdot\mathbb 1_{\{|r_t-1|>\varepsilon\}}\Big]
+$$
+
+右边三因子各司其职：**$|A|$** 是优势幅值（大优势的样本裁剪损失大）、**$|r-1|$** 是策略比偏离幅度（离 1 越远截掉越多）、**$\mathbb 1_{|r-1|>\varepsilon}$** 是越界指示（只有越界样本才贡献偏差）。这个界只在**越界样本**上计偏差——这就是「信任域」的几何含义：裁剪把偏差严格限制在 $r\notin[1-\varepsilon,1+\varepsilon]$ 的样本上，域内零偏差。
+
+**三件事。**
+
+1. **偏差根源是越界样本，不是裁剪本身。** ε 不改变「裁剪有偏」这一性质，只改变**越界率**。ε 越大，信任域越宽，越界样本越少，偏差界越紧。这与 [GAE 偏差界](/tutorials/actor-critic#gae-的形式化偏差界critic-误差如何传导给优势)的 $\frac{2\epsilon_{\text{critic}}}{1-\gamma\lambda}$ 不同——GAE 的偏差根源是 Critic 误差 $\epsilon_{\text{critic}}$，通过 λ 放大系数传导；PPO 的偏差根源是策略比越界，通过 ε 控制越界率。
+2. **ε 调的是偏差-方差权衡，且方向与 GAE 的 λ 同构。** ε↑ → 越界率↓ → 偏差↓；但裁剪支变少 → 离群 $r$ 更多保留 → 方差↑。ε=∞ 时退化为无偏 PG（方差最大），ε=0 时每步更新完全封顶（偏差最大、方差最小但学不动）。这与 GAE 完全对仗：λ↑ → 偏差↓方差↑。两个旋钮都是**「信任域宽度」**——GAE 的信任域在**优势估计**层（λ 控制 bootstrap 多少），PPO 的信任域在**策略更新**层（ε 控制 ratio 走多远）。
+3. **裁剪的非对称性是 PPO 优于朴素裁剪的关键。** 若用对称裁剪 $\text{clip}(rA,\cdot)$（两端都截），「更新不足」方向也被截断，梯度信号丢失。PPO 的 $\min$ 只截「过头」方向，保留「不足」方向的纠正信号——这让 PPO 在保持单向防崩的同时不损失下降方向的梯度。
+
+下面三段代码分别印证：裁剪的非对称性、形式化偏差界成立、ε 的偏差-方差权衡曲线。
+
+<CodeRunner defaultCode={`import numpy as np
+
+# 段1: 裁剪的非对称性 (eps=0.2, A=+1 好动作 / A=-1 坏动作)
+print("=== 段1: 裁剪只在'更新过头'方向截断 (eps=0.2) ===")
+print(f"{'A':>4} {'r':>5} {'L_PG':>7} {'L_CLIP':>7} {'偏差':>6} {'越界?':>5} {'截断支':>6}")
+eps = 0.2
+for A in [+1.0, -1.0]:
+    for r in [0.5, 0.7, 0.9, 1.0, 1.1, 1.3, 1.5, 2.0]:
+        l_pg = r * A
+        l_clip = min(r*A, np.clip(r, 1-eps, 1+eps)*A)
+        diff = abs(l_clip - l_pg)
+        out = "是" if abs(r-1) > eps else "否"
+        branch = "裁剪" if abs(diff) > 1e-12 else "未裁剪"
+        print(f"{A:>+4.0f} {r:>5.2f} {l_pg:>+7.3f} {l_clip:>+7.3f} {diff:>6.3f} {out:>5} {branch:>6}")
+    print()
+print("看点: A=+1 时只在 r>1.2 截断(增概率过头); A=-1 时只在 r<0.8 截断(减概率过头)。")
+print("      '更新不足'方向(r 偏向 1 的反方向但未越界, 或越界但 min 选未裁剪支)一律放行。")
+`} title="段1: 裁剪的非对称性" />
+
+<CodeRunner defaultCode={`import numpy as np
+
+# 段2: 形式化偏差界 |E[L_CLIP]-E[L_PG]| <= E[|A|*|r-1|*1_{|r-1|>eps}]
+print("=== 段2: 形式化偏差界验证 (蒙特卡洛 200k 样本) ===")
+print("  A~N(0,1), r~Beta(2,2)*2 (均值 1, 范围 [0,2])")
+np.random.seed(42)
+N = 200_000
+A = np.random.normal(0.0, 1.0, N)
+r = np.random.beta(2, 2, N) * 2.0
+print(f"{'eps':>6} {'实际偏差':>10} {'界':>10} {'越界率':>8} {'紧否':>6}")
+for eps in [0.1, 0.2, 0.3, 0.5]:
+    l_pg = r * A
+    l_clip = np.minimum(r*A, np.clip(r, 1-eps, 1+eps)*A)
+    actual_bias = abs(l_clip.mean() - l_pg.mean())
+    bound = np.mean(np.abs(A) * np.abs(r-1) * (np.abs(r-1) > eps))
+    violation_rate = (np.abs(r-1) > eps).mean()
+    ok = "是" if actual_bias <= bound + 1e-9 else "否"
+    print(f"{eps:>6.1f} {actual_bias:>10.4f} {bound:>10.4f} {violation_rate:>8.3f} {ok:>6}")
+print()
+print("看点: 实际偏差 <= 界 全部成立; eps↑ -> 越界率↓ -> 偏差↓ (界变紧)。")
+print("      偏差严格来自越界样本, 域内 (|r-1|<=eps) 零偏差 = 信任域的几何含义。")
+`} title="段2: 形式化偏差界验证" />
+
+<CodeRunner defaultCode={`import numpy as np
+
+# 段3: eps 的偏差-方差权衡 (与 GAE 的 lambda 同构)
+print("=== 段3: eps 调的是偏差-方差权衡 (A~N(0,1), r~Beta(2,2)*2) ===")
+np.random.seed(7)
+N = 200_000
+A = np.random.normal(0.0, 1.0, N)
+r = np.random.beta(2, 2, N) * 2.0
+l_pg = r * A
+l_pg_mean = l_pg.mean()
+l_pg_var = l_pg.var()
+print(f"{'eps':>6} {'E[L_CLIP]':>10} {'E[L_PG]':>10} {'偏差':>8} {'Var[L_CLIP]':>12} {'Var[L_PG]':>10}")
+for eps in [0.05, 0.1, 0.2, 0.3, 0.5, 1.0]:
+    l_clip = np.minimum(r*A, np.clip(r, 1-eps, 1+eps)*A)
+    bias = abs(l_clip.mean() - l_pg_mean)
+    var = l_clip.var()
+    print(f"{eps:>6.2f} {l_clip.mean():>+10.4f} {l_pg_mean:>+10.4f} {bias:>8.4f} {var:>12.4f} {l_pg_var:>10.4f}")
+print()
+print("看点: eps↑ -> 偏差↓ 但 Var↑ (裁剪支变少, 离群 r 保留更多)。")
+print("      eps=1.0 退化为无偏 PG (偏差 0, 方差最大)。")
+print("      与 GAE 对仗: lambda↑ -> 偏差↓方差↑; 都是'信任域宽度'旋钮。")
+print("      GAE 的信任域在优势估计层 (lambda 控 bootstrap), PPO 的在策略更新层 (eps 控 ratio)。")
+`} title="段3: eps 的偏差-方差权衡" />
+
+> 💡 **与 GAE 偏差界的对照**：[GAE 一节](/tutorials/actor-critic#gae-的形式化偏差界critic-误差如何传导给优势)给出 GAE 的形式化偏差界<Cite n={4} /> $|\hat A^{GAE}-\hat A^{GAE,\pi}|\le\frac{2\epsilon_{\text{critic}}}{1-\gamma\lambda}$，偏差根源是 Critic 误差 $\epsilon_{\text{critic}}$，通过 λ 放大。本节的 PPO 裁剪偏差界 $|\mathbb E[L^{\text{CLIP}}]-\mathbb E[L^{\text{PG}}]|\le\mathbb E[|A|\cdot|r-1|\cdot\mathbb 1_{|r-1|>\varepsilon}]$，偏差根源是策略比越界，通过 ε 控制越界率。**两者是 PPO 训练流水线前后相接的两层偏差**：GAE 在**优势估计**层（Critic 误差传给优势），PPO 裁剪在**策略更新**层（ratio 越界传给梯度）。调 $\lambda$ 调前者，调 $\varepsilon$ 调后者，两者共同决定 PPO 实际梯度与真策略梯度的总偏离。Spinning Up 默认 $\lambda=0.97$、$\varepsilon=0.2$<Cite n={[1,2]} /> 就是这两层信任域的工程平衡点。
+
+## 两种 PPO：Clip 与 Penalty
+
+PPO 其实是**一族**方法<Cite n={1} />，最常用的是上面讲的 **PPO-Clip**（靠裁剪拴住）。还有一个变体 **PPO-Penalty**：不裁剪，而是把「偏离旧策略」写成目标里的一个 **KL 惩罚**项——
+
+$$
+L^{\text{KPEN}}(\theta)=\mathbb{E}_t\big[r_t A_t\big]-\beta\,\mathbb{E}_t\big[D_{\text{KL}}(\pi_{\text{old}}(\cdot\mid s_t)\,\|\,\pi_\theta(\cdot\mid s_t))\big]
+$$
+
+$\beta$ 是惩罚系数，关键是它**自适应**：每轮更新后算实际 KL 散度 $d=\bar D_{\text{KL}}$，与目标 $d_{\text{tgt}}$ 比——
+
+$$
+\beta\leftarrow\begin{cases}2\beta & d<d_{\text{tgt}}/1.5\;\text{(偏离不够,加大惩罚)}\\ \beta/2 & d>d_{\text{tgt}}\cdot1.5\;\text{(偏离过头,也加大惩罚)}\\ \beta & \text{否则}\end{cases}
+$$
+
+逻辑是：KL 太小说明约束太松（策略不动）、把 $\beta$ 调大逼它多动；KL 太大说明约束没管住（策略跑偏）、也把 $\beta$ 调大拽回来。这套自适应让 PPO-Penalty 近似求解了 TRPO 那个「KL 约束下的更新」<Cite n={[1,3]} />，只是把硬约束换成软惩罚。实践中 **PPO-Clip 更主流**（少一个要调的 $\beta/d_{\text{tgt}}$，且裁剪对单个样本生效、比分布级 KL 更局部稳定），PPO-Penalty 偶尔在 KL 容易估计的连续控制里用。
+
+## KL 早停：裁剪之外的第二道保险
+
+裁剪管的是「单个样本的概率比」，但累积起来整批更新仍可能把策略推远。主流实现（包括 Spinning Up<Cite n={2} />）加了一道**全局安全网**：每轮策略梯度步之后，算新策略相对旧策略的平均 KL $\bar D_{\text{KL}}(\pi_{\text{old}}\|\pi_\theta)$；一旦超过阈值 `target_kl`（通常 $0.01$），**立即停止本轮后续梯度步**——
+
+```python
+for i in range(train_pi_iters):
+    loss = -ppo_clip_objective(batch, old_logp, adv).mean()
+    optimize_step(loss)
+    new_logp = policy(batch.s).log_prob(batch.a)
+    kl = (old_logp - new_logp).mean()
+    if kl > target_kl:          # 一步迈太远,提前结束本轮
+        break
+```
+
+于是 PPO 实际有**两层防崩**：$\varepsilon$ 裁剪（样本级）+ `target_kl` 早停（批次级）。前者便宜、局部；后者贵一点（每步要重算 KL）、全局。两者协作，正是 PPO 能用「多 epoch 复用同一批数据」而不崩的关键——原始策略梯度每条数据只用一次，PPO 却能在同一批轨迹上跑 10~80 个 epoch 的小批量更新<Cite n={1} />，样本效率由此大涨。
+
+## 工程超参数表
+
+把上面拼起来，一个能跑的 PPO 长这样（Spinning Up 默认值<Cite n={2} />）：
+
+| 超参数 | 符号 | 典型值 | 作用 |
+|---|---|---|---|
+| 裁剪比 | $\varepsilon$ | 0.2 | 概率比封顶宽度，通常 $0.1\sim0.3$ |
+| GAE $\lambda$ | $\lambda$ | 0.97 | 优势估计的偏差-方差旋钮，接近 1 |
+| KL 早停阈值 | `target_kl` | 0.01 | 每轮策略更新的「偏离熔断」 |
+| 每轮 epoch 数 | $K$ | 10~80 | 同一批数据复用多少次小批量更新 |
+| 折扣 | $\gamma$ | 0.99 | 回报折扣 |
+| 策略学习率 | $\eta_\pi$ | $3\times10^{-4}$ | Adam |
+| 价值系数 | $c_v$ | 0.5 | 价值损失权重 |
+| 熵系数 | $c_s$ | 0.01 | 鼓励探索的保险丝 |
+
+> 💡 **PPO 为什么是「工程赢家」**：看这张表就懂了——全是**一阶**量（没有 Hessian、没有共轭梯度），每个超参数都有合理默认值且不敏感，$\varepsilon=0.2$ 几乎对所有任务都管用。对比 TRPO 要调 $\delta$、阻尼系数、CG 迭代数且都敏感<Cite n={1} />，PPO 把「理论上的 trust region」翻译成「一组鲁棒的一阶技巧」（裁剪 + 早停 + 熵 + 多 epoch），牺牲了单调提升的严格证明，换来了能从 Atari 一路用到 RLHF 的通用性。
+
+## 可运行 PPO 训练循环骨架
+
+把前面所有零件拼成一个训练循环。这里用最简设定（连续动作、高斯策略）展示数据流，省去并行采集与数值稳定细节：
+
+```python
+import numpy as np
+import torch, torch.nn as nn
+torch.manual_seed(0); np.random.seed(0)
+
+# 策略网络:输出高斯分布的均值(动作),log_std 为可学参数
+class Policy(nn.Module):
+    def __init__(self, s_dim, a_dim):
+        super().__init__()
+        self.net = nn.Sequential(nn.Linear(s_dim, 64), nn.Tanh(),
+                                 nn.Linear(64, 64), nn.Tanh(),
+                                 nn.Linear(64, a_dim))
+        self.log_std = nn.Parameter(torch.zeros(a_dim))
+    def forward(self, s):
+        return torch.distributions.Normal(self.net(s), self.log_std.exp())
+    def get_action(self, s):          # 采样 + 记 logp
+        d = self.forward(s)
+        a = d.sample()
+        return a, d.log_prob(a).sum(-1)
+
+# 价值网络:单独一个 MLP 估 V(s)
+class Value(nn.Module):
+    def __init__(self, s_dim):
+        super().__init__()
+        self.net = nn.Sequential(nn.Linear(s_dim, 64), nn.Tanh(),
+                                 nn.Linear(64, 64), nn.Tanh(), nn.Linear(64, 1))
+    def forward(self, s): return self.net(s).squeeze(-1)
+
+pi, vf = Policy(3, 2), Value(3)
+opt_pi, opt_vf = torch.optim.Adam(pi.parameters(), 3e-4), torch.optim.Adam(vf.parameters(), 1e-3)
+
+EPS, GAMMA, LAM = 0.2, 0.99, 0.97
+TARGET_KL, PI_ITERS, VF_ITERS = 0.01, 80, 80
+CV, CS = 0.5, 0.01
+
+def compute_gae(rewards, values, dones):
+    # values 比 rewards 多一个元素:末尾的「下一个状态」的 V,用于 bootstrap
+    # (轨迹被步数截断而非自然结束时,不能当成 done=0 价值)
+    adv, A = [], 0
+    for t in reversed(range(len(rewards))):
+        delta = rewards[t] + GAMMA * (1-dones[t]) * values[t+1] - values[t]
+        A = delta + GAMMA * LAM * (1-dones[t]) * A
+        adv.insert(0, A)
+    return torch.tensor(adv)
+
+def env_step(s, a):  # 占位:替换成真实 env
+    s2 = s + 0.01*a; r = -((s2**2).sum()); done = False
+    return s2, r, done
+
+def collectTrajectory(steps=4000):
+    S,A,LP,R,D,V = [],[],[],[],[],[]
+    s = torch.zeros(3)
+    for _ in range(steps):
+        with torch.no_grad():
+            v = vf(s); a, lp = pi.get_action(s)
+        s2, r, done = env_step(s, a)
+        S.append(s); A.append(a); LP.append(lp); R.append(r); D.append(done); V.append(v)
+        s = s2 if not done else torch.zeros(3)
+    with torch.no_grad():
+        last_v = vf(s)                         # 末尾 bootstrap 值(截断时用)
+    vals = [v.item() for v in V] + [last_v.item()]
+    adv = compute_gae(R, vals, D)
+    ret = adv + torch.tensor(vals[:-1])        # reward-to-go = A + V
+    return (torch.stack(S), torch.stack(A), torch.tensor(LP), adv, ret)
+
+def ppo_update(buf):
+    S, A, old_lp, adv, ret = buf
+    adv = (adv - adv.mean()) / (adv.std() + 1e-8)       # 优势归一化:降方差
+    for i in range(PI_ITERS):
+        d = pi(S)
+        new_lp = d.log_prob(A).sum(-1)
+        ratio = (new_lp - old_lp).exp()
+        clip_obj = torch.min(ratio*adv, torch.clamp(ratio,1-EPS,1+EPS)*adv)
+        loss_pi = -clip_obj.mean() + CS*(-d.entropy().mean())   # 策略裁剪 + 熵
+        opt_pi.zero_grad(); loss_pi.backward(); opt_pi.step()
+        with torch.no_grad():
+            kl = (old_lp - new_lp).mean()
+        if kl > TARGET_KL: break          # ← KL 早停
+    for _ in range(VF_ITERS):              # 价值网络单独多步回归
+        loss_v = CV*((vf(S) - ret)**2).mean()
+        opt_vf.zero_grad(); loss_v.backward(); opt_vf.step()
+
+for epoch in range(50):
+    buf = collectTrajectory()
+    ppo_update(buf)
+    print(f"epoch {epoch}: mean_adv={(buf[3].sum()/len(buf[3])).item():.2f}")
+```
+
+跑一下，关注三件事：① 把 `EPS` 调到 1.0（几乎不裁剪），训练会变不稳甚至发散——直观感受裁剪的作用；② 把 `TARGET_KL` 调到 1.0（几乎不早停），同样会变不稳；③ 优势归一化 `adv = (adv-mean)/std` 看似不起眼，去掉它方差会明显变大——这是工程上降方差的免费午餐。注意真实 PPO 实现还会把 4000 步切成小批量（minibatch）做多个 epoch，这里为可读性省略。
+
+## 小结
+
+- PPO 用概率比裁剪把 TRPO 的硬 KL 约束变成一阶可优化的软约束，支持同一批数据多 epoch 复用。
+- 完整目标 = 裁剪策略损失 − 价值损失 + 熵奖励；ε 调信任域宽度，与 GAE 的 λ 在偏差-方差上对仗。
+- PPO-Clip 比 PPO-Penalty 更主流；KL 早停是批次级的第二道保险。
+- 超参数少且默认值稳健，这是 PPO 从 Atari 用到 RLHF 的工程原因。
+
+## 延伸阅读
+
+- [策略梯度](/tutorials/policy-gradient)：PPO 的推导前置，含 GAE 与 TRPO。
+- [GRPO 与 RLVR](/tutorials/grpo-rlvr)：去掉 critic 的 PPO 变体，用组内均值当基线。
+- [从 RL 到 RLHF](/tutorials/rlhf)：PPO 在大模型对齐中的实际用法。
+
+## 参考资料
+
+<References>
+1. Schulman, Wolski, Dhariwal, Radford, Klimov (2017). *Proximal Policy Optimization Algorithms*. arXiv: [1707.06347](https://arxiv.org/abs/1707.06347). —— PPO 原始论文：裁剪 surrogate 目标、PPO-Penalty、同一批数据多 epoch 更新与实证比较。
+2. OpenAI Spinning Up — *Intro to Policy Optimization* 与 *Key Equations in RL*. [spinningup.openai.com](https://spinningup.openai.com/en/latest/spinningup/rl_intro3.html)。—— PPO 默认超参数（ε=0.2、λ=0.97、target_kl=0.01）与训练循环的工程参考。
+3. Schulman, Levine, Abbeel, Jordan, Moritz (2015). *Trust Region Policy Optimization*. arXiv: [1502.05477](https://arxiv.org/abs/1502.05477). —— PPO 所近似的 KL 信赖域方法；PPO 用一阶裁剪替代其二阶求解。
+4. Schulman, Moritz, Levine, Jordan, Abbeel (2016). *High-Dimensional Continuous Control Using Generalized Advantage Estimation*. ICLR 2016, arXiv: [1506.02438](https://arxiv.org/abs/1506.02438). —— GAE 偏差界与 λ 的含义，PPO 默认的优势估计器。
+</References>

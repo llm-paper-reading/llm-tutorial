@@ -1,0 +1,410 @@
+import { tutorialMetadata } from "@/lib/tutorials";
+
+export const metadata = tutorialMetadata("trpo");
+
+# 📐 TRPO：信赖域与单调提升
+
+TRPO 在 KL 散度硬约束下最大化替代优势，用二阶自然梯度与线搜索保证策略单调提升；PPO 后来把这套机制砍成一阶裁剪。
+
+> 📌 前置：策略梯度定理与 REINFORCE 见 [策略梯度](/tutorials/policy-gradient)；优势估计与 GAE 见 [Actor-Critic 与 GAE](/tutorials/actor-critic)。
+
+## 为什么需要信赖域
+
+有了优势，直接按 $\nabla\log\pi\cdot A$ 更新还有个隐患：**一步走太远会把策略搞崩**。为什么不能大步更新？因为策略参数 $\theta$ 的微小变动可能让行为概率分布剧变——参数空间里挨得很近的两点，在**策略分布空间**里可能差出十万八千里（尤其神经网络放大这种非线性）。于是「自信地迈一大步」常常直接把策略带崩，且无法恢复。
+
+**TRPO（Trust Region Policy Optimization,Schulman et al., 2015 <Cite n={2} />）** 的核心思想：**不在参数空间限制步长，而在策略分布空间画一个「信任圈」**——要求新策略与旧策略的 KL 散度不超过阈值 $\delta$。在圈内更新，能证明**单调提升**（每步策略至少不比旧策略差）；出了圈，理论保证失效。<Cite n={2} />
+
+### 替代优势：用旧策略的数据评新策略
+
+第一步要把「新策略有多好」表达成可用旧策略数据估计的形式。定义**概率比** $r_t(\theta)=\dfrac{\pi_\theta(a_t\mid s_t)}{\pi_{\theta_k}(a_t\mid s_t)}$（新策略采到该动作的概率 / 旧策略采到的概率）。按重要性采样的恒等式，$\mathbb{E}_{a\sim\pi_{\theta_k}}[\,r_t(\theta)\,A^{\pi_{\theta_k}}(s_t,a_t)\,]$ 正好等于 $\mathbb{E}_{a\sim\pi_\theta}[A^{\pi_{\theta_k}}(s_t,a_t)]$——即用**旧策略采的样本**就能无偏估计「新策略下优势的期望」。这个量叫**替代优势（surrogate advantage）** <Cite n={2} />:
+
+$$
+L(\theta_k,\theta)=\mathbb{E}_{s,a\sim\pi_{\theta_k}}\!\left[\frac{\pi_\theta(a\mid s)}{\pi_{\theta_k}(a\mid s)}\,A^{\pi_{\theta_k}}(s,a)\right]
+$$
+
+注意 $L(\theta_k,\theta_k)=0$（比自己，$r=1$、优势期望为 0）。若新策略真比旧策略好，$L$ 应为正；但单独最大化 $L$ 会让 $\theta$ 飞远（$r$ 可以任意大），所以必须加约束。
+
+### KL 信赖域：在分布空间画圈
+
+TRPO 把「别走太远」写成对**平均 KL 散度**的硬约束 <Cite n={2} />：<Cite n={2} />
+
+$$
+\theta_{k+1}=\arg\max_\theta\; L(\theta_k,\theta)\quad\text{s.t.}\quad \bar D_{\mathrm{KL}}(\theta_k\,\|\,\theta)\le\delta,\qquad \bar D_{\mathrm{KL}}(\theta_k\,\|\,\theta)=\mathbb{E}_{s\sim\pi_{\theta_k}}\!\big[D_{\mathrm{KL}}\!\big(\pi_{\theta_k}(\cdot\mid s)\,\big\|\,\pi_\theta(\cdot\mid s)\big)\big]
+$$
+
+$\delta$ 很小（如 0.01）。Kakade & Langford （2002） 证明：在 $\bar D_{\mathrm{KL}}\le\delta$ 这个信赖域内，真实策略性能 $J(\pi_\theta)$ 的改进量**有下界**——$J(\pi_\theta)\ge J(\pi_{\theta_k}) - \frac{4\epsilon\gamma}{(1-\gamma)^2}\delta$（$\epsilon$ 与优势上界有关）。也就是说，**只要约束满足，新策略一定不比旧策略差**（单调提升）。这是 TRPO 区别于朴素策略梯度的理论贡献 <Cite n={2} />。
+
+### 单调提升定理：为何 KL 约束能保证不退步
+
+上面那句「单调提升」是 TRPO 的理论基石，但结论 $-\frac{4\epsilon\gamma}{(1-\gamma)^2}\delta$ 这个下界从哪来、为何 KL 约束能控制性能退化，Kakade & Langford 2002 给了三步推导 <Cite n={2} />。把它拆开，能看清「信赖域」到底兜住了什么。
+
+**第一步：策略提升恒等式（policy improvement identity）。** 任意两个策略 $\pi_k$ 与 $\pi$，它们性能的差可以**精确**写成旧策略优势在新策略轨迹上的期望：
+
+$$
+J(\pi)-J(\pi_k)\;=\;\frac{1}{1-\gamma}\,\mathbb E_{\substack{s\sim d^{\pi}\\a\sim\pi}}\!\Big[A_{\pi_k}(s,a)\Big],
+$$
+
+其中 $d^\pi(s)=(1-\gamma)\sum_{t\ge0}\gamma^t\Pr(s_t=s\mid\pi)$ 是归一化折扣状态访问分布（那个 $\frac{1}{1-\gamma}$ 把归一化的 $d^\pi$ 还原回未归一化的 $\sum_t\gamma^t\Pr$）。这个恒等式不近似、不放大——它就是 $J$ 的差拆成「新策略访问的状态 × 新策略选的动作 × 旧策略觉得这个动作比平均好多少」。若 $\pi$ 总选 $A_{\pi_k}>0$ 的动作，性能升；总选 $A_{\pi_k}<0$ 的动作，性能降。问题在于 $d^\pi$ 依赖 $\pi$ 自身，无法直接优化——这正是要近似的地方。
+
+**第二步：用 $\pi_k$ 的访问分布近似 + 误差界。** 把 $d^\pi$ 换成 $d^{\pi_k}$（旧策略的访问分布，已知），误差由两个策略的 KL 散度控制。定义优势上界 $\epsilon=\max_{s,a}|A_{\pi_k}(s,a)|$（旧策略优势的最大幅值），Schulman et al. 2015 <Cite n={2} /> Lemma 2 证明：在 $\bar D_{\mathrm{KL}}(\pi_k\|\pi)\le\delta$ 下，
+
+$$
+\Big|\mathbb E_{a\sim\pi}[A_{\pi_k}(s,a)]-\mathbb E_{a\sim\pi_k}[A_{\pi_k}(s,a)]\Big|\;\le\;\frac{4\epsilon\gamma}{1-\gamma}\,\sqrt{\delta}\;\;\to\;\;\text{累积后}\;\;\frac{4\epsilon\gamma}{(1-\gamma)^2}\delta.
+$$
+
+直觉：KL 小意味着 $\pi$ 与 $\pi_k$ 在每个状态选的动作分布接近，故两者对 $A_{\pi_k}$ 的期望也接近；差距随 $\delta$ 增长，且被 $\epsilon$ 放大（优势本身大，扰动它造成的损失也大）。$\gamma/(1-\gamma)$ 因子来自折扣累积——每步的误差沿轨迹传播，$\gamma$ 接近 1 时长程累积放大。
+
+**第三步：拼出单调提升下界。** 把误差界代回恒等式：用 $d^{\pi_k}$ 近似 $d^\pi$ 引入 $\frac{4\epsilon\gamma}{(1-\gamma)^2}\delta$ 的误差，而 $d^{\pi_k}$ 下的期望 $\mathbb E_{s\sim d^{\pi_k},a\sim\pi_k}[A_{\pi_k}]=0$（旧策略对自己的优势期望为零），故
+
+$$
+J(\pi)-J(\pi_k)\;\ge\;0-\frac{4\epsilon\gamma}{(1-\gamma)^2}\delta\;=\;-\frac{4\epsilon\gamma}{(1-\gamma)^2}\delta.
+$$
+
+这就是上面的下界。它**允许小幅退步**（下界为负），但退步量被 $\delta$ 线性控制——$\delta\to0$ 时下界 $\to0$，即「每步几乎单调不退」。TRPO 选 $\delta=0.01$ 让下界几乎贴零，工程上等价于「保证每步不退步」。注意这个界**很松**：下界 $-\frac{4\epsilon\gamma}{(1-\gamma)^2}\delta$ 常比实际退化量大几十倍，因为 $\frac{4\gamma}{(1-\gamma)^2}$ 在 $\gamma=0.9$ 时已是 360。理论给的是「最坏情况兜底」，实际退化远小于界——TRPO 还用回溯线搜索在每步显式验证 $J$ 真的没降，把松弛的理论界补成紧的工程保证。
+
+### 单步 $\sqrt\delta$ 到累积 $\delta$：两个 Pinsker 界相乘
+
+上面第二步里有个容易被略过的细节：单步误差界是 $\frac{4\epsilon\gamma}{1-\gamma}\sqrt\delta$（单步界，带 $\sqrt\delta$），但累积下界却是 $\frac{4\epsilon\gamma}{(1-\gamma)^2}\delta$（累积下界，带 $\delta$）。**$\sqrt\delta$ 怎么变成 $\delta$ 的？** 这不是「$\sqrt\delta$ 沿轨迹求和」——$\sum_t\gamma^t\sqrt\delta=\frac{\sqrt\delta}{1-\gamma}$ 仍是 $\sqrt\delta$ 量级。真正的机制是 **Schulman 2015 <Cite n={2} /> Lemma 1（单步）到 Lemma 2（累积）的转换：两个独立的 Pinsker 界相乘**，把两个 $\sqrt\delta$ 变成一个 $\delta$。
+
+**Lemma 1（单步策略差）**：对任意状态 $s$，新旧策略选动作的差异由**总变差距离（total variation, TV）**控制：
+
+$$
+\Big|\mathbb E_{a\sim\pi}[A_{\pi_k}(s,a)]-\mathbb E_{a\sim\pi_k}[A_{\pi_k}(s,a)]\Big|\;\le\;2\,\epsilon\,\mathrm{TV}\big(\pi(\cdot|s)\,\big\|\,\pi_k(\cdot|s)\big),\qquad \epsilon=\max_{s,a}|A_{\pi_k}(s,a)|.
+$$
+
+（把 $A_{\pi_k}$ 的正负部分别求和，用 $\epsilon$ 截断，即得 $2\epsilon\cdot\text{TV}$；TV 是两分布密度差之和的一半 $\mathrm{TV}=\frac12\sum_a|\pi(a|s)-\pi_k(a|s)|$。）接着用 **Pinsker 不等式**把 TV 换成 KL:
+
+$$
+\mathrm{TV}\big(\pi\,\|\,\pi_k\big)\;\le\;\sqrt{\tfrac12 D_{\mathrm{KL}}\big(\pi\,\|\,\pi_k\big)}.
+$$
+
+代入得单步界 $\le 2\epsilon\sqrt{D_{\mathrm{KL}}/2}=\sqrt{2}\,\epsilon\sqrt{D_{\mathrm{KL}}}\sim\sqrt\delta$——**这就是单步 $\sqrt\delta$ 的来源**（Pinsker 把 KL 的 $\sqrt{}$ 引了进来）。
+
+**Lemma 2（累积界）的关键**：累积性能差 $J(\pi)-J(\pi_k)=\frac{1}{1-\gamma}\mathbb E_{s\sim d^\pi,a\sim\pi}[A_{\pi_k}]$ 里有**两处**分布偏离，各自独立套 Pinsker:
+
+| 误差源 | 偏离的分布 | Pinsker 界 |
+|---|---|---|
+| 动作分布 | $\pi(\cdot\|s)$ vs $\pi_k(\cdot\|s)$ | $\sim\sqrt\delta$ |
+| 状态访问分布 | $d^\pi$ vs $d^{\pi_k}$ | $\sim\sqrt\delta$ |
+
+两处 $\sqrt\delta$ 用 Cauchy-Schwarz 合并：$\sqrt\delta\times\sqrt\delta=\delta$。沿轨迹几何级数求和 $\sum_t\gamma^t=\frac{1}{1-\gamma}$，再乘恒等式因子 $\frac{1}{1-\gamma}$，得累积界 $\sim\frac{\delta}{(1-\gamma)^2}$。**所以 $\sqrt\delta\to\delta$ 不是求和，是相乘**——两个独立的 Pinsker 界（一个管动作、一个管状态占用）各贡献一个 $\sqrt\delta$，乘起来变 $\delta$。这也解释了为何累积界比单步界「紧一阶」：单步只有一个 $\sqrt\delta$，累积有两个且相乘。
+
+> ⚠️ 这里只证 $\sqrt\delta\to\delta$ 的**阶数转换**（为何累积是 $\delta$ 不是 $\sqrt\delta$），不证精确常数 $4\gamma$。Schulman 2015 <Cite n={2} /> Lemma 2 的精确系数 $4\epsilon\gamma/(1-\gamma)^2$ 涉及 $\gamma$ 因子（折扣累积）与 2 倍 TV 约束的细致合并，与阶数转换无关。下面用数值验证 Pinsker 与「两 sqrt 相乘」的机制，不验证精确系数。
+
+下面的可运行示例把这套机制数值化：① Pinsker 不等式 $\text{TV}\le\sqrt{D_{\mathrm{KL}}/2}$ 在伯努利分布上成立；② 单步策略差 $\le 2\epsilon\cdot\text{TV}\sim\sqrt{2\delta}$；③ 累积界 $\delta/(1-\gamma)^2$ 与单步 $\sqrt\delta$ 的阶数对比。
+
+<CodeRunner defaultCode={`
+import numpy as np
+
+# === TRPO: 单步 sqrt(delta) -> 累积 delta 的转换机制 ===
+# Schulman 2015 [6] Lemma 1 (单步) vs Lemma 2 (累积)
+# 核心机制: 两个独立的 Pinsker 界 (动作 + 状态占用) 相乘 => sqrt(delta)*sqrt(delta) = delta
+
+# --- 段1: Pinsker 不等式 TV(pi||pi_k) <= sqrt(D_KL/2) ---
+print("=== 段1: Pinsker 不等式 TV <= sqrt(D_KL/2) (伯努利 p=0.5, q 变化) ===")
+print(f"{'q':>6} {'KL':>10} {'TV':>10} {'sqrt(KL/2)':>12} {'Pinsker 松':>10}")
+p = 0.5
+for q in [0.45, 0.40, 0.35, 0.30, 0.20, 0.10, 0.05, 0.01]:
+    kl = p*np.log(p/q) + (1-p)*np.log((1-p)/(1-q))
+    tv = abs(p - q)
+    pinsker = np.sqrt(kl/2)
+    print(f"{q:>6.2f} {kl:>10.5f} {tv:>10.5f} {pinsker:>12.5f} {pinsker/tv:>10.3f}")
+print("  -> TV <= sqrt(KL/2) 恒成立 (比值 >= 1); 小 KL 时紧, 大 KL 时松")
+
+# --- 段2: 单步策略差 <= 2 eps TV ~ sqrt(2) eps sqrt(delta) ---
+print("\\n=== 段2: 单步 |E_pi[A]-E_pik[A]| <= 2 eps TV ~ sqrt(2) eps sqrt(delta) ===")
+print("  A=[+1,-1], eps=1, pi_k=[0.5,0.5], pi=[q,1-q]")
+print(f"{'q':>6} {'KL(delta)':>10} {'单步差':>10} {'2 eps TV':>10} {'sqrt(2*delta)':>14}")
+eps = 1.0
+for q in [0.45, 0.40, 0.35, 0.30, 0.20, 0.10, 0.05, 0.01]:
+    kl = p*np.log(p/q) + (1-p)*np.log((1-p)/(1-q))
+    e_pik = 0.0           # 0.5*1 + 0.5*(-1) = 0
+    e_pi = q*1 + (1-q)*(-1)  # = 2q - 1
+    diff = abs(e_pi - e_pik)
+    tv = abs(p - q)
+    bound_tv = 2 * eps * tv
+    bound_sqrt = np.sqrt(2 * kl)
+    print(f"{q:>6.2f} {kl:>10.5f} {diff:>10.5f} {bound_tv:>10.5f} {bound_sqrt:>14.5f}")
+print("  -> 单步差 = 2 eps TV (精确); 2 eps TV ~ sqrt(2 delta) (Pinsker); 小 delta 时贴 sqrt(2)")
+
+# --- 段3: 累积界 = 两个 sqrt(delta) 相乘 => delta, 阶数对比 ---
+print("\\n=== 段3: 累积界 sqrt(delta)*sqrt(delta) = delta 的阶数机制 ===")
+print("  误差源 1 (动作):  |E_pi[A]-E_pik[A]| ~ sqrt(delta)   [Pinsker on action]")
+print("  误差源 2 (状态):  |d^pi(s)-d^pik(s)| ~ sqrt(delta)   [Pinsker on state occupancy]")
+print("  合并: sqrt(delta) * sqrt(delta) = delta  (Cauchy-Schwarz)")
+print("  沿轨迹求和: sum_t gamma^t = 1/(1-gamma)")
+print("  恒等式因子: 1/(1-gamma)")
+print("  => 累积界 ~ delta / (1-gamma)^2")
+print()
+print(f"  {'gamma':>6} {'delta':>8} {'单步 sqrt(d)':>14} {'若求和 sqrt(d)/(1-g)':>22} {'实际累积 d/(1-g)^2':>20}")
+for gamma in [0.9, 0.95, 0.99]:
+    delta = 0.01
+    single = np.sqrt(delta)
+    if_sum = single / (1-gamma)              # 错误直觉: sqrt 求和
+    actual = delta / (1-gamma)**2            # 正确: 两 sqrt 相乘 + 求和 + 恒等式
+    print(f"  {gamma:>6.2f} {delta:>8.3f} {single:>14.4f} {if_sum:>22.4f} {actual:>20.4f}")
+print("  -> 若仅求和 sqrt(delta)/(1-g) 量级仍是 sqrt(delta);")
+print("  -> 实际累积 d/(1-g)^2 是 delta 量级 (两 sqrt 相乘), 比求和直觉紧一阶")
+print("  -> 这就是 Lemma 1 (单步 sqrt) -> Lemma 2 (累积 delta) 的转换根因")
+`} title="TRPO 单步 sqrt(delta) 到累积 delta: 两个 Pinsker 界相乘" />
+
+下面用 3 状态链 toy 把这三步数值化：① 策略提升恒等式左右两侧精确相等；② KL 约束下的下界成立（实际退化 ≥ 下界）；③ 扫描 $\delta$ 看下界如何随 KL 放宽而变负。
+
+<CodeRunner defaultCode={`import numpy as np
+
+# ============================================================
+# TRPO 单调提升定理 (Kakade & Langford 2002, Schulman 2015 [6])
+# J(pi) - J(pi_k) >= -4*eps*gamma/(1-gamma)^2 * delta
+# 三步: 策略提升恒等式 -> 优势界 -> 误差累积
+# ============================================================
+
+# 3 状态链 s0 -> s1 -> s2(吸收), 2 动作 (左/右)
+S, A, gamma = 3, 2, 0.9
+P = np.zeros((S, A, S)); R = np.zeros((S, A))
+P[0,0,0]=1.0; P[0,1,1]=1.0      # s0: 左->s0, 右->s1
+P[1,0,0]=1.0; P[1,1,2]=1.0      # s1: 左->s0, 右->s2(吸收)
+P[2,0,2]=1.0; P[2,1,2]=1.0      # s2 吸收
+R[1,1] = 1.0                     # s1 右 -> s2 给 +1
+
+def policy_eval(pi):
+    V = np.zeros(S)
+    for _ in range(1000):
+        Vn = np.zeros(S)
+        for s in range(S):
+            for a in range(A):
+                Vn[s] += pi[s,a] * (R[s,a] + gamma * P[s,a] @ V)
+        if np.max(np.abs(Vn - V)) < 1e-12: break
+        V = Vn
+    return V
+
+def Q_values(pi):
+    V = policy_eval(pi)
+    Q = np.array([[R[s,a] + gamma * P[s,a] @ V for a in range(A)] for s in range(S)])
+    return Q, V
+
+def visit_norm(pi, max_t=2000):
+    # d^pi(s) = (1-gamma) sum_t gamma^t P(s_t=s|pi), 从 s0 出发
+    d = np.zeros(S); sd = np.zeros(S); sd[0] = 1.0
+    for t in range(max_t):
+        d += (gamma**t) * sd
+        nd = np.zeros(S)
+        for s in range(S):
+            for a in range(A):
+                nd += pi[s,a] * P[s,a] * sd[s]
+        sd = nd
+        if np.sum(sd) < 1e-15: break
+    return (1 - gamma) * d
+
+def bar_KL(pi_a, pi_b):
+    # bar D_KL(pi_k || pi) = E_{s~d^pi_k} D_KL(pi_k(.|s) || pi(.|s))
+    d_k = visit_norm(pi_k)
+    total = 0.0
+    for s in range(S):
+        pk, pn = pi_k[s], pi_a[s]
+        kl_s = sum(pk[a]*np.log(pk[a]/pn[a]) for a in range(A) if pk[a]>1e-15 and pn[a]>1e-15)
+        total += d_k[s] * kl_s
+    return total
+
+# 旧策略 pi_k: 偏右 (快到目标)
+pi_k = np.array([[0.2,0.8],[0.1,0.9],[0.5,0.5]])
+Q_k, V_k = Q_values(pi_k)
+A_k = Q_k - V_k[:, None]          # A_{pi_k}(s,a) = Q_k - V_k
+eps = np.max(np.abs(A_k))
+
+print("=== 旧策略 pi_k ===")
+print(f"  V_k = {np.round(V_k, 6)}")
+print(f"  A_pi_k(s,a) = \\n{np.round(A_k, 6)}")
+print(f"  eps = max |A_pi_k| = {eps:.6f}")
+
+# === 段1: 策略提升恒等式 ===
+print("\\n=== 段1: 策略提升恒等式 J(pi)-J(pi_k) = (1/(1-gamma)) E[d^pi pi A_pi_k] ===\\n")
+pi_new = np.array([[0.6,0.4],[0.5,0.5],[0.5,0.5]])  # 偏左 (故意变差)
+J_k = policy_eval(pi_k)[0]
+J_new = policy_eval(pi_new)[0]
+d_new = visit_norm(pi_new)
+# 恒等式: 1/(1-gamma) * sum_s d_norm(s) sum_a pi(a|s) A(s,a)
+identity = sum(d_new[s]*pi_new[s,a]*A_k[s,a] for s in range(S) for a in range(A)) / (1-gamma)
+print(f"  J(pi_k)   = {J_k:.6f}")
+print(f"  J(pi_new) = {J_new:.6f}")
+print(f"  直接差 J(pi)-J(pi_k)        = {J_new-J_k:.6f}")
+print(f"  恒等式 (1/(1-gamma)) E[...] = {identity:.6f}")
+print(f"  残差 = {abs((J_new-J_k) - identity):.2e} (恒等式精确成立)")
+
+# === 段2: KL 约束 + 单调提升下界 ===
+print("\\n=== 段2: KL 约束 + 单调提升下界 ===\\n")
+delta = bar_KL(pi_new, pi_k)
+lb = -4 * eps * gamma / (1-gamma)**2 * delta
+print(f"  bar D_KL(pi_k || pi_new) = delta = {delta:.6f}")
+print(f"  eps = {eps:.6f}, gamma = {gamma}")
+print(f"  4*eps*gamma/(1-gamma)^2 = {4*eps*gamma/(1-gamma)**2:.6f}")
+print(f"  下界 -4*eps*gamma/(1-gamma)^2 * delta = {lb:.6f}")
+print(f"  实际 J(pi)-J(pi_k) = {J_new-J_k:.6f}")
+print(f"  下界成立? {J_new-J_k:.6f} >= {lb:.6f} : {J_new-J_k >= lb - 1e-9}")
+print(f"  -> 下界为负 (允许小幅退步), delta 小则下界贴 0 = 单调; 界很松 (实际远大于下界)")
+
+# === 段3: delta 扫描, 下界随 KL 放宽而变负 ===
+print("\\n=== 段3: delta 扫描 —— 下界随 KL 放宽变负 ===\\n")
+print(f"  {'delta':>10} {'J(pi)-J(pi_k)':>16} {'下界':>12} {'成立':>6}")
+print(f"  {'-'*48}")
+pi_bad = np.array([[1.0,0.0],[1.0,0.0],[0.5,0.5]])  # 全左 (最差)
+for w in [0.0, 0.1, 0.2, 0.3, 0.5, 0.7, 0.9]:
+    pi_test = (1-w)*pi_k + w*pi_bad
+    d = bar_KL(pi_test, pi_k)
+    diff = policy_eval(pi_test)[0] - J_k
+    bound = -4 * eps * gamma / (1-gamma)**2 * d
+    ok = "Y" if diff >= bound - 1e-9 else "N"
+    print(f"  {d:>10.6f} {diff:>+16.6f} {bound:>+12.6f} {ok:>6}")
+print(f"  -> delta->0 时下界->0 (单调提升); delta 大则下界越负 (允许退步越大)")
+print(f"  -> TRPO 选 delta=0.01 让下界几乎贴 0, 工程上保证每步不退步 [6]")
+`} title="TRPO 单调提升定理:策略提升恒等式与 KL 下界" />
+
+跑完看三件事：① 段1 策略提升恒等式左右两侧残差 $\sim10^{-12}$（精确成立）——$J$ 的差确实等于旧策略优势在新策略轨迹上的期望；② 段2 下界 $-\frac{4\epsilon\gamma}{(1-\gamma)^2}\delta$ 成立（实际退化 $\ge$ 下界），但很松（实际 $-0.254$ 远大于下界 $-5.86$），印证「理论给最坏情况兜底」；③ 段3 扫描 $\delta$：KL 越大下界越负，$\delta\to0$ 时下界 $\to0$ 即单调——这正是 TRPO 选小 $\delta=0.01$ 的根因，让理论下界几乎贴零，配合回溯线搜索把松弛界补成紧的工程保证 <Cite n={2} />。
+
+### 二阶近似：目标一阶、约束二阶
+
+直接解上面带约束的优化很难（TRPO 要的是 $\theta$ 是个高维神经网络参数）。TRPO 的做法是**在 $\theta_k$ 附近做泰勒展开** <Cite n={2} />:
+
+- **目标一阶近似**：$L(\theta_k,\theta)\approx g^\top(\theta-\theta_k)$,其中 $g=\nabla_\theta L(\theta_k,\theta)\big|_{\theta=\theta_k}$ 就是策略梯度;
+- **约束二阶近似**：$\bar D_{\mathrm{KL}}(\theta_k\,\|\,\theta)\approx \tfrac12(\theta-\theta_k)^\top H(\theta-\theta_k)$,其中 $H$ 是 KL 的 Hessian——它恰好等于 **Fisher 信息矩阵** $\mathbb{E}[\nabla\log\pi\,\nabla\log\pi^\top]$.
+
+近似后的优化变成：**在椭球 $\tfrac12(\theta-\theta_k)^\top H(\theta-\theta_k)\le\delta$ 内，沿 $g$ 方向走到边界**。
+
+### 自然策略梯度：解析解
+
+这个带二次约束的线性目标有闭式解。用拉格朗日对偶消去约束，得到 <Cite n={2} />:
+
+$$
+\theta_{k+1}=\theta_k+\sqrt{\frac{2\delta}{g^\top H^{-1}g}}\;H^{-1}g
+$$
+
+这就是 **自然策略梯度（natural policy gradient）**——方向 $H^{-1}g$ 用 Fisher 矩阵的逆把普通梯度 $g$ 「折弯」到分布空间的自然度量下（梯度大的方向若在分布空间里其实变动小，自然梯度会多走；反之少走）。步长系数 $\sqrt{2\delta/(g^\top H^{-1}g)}$ 恰好让约束取等（走到椭球边界）。
+
+下面用 numpy 验证这个解析解确实是「可行域内 $g^\top s$ 最大」的点：
+
+<CodeRunner defaultCode={`
+import numpy as np
+
+# 验证 TRPO 自然梯度解析解: 在 0.5 s^T H s <= delta 内最大化 g^T s
+# 解为 s* = sqrt(2*delta/(g^T H^-1 g)) * H^-1 g
+np.random.seed(0)
+n = 5
+A = np.random.randn(n, n)
+H = A.T @ A + 0.1*np.eye(n)     # 正定 Fisher 近似
+g = np.random.randn(n)
+delta = 0.05
+
+Hinv_g = np.linalg.solve(H, g)  # 解 H x = g 得 H^-1 g
+step = np.sqrt(2*delta / (g @ Hinv_g))
+s_star = step * Hinv_g
+
+print(f"解析步长系数 = {step:.4f}")
+print(f"自然梯度方向 H^-1 g = {np.round(Hinv_g, 3)}")
+print(f"普通梯度方向     g = {np.round(g, 3)}")
+# 验证 1: 约束取等  0.5 s^T H s == delta
+constraint = 0.5 * s_star @ H @ s_star
+print(f"\\n约束 0.5 s^T H s = {constraint:.6f}  (应 = delta={delta}) -> 走到椭球边界")
+# 验证 2: 在约束面上 g^T s 最大 —— 与 20 万随机可行方向比
+best = g @ s_star
+rng = np.random.default_rng(1)
+better = 0
+for _ in range(200000):
+    s = rng.standard_normal(n)
+    s *= np.sqrt(2*delta / (s @ H @ s))   # 投影到约束面
+    if g @ s > best + 1e-9: better += 1
+print(f"随机可行方向中优于解析解的个数: {better} (应为 0) -> 解析解确为最优")
+# 验证 3: 自然梯度与普通梯度不同向
+cos = g @ Hinv_g / (np.linalg.norm(g)*np.linalg.norm(Hinv_g))
+print(f"\\ng 与 H^-1 g 的夹角余弦 = {cos:.4f} (非 1 -> 自然梯度对度量做了修正)")
+print("机制: H^-1 g 把'参数空间梯度'折弯到'分布空间自然度量'下, 沿真实变动最大的方向走")
+`} />
+
+### 共轭梯度：避开 $H^{-1}$ 的二阶求解
+
+解析解要算 $H^{-1}g$，而 $H$ 是 $|\theta|\times|\theta|$ 的矩阵（神经网络参数动辄百万维），求逆**不可行**。TRPO 的工程巧思 <Cite n={2} />:
+
+1. **共轭梯度法（conjugate gradient, CG）**：不显式构造 $H$，只需算 **Hessian-向量积** $Hv$。CG 至多 $n$ 步收敛到 $H^{-1}g$ 的精确解（实践中只跑 10 步左右，够用）。
+2. **Hessian-向量积的自动微分技巧**：利用恒等式 $Hx=\nabla_\theta\!\big[(\nabla_\theta \bar D_{\mathrm{KL}})^\top x\big]$——先算 KL 梯度（一次反向传播），与 $x$ 内积后再算梯度（第二次反向传播），就得到 $Hx$，**全程不显式存 $H$**.
+3. **阻尼（damping）**：给 $H$ 加个小对角 $H\leftarrow H+\alpha I$，保证正定、数值稳定。
+
+下面验证 CG 在 $n$ 步内精确收敛到 $H^{-1}g$：
+
+<CodeRunner defaultCode={`
+import numpy as np
+
+# 验证共轭梯度法解 H x = g, 只用 Hessian-vector 积 Hv, 不显式求逆
+np.random.seed(0)
+n = 8
+A = np.random.randn(n, n)
+H = A.T @ A + 0.1*np.eye(n)
+g = np.random.randn(n)
+
+def Hv(v):  # 模拟自动微分的 Hessian-vector 积
+    return H @ v
+
+# 标准共轭梯度
+x = np.zeros(n)
+r = g - Hv(x)
+p = r.copy()
+for it in range(n):
+    Hp = Hv(p)
+    alpha = (r @ r) / (p @ Hp)
+    x = x + alpha * p
+    r_new = r - alpha * Hp
+    if np.linalg.norm(r_new) < 1e-10:
+        print(f"CG 在 {it+1} 步收敛 (n={n}), 残差 {np.linalg.norm(r_new):.2e}")
+        break
+    beta = (r_new @ r_new) / (r @ r)
+    p = r_new + beta * p
+    r = r_new
+
+# 与直接求解对比
+x_true = np.linalg.solve(H, g)
+err = np.max(np.abs(x - x_true))
+print(f"CG 解 vs 直接解 H^-1 g 最大误差: {err:.2e}")
+print(f"\\n要点: CG 只调用 Hv(n 次), 从不显式构造/求逆 H")
+print("      神经网络参数百万维时, H 是百万x百万矩阵无法存储, 但 Hv 可用自动微分一次算出")
+`} />
+
+### 回溯线搜索：弥补泰勒近似的误差
+
+泰勒展开只是局部近似，真走过去可能违反约束或没改进。TRPO 加一道**回溯线 search** 兜底 <Cite n={2} />：算出自然梯度方向后，试步长 $\alpha^j$（$j=0,1,2,\dots$，$\alpha\in(0,1)$ 是回溯系数），找**最小的 $j$** 使更新后同时满足：
+
+1. **KL 约束**：$\bar D_{\mathrm{KL}}(\theta_k\|\theta_{k+1})\le\delta$（没出圈）；
+2. **替代优势改进**：$L(\theta_k,\theta_{k+1})\ge 0$（新策略确实不差）。
+
+```python
+# 伪代码: TRPO 一次策略更新
+g = policy_gradient(batch)               # 一阶: 策略梯度
+x = conjugate_gradient(Hv, g, n_iters=10)  # 二阶: 解 H x = g 得自然梯度方向
+step = np.sqrt(2*delta / (g @ x))        # 解析步长
+for j in range(max_backtracks):
+    theta_new = theta + (alpha**j) * step * x
+    if kl(old, theta_new) <= delta and surrogate(theta_new) >= 0:
+        theta = theta_new; break         # 找到满足约束与改进的步长
+```
+
+回溯让 TRPO 即便在泰勒近似不准时也不崩——宁可走小步，也不出圈。
+
+### TRPO vs PPO：精确求解 vs 一阶近似
+
+TRPO 理论漂亮（单调提升）、训练稳定，但**工程沉重**：每步要算 Fisher-向量积 + 跑 CG + 回溯，计算贵；超参（$\delta$、阻尼系数、CG 迭代数）都敏感。**PPO** 把这套二阶机制**砍成一阶**——丢掉 Hessian 和 CG，改用裁剪目标把「KL 约束」翻译成「概率比约束」，用普通 SGD/Adam 多 epoch 复用数据。PPO 牺牲了单调提升的严格证明，换来工程上的简单鲁棒，从 Atari 一路用到 RLHF，成了主流 <Cite n={1} />。下面的小节就讲 PPO 怎么做这个一阶近似。
+
+## 小结
+
+- TRPO 用替代优势 $L(	heta_k,	heta)$ 近似策略改进，并用 KL 信赖域 $ar D_{KL}\le\delta$ 控制步长。
+- 单调提升定理给出 $J(\pi_{k+1})-J(\pi_k)\ge L(\pi_k,\pi_{k+1})-rac{4\epsilon\gamma}{(1-\gamma)^2}ar D_{KL}$，保证每步不退步。
+- 工程上用自然梯度 $F^{-1}g$、共轭梯度求 $Hx=g$、回溯线搜索兜底；代价是二阶计算与超参敏感。
+- PPO 是它的一阶近似：见 [PPO](/tutorials/ppo)。
+
+## 延伸阅读
+
+- [Actor-Critic 与 GAE](/tutorials/actor-critic)：TRPO 使用的优势估计。
+- [PPO](/tutorials/ppo)：TRPO 的一阶裁剪替代。
+- [策略梯度的收敛性](/tutorials/policy-gradient-theory)：自然梯度与收敛保证的理论背景。
+
+## 参考资料
+
+<References>
+1. Schulman, Wolski, Dhariwal, Radford, Klimov (2017). *Proximal Policy Optimization Algorithms*. [arXiv:1707.06347](https://arxiv.org/abs/1707.06347). —— PPO 原始论文：提出裁剪 surrogate 目标 $L^{\text{CLIP}}=\min(rA,\text{clip}(r,1-\varepsilon,1+\varepsilon)A)$ 与自适应 KL 惩罚变体 PPO-Penalty；支持同一批数据多 epoch 小批量更新；在 Atari/连续控制/Mujoco 上权衡样本效率、简洁性、墙钟时间，优于 TRPO 等 on-policy 方法，成为 RLHF 时代的主力算法。
+2. Schulman, Levine, Abbeel, Jordan, Moritz (2015). *Trust Region Policy Optimization*. [arXiv:1502.05477](https://arxiv.org/abs/1502.05477). —— TRPO 原始论文：在 KL 散度硬约束 $\bar D_{\text{KL}}\le\delta$ 下最大化 surrogate 优势，基于 Kakade & Langford 2002 的策略提升界；用共轭梯度求解二阶自然梯度，理论可证策略单调提升，PPO 是其一阶近似。
+</References>

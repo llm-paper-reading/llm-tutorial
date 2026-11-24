@@ -1,0 +1,131 @@
+import { tutorialMetadata } from "@/lib/tutorials";
+
+export const metadata = tutorialMetadata("continual-learning");
+
+# 🧱 持续学习：对抗灾难性遗忘
+
+模型在任务序列上训练时，新任务会把旧任务的参数覆盖掉。本文比较 EWC 的参数重要性正则与 Progressive Networks 的加列冻结。
+
+> 📌 前置：策略梯度见 [策略梯度](/tutorials/policy-gradient)；元强化学习见 [元强化学习](/tutorials/meta-rl)。
+
+## 问题：流式任务与灾难性遗忘
+
+元 RL 学的是「**新任务来之前**的先验」——它假设任务分布静止、可以反复采样训练。但现实里智能体面对的常常是**一条流式任务序列**：任务 A 训完部署一段时间，任务 B 来了，B 训完又来 C……并且 A 的数据往往已不可得（隐私、存储、在线流）。这种设定下，朴素的「在 B 上继续微调 $\theta$」会触发一个臭名昭著的现象——**灾难性遗忘（catastrophic forgetting）**：网络为学好 B 而改写的那部分参数，恰好破坏了 A 已学到的表征，导致 A 的性能断崖式下跌。连接主义模型（参数共享的神经网络）天然易遗忘：所有知识混在同一组权重里，新梯度无差别地覆盖旧解。这正是持续学习 / 终身学习（continual / lifelong RL）要解决的核心难题。
+
+> 💡 **为什么记忆回放（experience replay）不算持续学习的解？** 最朴素的反遗忘办法是把 A 的数据存下来，训 B 时混着回放。它有效，但有三处硬伤：① **存储与隐私**——任务流可能横跨几年、数据量爆炸，且 A 的原始数据常因隐私/合规不能留存；② **任务边界假设**——需要明确知道「哪些样本属于 A」，在线流里任务切换往往是渐变的；③ **与 on-policy 策略法冲突**——PPO 这类算法要求采集策略与当前策略同分布，旧任务的离策略数据会引入 off-policy 偏差（这点与 [DQN 的 experience replay](/tutorials/dqn#法宝一经验回放experience-replay) 之所以能用在 Q-learning 而非直接 PPO 上是同一个道理）。持续学习的研究主线因此转向**不靠存旧数据**的路线：参数保护、架构扩张。
+
+### EWC：Fisher 信息标记「重要参数」
+
+**弹性权重巩固（Elastic Weight Consolidation, EWC）**<Cite n={1} /> 的思路是：不存 A 的数据，只存一个「**A 训完后，每个参数有多重要**」的摘要，训 B 时对重要参数施加软约束——允许它们动，但动得越远罚得越重。<Cite n={1} />
+
+参数重要性用什么度量？EWC 选用该参数处损失曲面的**Fisher 信息对角** $F_i$。直觉：若参数 $i$ 在 A 的解 $\theta^*_A$ 处损失曲面很陡（$F_i$ 大），微动它就让 A 的损失大涨——它对 A「关键」，训 B 时要保护；若曲面很平（$F_i$ 小），动它对 A 无伤——放它自由去适配 B。Fisher 信息的对角元正是损失在当前解处的二阶曲率（负对数似然的 Hessian 期望，见 [策略梯度的收敛性](/tutorials/policy-gradient-theory#自然梯度换一种距离让收敛更稳) 中 Fisher 作策略分布度量的同一概念；在 [DQN 篇 VIME](/tutorials/dqn#不确定性驱动的探索vime集成分歧与情景可达性) 里它还以 KL 近似形式驱动探索），EWC 把它从「度量策略空间距离」转用为「度量参数重要性」。
+
+训 B 时，EWC 在 B 的损失上加一个**二次惩罚项**：
+
+$$
+\mathcal{L}_{\text{total}}(\theta) \;=\; \mathcal{L}_{B}(\theta) \;+\; \frac{\lambda}{2}\sum_{i} F_i\,(\theta_i - \theta^{*}_{A,i})^2
+$$
+
+其中 $\theta^{*}_{A,i}$ 是 A 训完后冻结的参数值，$F_i$ 是在该点算得的 Fisher 对角，$\lambda$ 控制保护强度。关键对比：
+
+- **朴素（无约束）**：$\lambda=0$,只优化 $\mathcal L_B$ → $\theta$ 直接滑向 $\theta^*_B$,A 被彻底覆盖;
+- **L2 正则（同等保护）**：把 $\sum_i(\theta_i-\theta^*_{A,i})^2$ 不加权地罚 → 所有参数一视同仁,但「对 A 重要的参数」与「不重要的参数」受同等阻力,要么过度束缚 B（为保护不重要的参数白白牺牲 B 的适配）,要么保护力度不足;
+- **EWC**：用 $F_i$ **加权**——重要参数（$F_i$ 大）强保护、自由参数（$F_i$ 小）放行,精准地「只锁住对 A 关键的方向」.
+
+下面这个 2 维玩具把三种策略的差异算出来：任务 A 的最优参数 $\theta^*_A=(3,0)$、Fisher 对角 $F=(4,0.5)$（参数 1 对 A 重要、参数 2 不重要）；任务 B 的最优参数 $\theta^*_B=(0,3)$，与 $\theta^*_A$ **正交**（梯度冲突，逼出遗忘）。三种方式从 $\theta^*_A$ 出发学 B，看 A 损失（越小=A 保留越好）与 B 损失（越小=B 学得越好）的权衡。
+
+<CodeRunner defaultCode={`
+import numpy as np
+
+# 两任务顺序学习 toy(2 维参数空间)
+# 任务 A: L_A = 0.5*sum( F*(theta-a*)^2 ),  a*=(3,0), Fisher 对角 F=[4,0.5]
+#   → 参数 1 对 A 重要(F 大)、参数 2 不重要(F 小)
+# 任务 B: L_B = 0.5*sum( (theta-b*)^2 ),    b*=(0,3)  ← 与 a* 正交,梯度冲突
+a_star = np.array([3.0, 0.0])
+b_star = np.array([0.0, 3.0])
+F = np.array([4.0, 0.5])
+lam = 1.0
+
+def L_A(t): return 0.5*np.sum(F*(t-a_star)**2)
+def L_B(t): return 0.5*np.sum((t-b_star)**2)
+
+theta_A = a_star.copy()  # A 训练结束,参数停在 a*
+
+# ① 朴素:只优化 L_B → 直接滑到 b*
+theta_naive = b_star.copy()
+# ② L2 正则: min L_B + (lam/2)*sum((theta-a*)^2)
+#    d/dtheta: (theta-b*) + lam*(theta-a*) = 0  →  theta = (b*+lam*a*)/(1+lam)
+theta_l2 = (b_star + lam*a_star) / (1+lam)
+# ③ EWC: min L_B + (lam/2)*sum( F*(theta-a*)^2 )
+#    d/dtheta: (theta-b*) + lam*F*(theta-a*) = 0  →  theta_i = (b*_i+lam*F_i*a*_i)/(1+lam*F_i)
+theta_ewc = (b_star + lam*F*a_star) / (1+lam*F)
+
+print("=== A 训练结束(参数停在 a*) ===")
+print("  theta_A =", theta_A, "  L_A(a*) =", round(L_A(theta_A),4))
+print()
+print("=== 学完 B 后,三种策略对比 ===")
+print("  L_A 越小 = A 保留越好; L_B 越小 = B 学得越好")
+print("  朴素:  theta=%s  L_A=%6.3f  L_B=%5.3f  ← A 崩溃" % (theta_naive, L_A(theta_naive), L_B(theta_naive)))
+print("  L2:    theta=%s   L_A=%6.3f  L_B=%5.3f  ← A 保护但 B 受阻" % (np.round(theta_l2,3), L_A(theta_l2), L_B(theta_l2)))
+print("  EWC:   theta=%s   L_A=%6.3f  L_B=%5.3f  ← 关键参数守住 + 自由参数学好" % (np.round(theta_ewc,3), L_A(theta_ewc), L_B(theta_ewc)))
+
+# 梯度下降数值验证 EWC 收敛点(确认解析解)
+th = theta_A.copy()
+for _ in range(2000):
+    th -= 0.1 * ((th - b_star) + lam*F*(th - a_star))
+print()
+print("=== EWC 梯度下降数值验证(2000 步)===")
+print("  数值 theta =", np.round(th,4), " 解析 =", np.round(theta_ewc,4), " 误差=%.2e" % np.max(np.abs(th-theta_ewc)))
+
+print()
+print("=== 灾难性遗忘量化(L_A 相对 A 训练结束时的增量)===")
+print("  朴素遗忘量: %.3f  (灾难性)" % (L_A(theta_naive) - L_A(theta_A)))
+print("  L2  遗忘量: %.3f  (保护但牺牲 B)" % (L_A(theta_l2)   - L_A(theta_A)))
+print("  EWC 遗忘量: %.3f  (精准保护关键参数)" % (L_A(theta_ewc)  - L_A(theta_A)))
+`}/>
+
+> 💡 **看图要点**：$F=(4,0.5)$ 意味着参数 1 对 A 重要、参数 2 不重要。朴素直接跳到 $\theta^*_B=(0,3)$，A 损失从 0 飙到 20.25——灾难性遗忘。L2 把两个参数同等拉向 $\theta^*_A$，落在 $(1.5,1.5)$：A 损失 5.06（保护住了），但 B 损失 2.25（B 也没学好，被不重要的参数拖累）。EWC 用 $F$ 加权，落在 $(2.4,2.0)$：参数 1（重要）被强力拉回 3 附近守住、参数 2（不重要）自由地滑向 3 去适配 B——A 损失仅 1.72，B 损失虽略高于朴素但远好于 L2。**同样是「保护」，$F$ 加权让保护精准落在关键方向上**。梯度下降 2000 步的数值解与解析解误差 0.0，验证了 EWC 损失的最优解就是解析公式。
+
+### Progressive Networks：加列而非改列
+
+EWC 走的是「**保护参数**」路线——不动结构，只约束已有权重的更新。另一条截然不同的路线是「**扩张架构**」:**为每个新任务加一列全新网络，旧列冻结、新列随机初始化后训练，列间用侧向连接（lateral connections）传递特征**。这是 Progressive Networks（渐进式网络，Rusu et al. 2016）<Cite n={2} /> 的设计。<Cite n={2} />
+
+设任务 A 训完得到列 1 的权重 $\theta^{(1)}$（冻结）。任务 B 来了：新增列 2 $\theta^{(2)}$（可训练），列 1 保持冻结；列 2 的每一层 $l$ 通过一个侧向连接 $U^{(2\leftarrow 1)}_l$ 读列 1 同层特征，新列输出 $h^{(2)}_l = f(W^{(2)}_l h^{(2)}_{l-1} + U^{(2\leftarrow 1)}_l h^{(1)}_l)$。列 1 因冻结而**绝对不遗忘**（A 的表征原封不动），列 2 学 B 时通过侧向连接**复用 A 已学到的有用特征**（类似迁移学习的早期特征复用，但显式化、不破坏）。任务 C 来了再加列 3，侧向连列 1、列 2……
+
+代价是**容量随任务数线性增长**（每任务一列），且任务数多了以后侧向连接的参数也膨胀；另外新任务的「列数」是先验（需知道任务边界）。但它的优点也很硬：**零遗忘**（旧列冻结）、**正向迁移**（侧向连接复用旧特征），在 Atari 多任务序列上显著优于「朴素微调」与「每任务独立网络」。EWC 与 Progressive Networks 代表持续学习的两条哲学——**约束参数更新 vs 扩张网络容量**——各有适用场景。
+
+| 方法 | 核心机制 | 旧任务遗忘 | 正向迁移 | 存储 | 容量增长 | 任务边界 |
+|---|---|---|---|---|---|---|
+| **朴素微调** | 在新任务上直接 SGD | ❌ 灾难性 | 无 | 无 | 不变 | 不需 |
+| **experience replay** | 混入旧任务数据回放 | ✅ 低 | 可有 | ❌ 存旧数据（隐私/存储） | 不变 | 需标注 |
+| **L2 正则** | 向 $\theta^*_A$ 同等加权约束 | ⚠️ 中 | 无 | 存 $\theta^*_A$ | 不变 | 需知道切任务 |
+| **EWC**<Cite n={1} /> | Fisher 加权约束**重要**参数 | ✅ 低 | 无 | 存 $\theta^*_A+F$（轻量） | 不变 | 需知道切任务 |
+| **Progressive Nets**<Cite n={2} /> | 加列冻结旧列 + 侧向连接 | ✅ 零 | ✅ 强 | 无 | ❌ 线性增长 | 需知道切任务 |
+
+### 跨任务学习的三种范式
+
+把本节的持续学习放回更大的图景里，「跨任务学习」至少有三种典型范式，各自回答「过往任务如何帮新任务」这个共同问题的不同侧面：
+
+- **元强化学习（meta-RL，见 [元强化学习](/tutorials/meta-rl)）**：任务分布 $p(\mathcal T)$ 静止、可反复采样,**训练前**学一个易适配的先验（初始化或算法）,新任务来几步梯度/几条轨迹就适配.问题:假设能反复访问任务分布;
+- **多任务 RL**（见 [DQN 篇多任务](/tutorials/dqn)与分布式 RL 的讨论）：**同时**持有所有任务、联合优化一个共享网络（或参数共享 + 任务头），任务间相互正则。问题：需要同时拥有所有任务数据，无法处理流式到来的新任务；
+- **持续学习（本节）**：任务**依次流式到来、旧数据不可得**,目标是在学新任务的同时不破坏旧任务.问题:任务边界、遗忘-迁移权衡.
+
+三者并非互斥：meta-RL 学到的先验可以作持续学习的起点（先 meta 训一个易微调初始化，再在新任务序列上用 EWC 保护），多任务的共享表征也是持续学习里「新列复用旧列」的天然基础。理解三者的假设差异（任务可否反复访问 / 同时持有 / 流式到来），才能为手头的跨任务场景选对工具。
+
+## 小结
+
+- 灾难性遗忘源于参数共享：新任务的梯度无差别覆盖旧解。
+- EWC 用 Fisher 信息衡量参数重要性，在损失里加二次惩罚保护关键参数。
+- Progressive Networks 为新任务加列、冻结旧列，用侧向连接做正向迁移，代价是容量随任务数线性增长。
+
+## 延伸阅读
+
+- [元强化学习](/tutorials/meta-rl)：从任务分布学先验的另一条路。
+- [策略梯度](/tutorials/policy-gradient)：本文实验常用的基座算法。
+
+## 参考资料
+
+<References>
+1. Kirkpatrick, J., Pascanu, R., Rabinowitz, N., Veness, J., Desjardins, G., Rusu, A. A., Milan, K., Quan, J., Ramalho, T., Grabska-Barwinska, A., Hassabis, D., Clopath, C., Kumaran, D., Hadsell, R. (2017). *Overcoming catastrophic forgetting in neural networks*. PNAS 114(13):3521-3526. [arXiv:1612.00796](https://arxiv.org/abs/1612.00796) / [DOI:10.1073/pnas.1611835114](https://doi.org/10.1073/pnas.1611835114). —— EWC 原始论文：指出连接主义模型在序列任务上「灾难性遗忘」源于参数共享、新梯度无差别覆盖旧解；提出用任务 A 收敛点 $\theta^*_A$ 处的 Fisher 信息对角 $F_i$ 作参数重要性度量，在任务 B 的损失上加二次惩罚 $\mathcal L_{\text{total}}=\mathcal L_B+\frac{\lambda}{2}\sum_i F_i(\theta_i-\theta^*_{A,i})^2$ 精准保护关键参数，对比 L2 同等约束过度束缚、朴素微调彻底遗忘；在 MNIST 序列 + Atari 多任务上验证。本篇「持续学习：EWC」小节概念、Fisher 重要性度量、二次惩罚公式与 CodeRunner toy 的直接来源。
+2. Rusu, A. A., Rabinowitz, N. C., Desjardins, G., Soyer, H., Kirkpatrick, J., Kavukcuoglu, K., Pascanu, R., Hadsell, R. (2016). *Progressive Neural Networks*. arXiv:1606.04671. [arXiv:1606.04671](https://arxiv.org/abs/1606.04671). —— Progressive Networks 原始论文：提出为每个新任务新增一列网络、冻结旧列、列间用侧向连接 $h^{(2)}_l=f(W^{(2)}_l h^{(2)}_{l-1}+U^{(2\leftarrow 1)}_l h^{(1)}_l)$ 传递特征的架构扩张路线；旧列冻结实现零遗忘、侧向连接实现正向迁移，代价是容量随任务数线性增长；在 Atari 多任务序列与 3D 跑酷上显著优于朴素微调与独立网络。本篇「Progressive Networks：加列而非改列」小节机制与对比表的直接来源。
+</References>

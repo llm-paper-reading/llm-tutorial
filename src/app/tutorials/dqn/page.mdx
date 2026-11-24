@@ -1608,7 +1608,7 @@ $$\boldsymbol w_i'=\frac{\sigma_i}{\sigma_i'}\boldsymbol w_i,\qquad b_i'=\frac{\
 
 #### PopArt-IMPALA：首个超人类的多任务 Atari 智能体
 
-PopArt 与 [IMPALA 篇](/tutorials/policy-gradient) 的 actor-learner 解耦架构天然契合：IMPALA 提供分布式采集（actors 跨多个 Atari 游戏并行 rollout），PopArt 给每个游戏配独立的价值头统计 $(\mu_i,\sigma_i)$，V-trace 偏策略目标里的 return $G_t^v$ 用归一化的 $(G_t^v-\mu_i)/\sigma_i$ 替代。组合后的 **PopArt-IMPALA** 在 Atari-57 上拿到**中位人类归一化分 110.7%**（带 clipping）/ 101.5%（不带 clipping），而 vanilla IMPALA 只有 59.7% / ~0%——**这是首次有单个智能体在多任务 Atari 上整体超越人类基准** [27]。
+PopArt 与 [IMPALA 篇](/tutorials/actor-critic) 的 actor-learner 解耦架构天然契合：IMPALA 提供分布式采集（actors 跨多个 Atari 游戏并行 rollout），PopArt 给每个游戏配独立的价值头统计 $(\mu_i,\sigma_i)$，V-trace 偏策略目标里的 return $G_t^v$ 用归一化的 $(G_t^v-\mu_i)/\sigma_i$ 替代。组合后的 **PopArt-IMPALA** 在 Atari-57 上拿到**中位人类归一化分 110.7%**（带 clipping）/ 101.5%（不带 clipping），而 vanilla IMPALA 只有 59.7% / ~0%——**这是首次有单个智能体在多任务 Atari 上整体超越人类基准** [27]。
 
 一个关键消融：把 PopArt 拿掉、只保留多头价值头（MultiHead-IMPALA，有任务特异的价值头容量但无自适应归一化），性能**反而略低于** vanilla IMPALA。这说明提升来自**自适应归一化**本身，而不是「多头给了更多容量」——容量多了但不归一化，大尺度任务照样主导梯度，多头只是让问题更突出。
 
@@ -1677,7 +1677,7 @@ print("   消融 MultiHead-IMPALA(多头无归一化): 略差于 vanilla IMPALA"
 print("   -> 提升来自[自适应归一化]而非[多头容量]")
 `} title="PopArt:保留输出的价值头自适应归一化" />
 
-> 💡 **三解法各治一层**：PCGrad 在**梯度方向**层消冲突分量（治负迁移的方向抵消）、Distral 在**结构**层加蒸馏正则（治表征被扯碎）、PopArt 在**价值头尺度**层自适应归一化（治奖励尺度失衡）。三者正交，可叠加——一个大规模多任务系统完全可以同时用 PCGrad 修梯度 + Distral 正则策略 + PopArt 归一化价值头。PopArt 还和 [IMPALA 的 V-trace](/tutorials/policy-gradient) 天然配对：V-trace 的 return $G_t^v$ 直接喂给 PopArt 的归一化器，组成 PopArt-IMPALA——这是大规模多任务 RL 的标配组合 [27]。
+> 💡 **三解法各治一层**：PCGrad 在**梯度方向**层消冲突分量（治负迁移的方向抵消）、Distral 在**结构**层加蒸馏正则（治表征被扯碎）、PopArt 在**价值头尺度**层自适应归一化（治奖励尺度失衡）。三者正交，可叠加——一个大规模多任务系统完全可以同时用 PCGrad 修梯度 + Distral 正则策略 + PopArt 归一化价值头。PopArt 还和 [IMPALA 的 V-trace](/tutorials/actor-critic) 天然配对：V-trace 的 return $G_t^v$ 直接喂给 PopArt 的归一化器，组成 PopArt-IMPALA——这是大规模多任务 RL 的标配组合 [27]。
 
 ### 评估协议与基准：mean / worst / harmonic，以及 Meta-World
 
@@ -1708,7 +1708,7 @@ print("   -> 提升来自[自适应归一化]而非[多头容量]")
 
 **MT = Multi-Task**（多任务，无 held-out，测同时学好）；**ML = Meta-Learning**（元学习，有 held-out，测快速适应）。观测里追加 **one-hot 任务 ID** 给策略（多任务设定下策略知道当前是哪个任务；元学习设定下测试时任务未知，需 few-shot 适应）。指标统一是**每任务 success rate**，再按上面三个聚合指标汇报 [28]。
 
-MT10/MT50 测的是「**容量**」——一个网络能否同时记住做好多个任务；ML10/ML45 测的是「**泛化**」——训练时没见过的任务能否快速上手。前者对应本节的多任务 RL，后者对应 [策略梯度篇的元 RL](/tutorials/policy-gradient)（MAML/RL²）。**多任务做好不等于元学习做好**：一个把 MT50 全部训到 0.9 的策略，在 ML45 的 5 个 held-out 新任务上可能仍需几百步才能从零学起，没有 meta 先验带来的 few-shot 加速。
+MT10/MT50 测的是「**容量**」——一个网络能否同时记住做好多个任务；ML10/ML45 测的是「**泛化**」——训练时没见过的任务能否快速上手。前者对应本节的多任务 RL，后者对应 [策略梯度篇的元 RL](/tutorials/meta-rl)（MAML/RL²）。**多任务做好不等于元学习做好**：一个把 MT50 全部训到 0.9 的策略，在 ML45 的 5 个 held-out 新任务上可能仍需几百步才能从零学起，没有 meta 先验带来的 few-shot 加速。
 
 #### 负迁移：多任务训练不保证每个任务都变好
 

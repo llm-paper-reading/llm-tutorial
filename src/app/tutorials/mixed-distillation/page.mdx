@@ -81,7 +81,7 @@ $$
 $$
 
 - $\pi_{\theta_{\text{old}}}$ 是采样时（几步前）的学生分布，$\pi_\theta$ 是当前学生分布；
-- $\rho$ 是重要性采样比，带 PPO 式 clipping（上限 $1+\epsilon$）防爆炸——这正是[策略梯度教程](/tutorials/policy-gradient)里 PPO 裁剪的同一套工具；
+- $\rho$ 是重要性采样比，带 PPO 式 clipping（上限 $1+\epsilon$）防爆炸——这正是 [PPO 教程](/tutorials/ppo) 里裁剪的同一套工具；
 - **skew KL** 是 DistiLLM 提出的有偏反向 KL 变体，梯度方差比标准反向 KL 更低。<Cite n={2} />
 
 > 💡 **直觉**：DistiLLM 不是「老师样本 + 学生样本」混合，而是「新鲜学生样本 + 稍陈旧学生样本」混合——后者便宜（不用重新采样）但要 IS 修正。它和 GKD mixed 互补：GKD mixed 用老师样本补覆盖，DistiLLM 用历史学生样本省采样。
