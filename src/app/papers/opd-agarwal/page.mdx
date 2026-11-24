@@ -7,7 +7,7 @@ export const metadata = paperMetadata(paper);
 
 # OPD：让学生在自己犯错的轨迹上被老师纠正
 
-离线蒸馏有一个尴尬点：老师生成的答案很漂亮，学生训练时只见过这些漂亮轨迹；可一旦学生自己推理，它会走到老师从不经过的坏状态里。**On-Policy Distillation（OPD）** 的核心就是把训练现场搬到学生自己的轨迹上：学生先 rollout，老师不接管生成，只在这些学生访问过的前缀状态上给出 next-token logprob，学生再用逐 token 的蒸馏损失修正自己。<Cite n={[1,4]} />它把 [知识蒸馏](/tutorials/knowledge-distillation) 的稠密监督和 [RLVR](/papers/grpo-deepseek-r1) 的 on-policy 状态覆盖拼在一起，成为 2024—2026 年后训练论文里越来越常见的一条线。原论文用 Algorithm 1 把这条循环写成伪代码：
+离线蒸馏有一个尴尬点：老师生成的答案很漂亮，学生训练时只见过这些漂亮轨迹；可一旦学生自己推理，它会走到老师从不经过的坏状态里。**On-Policy Distillation（OPD）** 的核心就是把训练现场搬到学生自己的轨迹上：学生先 rollout，老师不接管生成，只在这些学生访问过的前缀状态上给出 next-token logprob，学生再用逐 token 的蒸馏损失修正自己。<Cite n={[1,4]} />它把 [知识蒸馏](/tutorials/knowledge-distillation) 的稠密监督和 [RLVR](/papers/grpo-deepseek-r1) 的 on-policy 状态覆盖拼在一起，成为 2024—2026 年后训练论文里越来越常见的一条线。原论文用 Algorithm 1 把这条循环写成伪代码。<Cite n={1} />
 
 <figure className="my-6">
   <img src="./alg-1-gkd.svg" alt="GKD 训练算法伪代码：每步以概率 λ 让学生采样输入并自回归生成输出（on-policy 分支），否则从固定数据集采样；然后在批次上最小化老师与学生 token 级分布的散度 D，更新学生参数 θ" className="mx-auto h-auto max-w-full rounded-lg border border-zinc-200 shadow-sm dark:border-zinc-800" />
