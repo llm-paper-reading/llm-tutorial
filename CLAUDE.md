@@ -13,7 +13,8 @@
 - 如果原始资料不是图片格式，优先转换为矢量格式，例如 SVG；只有在矢量抽取效果不好或原图本身是位图时，才使用高分辨率 PNG / JPG等。
 - 从论文中抽取图片时，尽量去掉论文自带的 caption，在 MDX 页面中使用本站统一风格的中文图注。
 - 图片 caption 应先说明图展示的内容，再标注来源；来源信息使用更小字号，样式由全站统一组件或布局控制。
-- **抽图必须用 `pdf-figure-extract` skill**（项目内 `.claude/skills/pdf-figure-extract/`，随仓库维护），不要手估坐标直接裁。历史上 24 张图因手估 bbox 出现贴边裁字（顶部/底部文字被切一半）或图区误判（把正文、页眉、表格裁进图里）。skill 提供三段脚本：
+- **抽图必须用 `pdf-figure-extract` skill**（仓库地址：https://github.com/llm-paper-reading/pdf-figure-extract，独立维护；按需安装到 `.claude/skills/pdf-figure-extract/`），不要手估坐标直接裁。历史上 24 张图因手估 bbox 出现贴边裁字（顶部/底部文字被切一半）或图区误判（把正文、页眉、表格裁进图里）。skill 提供三段脚本：
+  - 安装：`npx skills add llm-paper-reading/pdf-figure-extract`，或把仓库中的 `skills/pdf-figure-extract/` 目录复制到项目的 `.claude/skills/` 下；
   - `extract_fig.py`：PNG 提取（锚定 caption、自动注入白边、四边墨迹自检）；
   - `extract_svg.py`：矢量图提 SVG（经 `pdftocairo`，`--clip x0,y0,x1,y1` 手工指定矩形，单位 pt）；
   - `check_border.py`：批量边界检查（支持 PNG/JPG/SVG 目录），非零退出码即有问题，**不许忽略**。
