@@ -5,9 +5,11 @@ export const metadata = paperMetadata(paper);
 
 <PaperHeader slug={paper.slug} />
 
-# One Fits All：冻结预训练 Transformer 统一时序分析
+# GPT4TS（One Fits All）：冻结预训练 Transformer 统一时序分析
 
 2023 年 2 月，阿里巴巴达摩院决策智能实验室提出一个在当时看来颇有些「不讲武德」的做法：不改 GPT2 的结构，也不做时序预训练，直接把残差块里的自注意力与 FFN **冻住**，只训练输入嵌入、位置嵌入、LayerNorm 与输出层，就让同一个主干在七类时序任务上达到 SOTA 或相当的水平。<Cite n={1} />数字很直接：可训练参数只占 4.6%，分类平均准确率 74.00% 高于 TimesNet 的 73.60%，异常检测平均 F1 86.72% 高于 85.24%，补全平均 MSE 0.047 低于 0.049。<Cite n={1} />这篇笔记拆三件事：为什么「借」比「训」更现实、冻结主干之后还要训练哪些层、以及论文用自注意力与 PCA 的联系给出的解释。
+
+> 📌 别名：论文正文称主干为 GPT2-backbone、方法为 Frozen Pretrained Transformer（FPT）；官方代码把模型类命名为 **GPT4TS**（GPT for Time Series），社区与后续论文（如本站 [Time-LLM 精读](/papers/time-llm) 的基线对比）多以该简称引用。<Cite n={8} />
 
 > 📌 前置：Transformer 与注意力机制见 [Attention Is All You Need](/papers/attention-transformer)；序列建模的另一条非 Transformer 路线见 [Mamba](/papers/mamba)。
 
@@ -27,7 +29,7 @@ NLP 和 CV 已经证明，一个在大规模数据上预训练的主干加上轻
   </figcaption>
 </figure>
 
-## 二、方法：FPT，冻结主干加接口
+## 二、方法：FPT（GPT4TS），冻结主干加接口
 
 方法的核心是最小改动原则：残差块内的 Multi-Head Attention 与 Feed Forward 承载了预训练获得的大部分知识，直接冻结；<Cite n={1} />其余组件是跨模态接口，必须重训：
 
@@ -146,4 +148,5 @@ $$
 5. Taesung Kim, Jinhee Kim, Yunwon Tae, Cheonbok Park, Jang-Ho Choi, Jaegul Choo (2022). *Reversible Instance Normalization for Accurate Time-Series Forecasting against Distribution Shift*（RevIN）. ICLR 2022. —— 实例归一化（reverse instance norm）的原始出处。
 6. Tian Zhou (2023). *[NeurIPS'23 spotlight] 阿里巴巴达摩院 One Fits All: Power Time Series Analysis By Pretrained LM*. 知乎作者解读，[zhuanlan.zhihu.com/p/661048378](https://zhuanlan.zhihu.com/p/661048378)。—— 作者对动机、实验取舍、评审反馈与「GPT2 只是资源受限选择」的补充说明（非论文原文，作补充参考）。
 7. 两匹老虎 (2024). *【模型解读】One Fits All: Power General Time Series Analysis by Pretrained LM*. 知乎，[zhihu.com/tardis/bd/art/664785806](https://www.zhihu.com/tardis/bd/art/664785806)。—— 中文社区的逐节导读，用于交叉核对方法描述（二手资料）。
+8. Tian Zhou, Peisong Niu, Xue Wang, Liang Sun, Rong Jin (2023). *One Fits All: Power General Time Series Analysis by Pretrained LM*（官方代码仓库）. GitHub: [DAMO-DI-ML/One_Fits_All](https://github.com/DAMO-DI-ML/One_Fits_All)。—— 代码把模型类命名为 GPT4TS（各任务目录下的 `models/GPT4TS.py`），是 GPT4TS 这一简称的一手出处；同时提供各任务的训练脚本与实现细节。
 </References>
