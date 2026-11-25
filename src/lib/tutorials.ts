@@ -447,6 +447,14 @@ export const tutorials: Tutorial[] = [
     icon: "🧰",
   },
   {
+    slug: "lora",
+    title: "LoRA：低秩适配微调",
+    navTitle: "LoRA",
+    desc: "全量微调要更新整个权重矩阵,LoRA 冻结 W₀,只训练一对低秩矩阵 A、B,用 ΔW=BA 近似更新量——可训练参数降到千分之一,合并后推理零额外开销。",
+    category: "大模型后训练",
+    icon: "🧩",
+  },
+  {
     slug: "knowledge-distillation-overview",
     title: "知识蒸馏总览：把能力从老师搬到学生",
     navTitle: "知识蒸馏总览",

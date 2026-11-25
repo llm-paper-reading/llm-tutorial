@@ -83,6 +83,7 @@ import GRPOAdvantageViz from "@/components/viz/GRPOAdvantageViz";
 import BornAgainCurve from "@/components/viz/BornAgainCurve";
 import WeakToStrongBar from "@/components/viz/WeakToStrongBar";
 import ConfidenceReweightViz from "@/components/viz/ConfidenceReweightViz";
+import LoRAExplorer from "@/components/viz/LoRAExplorer";
 
 type FigureProps = ComponentPropsWithoutRef<"figure">;
 type FigcaptionProps = ComponentPropsWithoutRef<"figcaption">;
@@ -223,6 +224,7 @@ export function useMDXComponents(components: MDXComponents): MDXComponents {
     BornAgainCurve,
     WeakToStrongBar,
     ConfidenceReweightViz,
+    LoRAExplorer,
     ...components,
   };
 }
