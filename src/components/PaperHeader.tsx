@@ -3,7 +3,7 @@ import KimiPaperButton from "@/components/KimiPaperButton";
 import PaperFAQSection from "@/components/PaperFAQSection";
 import { getPaper } from "@/lib/papers";
 import PaperTagIcon from "@/components/PaperTagIcon";
-import { getTagHint } from "@/lib/paper-tags";
+import { getTagTitle } from "@/lib/paper-tags";
 
 export default function PaperHeader({ slug }: { slug: string }) {
   const p = getPaper(slug);
@@ -55,7 +55,7 @@ export default function PaperHeader({ slug }: { slug: string }) {
             <Link
               key={t}
               href={`/papers?tag=${encodeURIComponent(t)}`}
-              title={getTagHint(t)}
+              title={getTagTitle(t)}
               className="inline-flex items-center gap-1 rounded-full bg-zinc-100 px-2.5 py-0.5 text-xs text-zinc-600 transition hover:bg-emerald-100 hover:text-emerald-700 dark:bg-zinc-800 dark:text-zinc-300 dark:hover:bg-emerald-950 dark:hover:text-emerald-400"
             >
               <PaperTagIcon tag={t} className="block h-3.5 w-3.5 shrink-0" />

@@ -43,6 +43,15 @@ import deepseekR1 from "@/app/papers/deepseek-r1/meta";
 import deepseekV3 from "@/app/papers/deepseek-v3/meta";
 import deepseekV32 from "@/app/papers/deepseek-v3-2/meta";
 import deepseekV4 from "@/app/papers/deepseek-v4/meta";
+import dspark from "@/app/papers/dspark/meta";
+import timesfm from "@/app/papers/timesfm/meta";
+import timesfm3 from "@/app/papers/timesfm-3/meta";
+import deepTsSurvey from "@/app/papers/deep-ts-survey/meta";
+import timexer from "@/app/papers/timexer/meta";
+import moment from "@/app/papers/moment/meta";
+import moirai from "@/app/papers/moirai/meta";
+import ssrPurchaseIntent from "@/app/papers/ssr-purchase-intent/meta";
+import ctvaeProductLine from "@/app/papers/ctvae-product-line/meta";
 import qwen3Vl from "@/app/papers/qwen3-vl/meta";
 import internvl35 from "@/app/papers/internvl35/meta";
 import deepseekOcr from "@/app/papers/deepseek-ocr/meta";
@@ -122,6 +131,15 @@ export const papers: Paper[] = [
   deepseekV3,
   deepseekV32,
   deepseekV4,
+  dspark,
+  timesfm,
+  timesfm3,
+  deepTsSurvey,
+  timexer,
+  moment,
+  moirai,
+  ssrPurchaseIntent,
+  ctvaeProductLine,
   qwen3Vl,
   internvl35,
   deepseekOcr,

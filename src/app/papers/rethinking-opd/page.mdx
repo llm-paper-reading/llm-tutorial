@@ -5,168 +5,435 @@ export const metadata = paperMetadata(paper);
 
 <PaperHeader slug={paper.slug} />
 
-# Rethinking OPD：为什么强老师也可能教不会学生
+# Rethinking OPD：强老师为什么也会教不动
 
-OPD 的口号很诱人：学生自己 rollout，老师逐 token 打分，既 on-policy 又 dense。<Cite n={[2,3]} />但 2026 年的 *Rethinking On-Policy Distillation of Large Language Models: Phenomenology, Mechanism, and Recipe* 提醒我们：这不是“强 teacher 自动提升弱 student”的万能按钮。<Cite n={1} />OPD 成功需要两个条件：学生与老师的思考模式要兼容；老师还必须提供学生没见过、但能在当前状态里吸收的新能力。<Cite n={1} />
+OPD 的卖点很直接：学生自己 rollout，老师在学生真正访问到的前缀上逐 token 打分，于是既有 on-policy 的状态分布，又有比终局奖励密集得多的监督信号。<Cite n={[1,3]} />这套 recipe 已经被 [Qwen3](/papers/qwen3)、MiMo、GLM-5 等后训练管线采用。<Cite n={[1,2]} />Thinking Machines Lab 也用远低于 RL 的算力复现了类似收益。<Cite n={[1,3]} />
 
-> 📌 前置：建议先读 [OPD 总览](/papers/opd-agarwal)、[MiniLLM](/papers/minillm-gu)、[Thinking Machines OPD](/papers/tml-opd)。这篇是对 OPD 热潮的刹车片：它不否定 OPD，而是解释 OPD 什么时候有效、什么时候只是昂贵地原地打转。
+但 *Rethinking On-Policy Distillation of Large Language Models: Phenomenology, Mechanism, and Recipe* 指出了一个反例：**更强的 teacher 可能完全教不动 student，反而更弱的 teacher 能从更低的初始对齐出发取得成功。**<Cite n={1} />这不是实现 bug，而是 OPD 的监督信号本身有适用条件。论文用现象、机制、recipe 三层把这个问题拆开：先找出决定成败的两个条件，再从 token 层面解释有效梯度从哪里来，最后给出修复失败 run 的两种做法，并讨论密集奖励在长轨迹上的代价。
 
-## 一、动机：OPD 看似简单，失败却很常见
+> 📌 前置：建议先读 [OPD 教程](/tutorials/on-policy-distillation)、[OPD 总览](/papers/opd-agarwal)、[MiniLLM](/papers/minillm-gu) 和 [Thinking Machines OPD](/papers/tml-opd)。这篇不是新 loss，而是对 OPD 的一次系统诊断：它解释 OPD 什么时候有效、什么时候只是昂贵地原地打转。
 
-OPD 的机制看上去很稳：
+## 一、动机：OPD 的“强老师必然有用”假设站不住
 
-1. 学生自己生成；
-2. 老师在学生状态上打分；
-3. 每个 token 都有监督；
-4. 训练分布贴近部署分布。
+OPD 的机制看上去很稳：学生自己生成，老师在学生状态上打分，每个 token 都有监督，训练分布也贴近部署分布。按这个描述，teacher 越强，student 似乎越该变强。
 
-如果只看这个描述，似乎 teacher 越强，student 越该变强。但实践中经常不是这样：更大 teacher 不一定带来更大收益；同模型家族的强模型有时教不动弱模型；有些 prompt 上 OPD 明显涨分，有些 prompt 上几乎没动静。<Cite n={1} />
+论文却观察到相反的现象：更大 teacher 不一定带来更大收益；同模型家族的强模型有时教不动弱模型；有些 prompt 上 OPD 明显涨分，有些 prompt 上几乎没动静。已有的 OPD 工作大多在展示 dense reward、缓解 exposure bias 等好处，很少系统回答“什么时候会失败、为什么失败”。<Cite n={1} />
 
-Rethinking OPD 要回答的正是这些问题：**OPD 的有效信号到底从哪里来？失败时缺的是什么？能不能给出可操作的 recipe？**
+这篇论文要回答三个问题：
 
-<figure className="my-6">
-  <img src="./fig-opd-success-conditions.svg" alt="Rethinking OPD 总结的两个成功条件：学生与老师的思考模式要兼容，且老师必须在学生会访问的状态上提供学生尚未学到的新能力" className="mx-auto h-auto max-w-full rounded-lg border border-zinc-200 shadow-sm dark:border-zinc-800" />
-  <figcaption className="mt-2 text-center text-xs text-zinc-500 dark:text-zinc-400">
-    <span className="figure-caption-main">Rethinking OPD 总结的两个成功条件：学生与老师的思考模式要兼容，且老师必须在学生会访问的状态上提供学生尚未学到的新能力</span>
-    <span className="figure-caption-source">图源：根据 Li et al., <em>Rethinking On-Policy Distillation of Large Language Models</em>（arXiv:2604.13016）机制分析重绘</span>
-  </figcaption>
-</figure>
+| 问题 | 论文对应 |
+|---|---|
+| OPD 成败由哪些条件决定？ | 第 3 节：思考模式兼容、teacher 带来新知识 |
+| 有效信号在 token 层面长什么样？ | 第 4 节：高概率 overlap token 的渐进对齐 |
+| 失败后怎么救？代价是什么？ | 第 5、6 节：cold start、teacher-aligned prompts、长轨迹退化 |
 
-## 二、现象一：思考模式必须兼容
+它最有价值的地方，是把 OPD 从“方法名”还原成“条件依赖的机制”：不是 teacher 越强越好，而是 teacher 要在 student 会到达的状态上，提供 student 还没掌握、且能吸收的新信息。<Cite n={1} />
 
-论文总结的第一个条件是 teacher 和 student 需要有兼容的 thinking pattern。<Cite n={1} />
+## 二、方法坐标：三种监督粒度与四个诊断量
 
-这句话比“模型架构相同”更强。即使两个模型同属一个家族，如果它们在推理路径、格式、分解问题的方式上差别过大，逐 token 对齐也可能变成噪声。因为 OPD 不是在最终答案上做 distillation，而是在学生每个前缀状态上要求老师给出下一步偏好。<Cite n={[1,2]} />
-
-如果学生走的是代数路线，老师偏几何路线，老师在学生前缀上给出的 token 分布未必能形成连续可学的改进路径。它可能在局部不断说“你不该这么走”，却无法把学生平滑地带到另一套完整思路上。
-
-所以 OPD 成功的第一条不是“teacher 更强”，而是：
+先统一记号。给定 prompt $x$，student $\pi_\theta$ 采样一条轨迹 $\hat y=(\hat y_1,\dots,\hat y_T)\sim\pi_\theta(\cdot\mid x)$。在 student 自己访问到的前缀 $\hat y_{<t}$ 上，两个模型各给出一个 next-token 分布：
 
 $$
-\text{student states} \cap \text{teacher useful states} \neq \varnothing
+p_t(v)\triangleq\pi_\theta(v\mid x,\hat y_{<t}),\qquad q_t(v)\triangleq\pi_T(v\mid x,\hat y_{<t}).
 $$
 
-学生真实访问的状态里，必须存在老师能给出清晰局部指导的区域。
+最标准的 OPD 目标是最小化 student 轨迹上的序列级 reverse KL：<Cite n={[1,4,5]} />
 
-## 三、现象二：老师必须带来新能力
+$$
+\mathcal{L}_{\mathrm{OPD}}(\theta)=\mathbb{E}_{x\sim\mathcal{D}_x}\left[D_{\mathrm{KL}}\left(\pi_\theta(\cdot\mid x)\,\|\,\pi_T(\cdot\mid x)\right)\right].
+$$
 
-第二个条件更反直觉：teacher 不仅要强，还要对 student 来说有**新增信息**。<Cite n={1} />
+利用自回归分解，它可以精确写成逐 token 的形式：
 
-如果 teacher 分数更高，但它在 student 访问状态附近给出的高概率 token 和 student 已经差不多，那么 OPD 信号就很弱。论文摘要提到一个现象：同一模型家族里的 1.5B 和 7B teacher，从某些 student 视角看可能在分布上难以区分。<Cite n={1} />
+$$
+\mathcal{L}_{\mathrm{OPD}}(\theta)=\mathbb{E}_{x\sim\mathcal{D}_x,\ \hat y\sim\pi_\theta(\cdot\mid x)}\left[\sum_{t=1}^{T}D_{\mathrm{KL}}(p_t\,\|\,q_t)\right].
+$$
 
-这意味着：
+reverse KL 的 mode-seeking 特性（可参考 [前向 KL 与反向 KL 的区别](/tutorials/forward-reverse-kl)）会让 student 集中到 teacher 的高概率区域，而不是把概率铺到 teacher 认为不可能的地方。<Cite n={[4,5]} />工程上，这个逐 token KL 有三种常见算法：
 
-- 参数更大 ≠ token-level 分布一定更有教学价值；
-- benchmark 更高 ≠ 在当前 prompt / 当前学生状态上提供新梯度；
-- teacher 是否有用，要看它在 student-visited states 上是否改变高概率 token 的排序和概率质量。
+| 粒度 | 每步损失 | 特点 |
+|---|---|---|
+| Sampled-token OPD | $\ell_t^{\mathrm{sample}}=\log p_t(\hat y_t)-\log q_t(\hat y_t)$ | 只算 student 采样到的那个 token；是 token-level reverse KL 的无偏单样本估计，最省 |
+| Full-vocabulary OPD | $D_{\mathrm{KL}}(p_t\,\|\,q_t)$ | 对整个词表精确计算；梯度最密，但显存是 $O(BTM)$ |
+| Top-$k$ OPD | $D_{\mathrm{KL}}(\bar p_t^{(S_t)}\,\|\,\bar q_t^{(S_t)})$ | 只在 student top-$k$ 子集上算并重新归一化；默认 $k=16$，是成本与信号密度的折中 |
 
-这也是 OPD 选 teacher 的难点：不能只看 teacher 的排行榜分数，还要看 teacher 与 student 的局部分布差异。
+其中 top-$k$ 的重新归一化分布为：
 
-## 四、机制：有效信号集中在少数高概率 token
+$$
+\bar p_t^{(S_t)}(v)=\frac{p_t(v)\mathbf{1}[v\in S_t]}{\sum_{u\in S_t}p_t(u)},\qquad
+\bar q_t^{(S_t)}(v)=\frac{q_t(v)\mathbf{1}[v\in S_t]}{\sum_{u\in S_t}q_t(u)}.
+$$
 
-论文从 token-level 解释 OPD 的机制：成功的 OPD 不是平均地学习整个词表，而是在学生访问的状态上，逐步对齐老师高概率 token 的分布。<Cite n={1} />
+要注意，top-$k$ 丢掉了 $S_t$ 之外的概率质量，所以它只是 full-vocabulary reverse KL 的近似；论文的默认策略是 **Student Top-$k$**，即用 student 自己概率最高的 $k$ 个 token 作为支持集。<Cite n={1} />
 
-摘要里一个关键数字是：一个很小的共享 token 集合承载了约 **97%—99%** 的概率质量。<Cite n={1} />这解释了为什么 top-k OPD 在工程上可行，也解释了为什么 teacher-student overlap 很重要。
+为了观察训练是否真的在靠近 teacher，论文跟踪四个量：<Cite n={1} />
 
-可以用一个小实验感受“概率质量集中”这件事：
+**Overlap ratio**：student 与 teacher 的 top-$k$ 集合重合比例，
+
+$$
+\mathcal{M}_{\mathrm{overlap}}=\mathbb{E}_t\left[\frac{|S_t^{(p)}\cap S_t^{(q)}|}{k}\right].
+$$
+
+它衡量两边“候选空间”是否对齐；接近 0 说明 student 和 teacher 把概率放在几乎不相交的 token 上，接近 1 说明 student 已经找到 teacher 的支持区域。
+
+**Overlap-token advantage**：在重叠 token 上衡量分布是否一致，
+
+$$
+A_t(v)=\bar p_t(v)\left(\log\bar q_t(v)-\log\bar p_t(v)\right),\qquad
+\mathcal{M}_{\mathrm{adv}}=\mathbb{E}_t\left[\frac{1}{|S_t^{(p)}\cap S_t^{(q)}|}\sum_{v\in S_t^{(p)}\cap S_t^{(q)}}A_t(v)\right].
+$$
+
+值接近 0 表示 student 在 teacher 偏好的 token 上给了合适置信度；明显为负则表示在交集内 student 比 teacher 更自信（$p_t$ 高而 $q_t$ 低）。
+
+**Entropy gap**：同一个 student 前缀上，两边熵的差的绝对值，
+
+$$
+\Delta H_t=|H(q_t)-H(p_t)|.
+$$
+
+它衡量 student 是否匹配了 teacher 的局部不确定性；收敛到 0 表示两者在同一状态上的“犹豫程度”一致。
+
+**Overlap mass**：重叠 token 实际承载的概率质量，
+
+$$
+\mathcal{M}_{\mathrm{overlap\text{-}mass}}^{(p)}=\mathbb{E}_t\left[\sum_{v\in S_t^{(p)}\cap S_t^{(q)}}p_t(v)\right].
+$$
+
+只看 overlap ratio 可能被集合大小误导；overlap mass 用来看共享集合是否真的覆盖了两个分布最重要的部分。<Cite n={1} />
+
+下面这段小程序用两个长尾分布模拟上述指标，观察 student 逐渐靠近 teacher 时它们怎么变：
 
 <CodeRunner defaultCode={String.raw`
 import numpy as np
 
-rng = np.random.default_rng(7)
-V = 50000
-# 模拟语言模型的长尾分布：少数 token 承载绝大多数概率质量。
-logits = -np.log(np.arange(1, V + 1)) * 1.15
-logits += rng.normal(scale=0.02, size=V)
-prob = np.exp(logits - logits.max())
-prob = prob / prob.sum()
+V, k = 4096, 16
 
-for k in [16, 32, 64, 128, 256, 512]:
-    mass = np.sort(prob)[::-1][:k].sum()
-    print(f"top-{k:<3d} 概率质量 = {mass:.2%}")
+def zipf(seed):
+    r = np.random.default_rng(seed)
+    w = np.arange(1, V + 1) ** -2.0
+    w = w[r.permutation(V)]
+    return w / w.sum()
 
-print("\n如果 teacher 与 student 的高概率 token 集合高度重合，OPD 信号会集中且稳定。")
-print("如果两者高概率集合几乎不重合，逐 token 对齐就更像噪声或拉扯。")
+teacher = zipf(1)
+base = zipf(2)
+
+def student(alpha):
+    p = (1 - alpha) * base + alpha * teacher
+    return p / p.sum()
+
+def metrics(p):
+    sp = np.argsort(p)[-k:]
+    tq = np.argsort(teacher)[-k:]
+    inter = np.intersect1d(sp, tq)
+    overlap = len(inter) / k
+    mass = p[inter].sum()
+    hp = -(p * np.log(p + 1e-12)).sum()
+    hq = -(teacher * np.log(teacher + 1e-12)).sum()
+    return overlap, mass, abs(hp - hq)
+
+for alpha in [0.0, 0.25, 0.5, 0.75, 1.0]:
+    overlap, mass, gap = metrics(student(alpha))
+    print(f"alpha={alpha:0.2f}  overlap={overlap:.2f}  overlap_mass={mass:.2f}  |Hp-Hq|={gap:.2f}")
+
+print("\n论文在真实 LLM 上观测：overlap token 承载约 97%–99% 的概率质量。")
+print("这里只是演示指标方向，不是论文实验的复现。")
 `} />
 
-这也把 Rethinking OPD 和 verl 文档里的 top-k metrics 连起来了：`teacher_mass`、`student_mass`、`overlap_ratio` 不是普通日志，而是在观察 OPD 是否真的有可学信号。<Cite n={4} />
+## 三、现象一：思考模式不兼容，强 teacher 也会失效
 
-## 五、weak-to-strong reverse distillation 的启示
+第一个条件是 **thinking-pattern consistency**：student 和 teacher 需要共享兼容的思考模式。这里的“兼容”比“同架构”更强。即使两个模型同属一个家族，如果它们在推理路径、格式、分解问题的方式上差别过大，逐 token 对齐也可能变成噪声。<Cite n={1} />
 
-论文用 weak-to-strong reverse distillation 来验证这些判断。<Cite n={1} />所谓 reverse，不是说弱教强，而是从 student 的角度检查不同 teacher 是否真的可区分、可学习。
+论文的对照实验很干净：student 固定为 Qwen3-1.7B-Base，数据使用 DAPO-Math-17K，只换 teacher。<Cite n={[1,2,10]} />
 
-结论可以概括为：有些“大 teacher”对 student 来说并没有形成有效教学信号。原因可能是：
+- Teacher A：Qwen3-4B（Non-thinking）；
+- Teacher B：Qwen3-4B-Base-GRPO，即在 Qwen3-4B-Base 上做零 RL（zero-RL）+ GRPO 得到的版本。<Cite n={9} />
 
-1. teacher 和 student 的局部高概率 token 差异不足；
-2. teacher 的优势只体现在学生到不了的状态；
-3. teacher 的思考模式和 student 当前路径不兼容；
-4. prompt 没有触发 teacher 的特殊能力。
+两个 teacher 在三个数学 benchmark 上的表现互有胜负，总体接近：
 
-这解释了很多工程现象：换一个更强 teacher 不涨分，未必是 OPD 实现错了；可能是 teacher 没有在这批 prompt 和 student 状态上提供“可被吸收的新信息”。
+| Teacher | AIME 2024 | AIME 2025 | AMC 2023 |
+|---|---:|---:|---:|
+| Qwen3-4B（Non-thinking） | 0.212 | 0.210 | 0.700 |
+| Qwen3-4B-Base-GRPO | 0.204 | 0.242 | 0.599 |
 
-## 六、Recipe 一：off-policy cold start
+但 OPD 的结果并不按 benchmark 平均分走：GRPO teacher 的初始 overlap ratio 更高，蒸馏后的 student 在每个 benchmark 上都更好；虽然两条 overlap 曲线后期会收敛，性能差距仍然存在。论文据此认为，**早期思考模式不匹配造成的蒸馏损失，后面无法完全追回**。<Cite n={1} />
 
-第一条修复策略是 **off-policy cold start**。<Cite n={1} />
+这解释了一个常见的选 teacher 误区：不能只看 teacher 的排行榜分数。一个分数稍低、但推理路径与学生更接近的 teacher，可能给出更连续、更可学的局部改进方向；反过来，一个分数更高但风格迥异的 teacher，可能在学生前缀上不断说“你不该这么走”，却无法把学生平滑地带到另一套完整思路上。<Cite n={1} />
 
-如果 student 太弱，直接 OPD 会遇到一个尴尬：学生 rollout 的状态太烂，teacher 在这些状态上的局部建议无法组成一条通往正确推理的路径。此时先用 off-policy 数据做冷启动，让 student 进入更接近 teacher 的状态区域，再切到 OPD，会更容易成功。
+## 四、现象二：更高分不等于新知识
 
-这和很多 RLVR 流水线相似：
+第二个条件是 **new knowledge，not just scale**：即使 thinking pattern 兼容、benchmark 分数更高，teacher 也必须提供 student 在训练中没见过的新能力。<Cite n={1} />
 
-| 阶段 | 目的 |
-|---|---|
-| SFT / off-policy cold start | 教基本格式、领域语言、初始推理轨迹 |
-| OPD | 在学生自己的轨迹附近对齐老师偏好 |
-| RL / RLVR | 用任务奖励继续拉高最终表现 |
+论文在两个模型家族里做了对照。关键不是“换一个更大的 teacher”，而是“同一个 base checkpoint 上，有没有额外的 RL 后训练”：<Cite n={1} />
 
-所以 off-policy 不是 OPD 的敌人，而是 OPD 的起跑器。真正的问题不是“离线还是在线”，而是何时切换。
+- **DeepSeek 家族**：student 是 DeepSeek-R1-Distill-Qwen-1.5B（DS-1.5B）；teacher 分别是 DS-7B，以及在 DS-7B 上做 RL 得到的 Skywork-OR1-Math-7B（SW-7B）。<Cite n={[6,7,8]} />
+- **Qwen 家族**：student 是 Qwen3-1.7B（Non-thinking）；teacher 分别是 Qwen3-4B（Non-thinking），以及在其上做 RL 得到的 Qwen3-4B-Non-Thinking-RL-Math。<Cite n={[1,2]} />
 
-## 七、Recipe 二：teacher-aligned prompt selection
+两个家族的结果一致：同管线 teacher 带来的提升有限，额外做过 RL 的 teacher 提升明显更大。论文用 **gap recovery rate** 衡量最终收益：
 
-第二条策略是 **teacher-aligned prompt selection**：挑选能触发 teacher 优势、且 student 有机会学习的 prompt。<Cite n={1} />
+$$
+\mathrm{GapRecovery}=\frac{\mathrm{Acc}_{\text{after OPD}}-\mathrm{Acc}_{\text{before OPD}}}{\mathrm{Acc}_{\text{teacher}}-\mathrm{Acc}_{\text{before OPD}}}.
+$$
 
-这比“多喂数据”更精确。对 OPD 来说，一个 prompt 是否有价值，取决于它是否满足：
+| 家族 | Teacher | Gap recovery | 初始 overlap ratio |
+|---|---|---:|---:|
+| DeepSeek | Skywork-OR1-Math-7B（DS-7B + RL） | 16.9% | 71.5% |
+| DeepSeek | DS-7B（同管线） | 5.3% | 74.7% |
+| Qwen | Qwen3-4B-Non-Thinking-RL-Math | 58.6% | 70.3% |
+| Qwen | Qwen3-4B（Non-thinking，同管线） | 15.6% | 75.7% |
 
-1. student 会生成足够多有差异的轨迹；
-2. teacher 在这些轨迹上给出稳定、有信息量的偏好；
-3. 这些偏好对应目标 benchmark 需要的能力；
-4. student 有容量把这种偏好吸收下来。
+这里有一个容易忽略的细节：**后训练 teacher 的初始 overlap ratio 反而更低**，但 gap recovery 高得多。因为两者来自同一个 base checkpoint，thinking pattern 大体仍然对齐；额外 RL 带来的新能力才是收益的主要来源。<Cite n={1} />这也说明两个条件不是同一个东西：overlap 高只说明“能对上话”，不说明“有新知可教”。
 
-如果 prompt 太简单，teacher 和 student 都一样，梯度小；如果 prompt 太难，student 状态太乱，teacher 信号不可学；最有效的是中间地带：student 会犯错，但老师能在学生前缀上指出可行的下一步。
+<figure className="my-6">
+  <img src="./fig4-post-trained-teacher.svg" alt="两个模型家族中，同管线 teacher 与额外 RL 后训练 teacher 的 OPD 曲线对比；后训练 teacher 的 gap recovery 明显更高" className="mx-auto h-auto max-w-full rounded-lg border border-zinc-200 shadow-sm dark:border-zinc-800" />
+  <figcaption className="mt-2 text-center text-xs text-zinc-500 dark:text-zinc-400">
+    <span className="figure-caption-main">同管线 teacher 与额外 RL 后训练 teacher 的对比：DeepSeek 家族的 gap recovery 从 5.3% 提升到 16.9%，Qwen 家族从 15.6% 提升到 58.6%</span>
+    <span className="figure-caption-source">图源：Li et al., <em>Rethinking On-Policy Distillation of Large Language Models</em>, Figure 4（arXiv:2604.13016）</span>
+  </figcaption>
+</figure>
 
-## 八、对 OPD 热潮的修正
+对工程实践的直接含义是：选 teacher 时，除了看分数，还要看它是否在 student 已经见过的数据分布之外获得了新能力。同一套数据、同一套 recipe 训出来的大模型，可能只是“把同样的东西拟合得更好”，对 OPD 来说没有多少可迁移的新信号。<Cite n={1} />
 
-这篇论文最有价值的地方，是把 OPD 从“方法名”还原成“条件依赖的机制”。可以把它对 OPD 的修正总结成四句话：
+## 五、反向蒸馏：OPD 学的是思考模式
 
-1. **不是 teacher 越强越好**：强要强在 student 可访问状态上。
-2. **不是 token 信号越密越好**：密集信号如果不兼容，也只是密集噪声。
-3. **不是纯 on-policy 永远最好**：弱 student 可能需要 off-policy cold start。
-4. **不是 prompt 越多越好**：teacher-aligned prompts 比随机堆数据更关键。
+为了同时验证两个条件，论文设计了 **weak-to-strong reverse distillation**。这里的 “reverse” 容易误解：它不是说“弱模型教强模型”，而是把 RL 的方向反过来——先把 RL 之后的 checkpoint 当 student，再蒸回它 RL 之前的版本。<Cite n={1} />
 
-这也解释了为什么 2026 年的 OPD 工程开始关注 teacher routing、top-k overlap、prompt selection、cold start 和多阶段训练，而不再只讨论“用哪个 KL”。<Cite n={[1,4]} />
+具体设置是：JustRL-1.5B 由 R1-Distill-1.5B 经 RL 得到。<Cite n={[1,7]} />论文把 JustRL-1.5B 当 student，分别用两个 teacher：
 
-## 九、和现有 OPD 实现的连接
+1. R1-Distill-1.5B，也就是 student 自己的 RL 前 checkpoint；
+2. R1-Distill-7B，更大、benchmark 分数也略高于 JustRL-1.5B 的同家族模型。
 
-把 Rethinking OPD 的结论映射到 verl 指标，可以得到一个实践检查表：
+结果很反直觉：把 JustRL-1.5B 蒸向它自己的 RL 前版本，student 几乎精确回退到 RL 前的性能，RL 收益被抹掉；换成更大的 R1-Distill-7B 后，训练轨迹几乎不可区分，student 仍然回退到同一水平。<Cite n={[1,6]} />
 
-| 观察 | 可能含义 | 应对 |
+<figure className="my-6">
+  <img src="./fig5-reverse-distillation.svg" alt="反向蒸馏实验：JustRL-1.5B 分别向 R1-Distill-1.5B 与 R1-Distill-7B 蒸馏，两条曲线都回退到相近水平，尽管 7B teacher 的 benchmark 更高" className="mx-auto h-auto max-w-full rounded-lg border border-zinc-200 shadow-sm dark:border-zinc-800" />
+  <figcaption className="mt-2 text-center text-xs text-zinc-500 dark:text-zinc-400">
+    <span className="figure-caption-main">反向蒸馏：更强的 R1-Distill-7B 与更弱的 R1-Distill-1.5B 把同一个 student 带到几乎相同的回退水平，说明 OPD 的动态由思考模式而非 benchmark 分数主导</span>
+    <span className="figure-caption-source">图源：Li et al., <em>Rethinking On-Policy Distillation of Large Language Models</em>, Figure 5（arXiv:2604.13016）</span>
+  </figcaption>
+</figure>
+
+论文从这个结果读出三层含义：<Cite n={1} />
+
+- **OPD 学的是思考模式。** 把 student 蒸向自己的 RL 前版本，会覆盖掉 RL 获得的推理模式；这说明 OPD 会主动获取 teacher 的 thinking pattern，而不只是做局部纠错。
+- **benchmark 分数不能预测 OPD 结果。** R1-Distill-7B 分数更高，却没有带来提升，反而造成回退；OPD 的训练动态可以与 teacher 的排行榜表现完全脱钩。
+- **更高分不等于新知识。** R1-Distill-7B 和 R1-Distill-1.5B 同家族、只差规模，对 student 的效果却几乎一样。更高的分数可能只是对同一批数据拟合得更好，而不是拥有真正新的能力。
+
+为什么“从 student 视角看分布不可区分”？因为 OPD 的 reverse KL 只在 student 访问到的状态上取 teacher 的局部目标分布。如果两个 teacher 在这些状态上诱导出的 next-token 分布几乎相同，那么它们的规模差异、benchmark 差异就不会进入梯度。<Cite n={1} />这也是“强 ≠ 可学”的严格版本：teacher 的强必须体现在 student 会到达的状态上。
+
+## 六、机制：主战场是高概率重叠 token
+
+现象层回答了“什么条件下有效”，机制层要回答“有效梯度到底落在哪些 token 上”。论文的结论是：成功的 OPD 表现为在 student 访问状态上，对 **teacher 与 student 共享的高概率 token** 做渐进对齐。<Cite n={1} />
+
+### 6.1 成功 run 与失败 run 的分水岭
+
+对照设置仍然固定 student 为 R1-Distill-1.5B，只换 teacher：JustRL-1.5B（成功）与 R1-Distill-7B（失败）。两者数学能力接近，后者甚至略强；数据与训练设置完全相同。<Cite n={1} />
+
+结果是：JustRL-1.5B 让 student 稳定提升，最终追回超过 80% 的 teacher-student gap；R1-Distill-7B 没有带来任何提升。三条动力学曲线给出了分水岭：<Cite n={1} />
+
+- 成功 run 的 **overlap ratio 从约 72% 持续升到 91% 以上**，失败 run 从始至终基本平躺；
+- 成功 run 的 **overlap-token advantage 逐渐靠近 0**，说明 student 在共享 token 上的置信度越来越接近 teacher；失败 run 停在明显为负的位置；
+- 成功 run 的 **entropy gap 收窄**，student 逐渐匹配 teacher 的局部不确定性；失败 run 的熵差持续存在。
+
+<figure className="my-6">
+  <img src="./fig6-mechanism-signature.svg" alt="成功与失败 OPD 的训练动力学：成功 run 的 overlap ratio 持续上升、overlap-token advantage 靠近零、entropy gap 收窄；失败 run 三条曲线停滞" className="mx-auto h-auto max-w-full rounded-lg border border-zinc-200 shadow-sm dark:border-zinc-800" />
+  <figcaption className="mt-2 text-center text-xs text-zinc-500 dark:text-zinc-400">
+    <span className="figure-caption-main">成功与失败 OPD 的动力学签名：同一个 student，JustRL-1.5B teacher 带来 overlap 上升、advantage 归零、entropy gap 收窄；R1-Distill-7B teacher 三条曲线均停滞</span>
+    <span className="figure-caption-source">图源：Li et al., <em>Rethinking On-Policy Distillation of Large Language Models</em>, Figure 6（arXiv:2604.13016）</span>
+  </figcaption>
+</figure>
+
+一个关键数字是：在整个训练过程中，**overlap token 承载了 student 和 teacher 各自约 97%–99% 的总概率质量**。<Cite n={1} />所以 overlap ratio 上升不只是集合层面的巧合，它反映的是概率上真正占主导的 token 在对齐。这也是 top-$k$ OPD 在工程上可行的原因：只要覆盖住高概率区域，就覆盖住了大部分有效信号。
+
+附录里的辅助诊断还揭示了一个反直觉现象：失败 run 的 **训练 loss 反而一开始更小**，但梯度范数持续偏弱。低 loss 并不代表优化得好，它可能只是 teacher 诱导的信号本来就弱。<Cite n={1} />工程上如果只看 loss，很容易把失败 run 误判成“已经收敛”。
+
+### 6.2 只优化 overlap token 就够了
+
+相关性还不够，论文进一步做了因果性 ablation：把 top-$k$ 支持集拆成重叠与非重叠两部分，分别单独训练。<Cite n={1} />
+
+- **Student Top-$k$**：在 student 自己的 top-$k$ 上算 loss；
+- **Overlap Top-$k$**：只在 student 与 teacher top-$k$ 的交集上算 loss；
+- **Non-Overlap Top-$k$**：只在两者的对称差上算 loss。
+
+默认 $k=16$。结果是：**Overlap Top-$k$ 几乎追平 Student Top-$k$ 的全部收益，而 Non-Overlap Top-$k$ 明显更弱**。<Cite n={1} />这说明 OPD 的主要增益来自共享高概率区域的梯度，而不是非重叠 token。student-only 支持集里多出来的 token 概率质量很小，所以两种做法几乎等价。
+
+<figure className="my-6">
+  <img src="./fig7-overlap-ablation.svg" alt="Top-k OPD 支持集消融：Overlap Top-k 与 Student Top-k 几乎重合，Non-Overlap Top-k 明显更弱" className="mx-auto h-auto max-w-full rounded-lg border border-zinc-200 shadow-sm dark:border-zinc-800" />
+  <figcaption className="mt-2 text-center text-xs text-zinc-500 dark:text-zinc-400">
+    <span className="figure-caption-main">支持集消融：只在 overlap token 上优化就能追平标准 Student Top-k，非重叠 token 单独优化明显更弱</span>
+    <span className="figure-caption-source">图源：Li et al., <em>Rethinking On-Policy Distillation of Large Language Models</em>, Figure 7（arXiv:2604.13016）</span>
+  </figcaption>
+</figure>
+
+更有意思的是，overlap 优化是 **自我强化** 的：Student Top-$k$ 与 Overlap Top-$k$ 都把 overlap ratio 从约 72% 推到 91% 以上，而 Non-Overlap Top-$k$ 先下降、后来只部分恢复。<Cite n={1} />机制可以这样理解：一旦某个 token 进入共享高概率区域，并且被 teacher 偏好，reverse KL 就会把更多质量集中到它上面，逐渐把竞争性的非重叠 token 挤出 student 的 top-$k$。overlap 区域不是“优化之外的自然结果”，而是优化本身在制造的正反馈。
+
+这条机制也解释了为什么两个条件缺一不可：如果 thinking pattern 差太远，初始 overlap 太低，正反馈无法启动；如果 teacher 没有新知识，overlap 可能很高，但共享 token 上的目标分布与 student 差不多，梯度仍然很弱。
+
+## 七、Recipe：把学生带进可教区
+
+条件一是可以通过训练设计改变的。论文给出两个互补策略：先把 student 拉到 teacher 附近，或者从数据侧让 prompt 更贴合 teacher 的后训练分布。<Cite n={1} />
+
+### 7.1 Off-policy cold start：先 SFT，再 OPD
+
+当 student 太弱、与 teacher 的 thinking pattern 差太远时，直接 OPD 会遇到一个尴尬：student rollout 的状态太差，teacher 在这些状态上的局部建议无法组成一条可学的路径。论文的做法是先做一轮 off-policy 蒸馏，把 student 拉到 teacher 的思考模式附近，再切到 OPD。<Cite n={1} />
+
+具体流程：
+
+1. Student 为 Qwen3-1.7B-Base，teacher 为 Qwen3-4B（Non-thinking）；
+2. 从 OpenThoughts3-1.2M 的数学子集采样 20 万条 prompt，让 teacher 生成 rollout；
+3. 过滤掉截断、重复等退化回答，用剩余数据对 student 做全参数 SFT，得到 Qwen3-1.7B-SFT；
+4. 再从 SFT checkpoint 出发做 OPD，使用与 SFT prompt 去重后剩余的约 3 万条 prompt。
+
+对照组是从 Qwen3-1.7B-Base 直接做 OPD，teacher、数据、OPD 超参完全相同。结果是两阶段方案在三个 benchmark 上持续更好，而且差距贯穿整个训练过程，说明 cold start 不只改善早期优化，也抬高了后续 OPD 的性能上限。<Cite n={1} />
+
+<figure className="my-6">
+  <img src="./fig8-cold-start.svg" alt="cold start 前后对比：从 Qwen3-1.7B-SFT 出发的 OPD 在准确率、overlap ratio、overlap-token advantage 与 entropy gap 上都优于直接从 base 出发" className="mx-auto h-auto max-w-full rounded-lg border border-zinc-200 shadow-sm dark:border-zinc-800" />
+  <figcaption className="mt-2 text-center text-xs text-zinc-500 dark:text-zinc-400">
+    <span className="figure-caption-main">off-policy cold start 的效果：SFT 初始化让 overlap 从更高水平起步、entropy gap 更小，最终准确率也更高</span>
+    <span className="figure-caption-source">图源：Li et al., <em>Rethinking On-Policy Distillation of Large Language Models</em>, Figure 8（arXiv:2604.13016）</span>
+  </figcaption>
+</figure>
+
+动力学也支持这个解释：SFT 初始化的 student 起点 overlap 更高、曲线更平滑；base 初始化的 student 起点更低，早期明显不稳定，之后才慢慢追上来。entropy gap 也是 SFT 初始化更小，说明它从一开始就更接近 teacher 的置信度轮廓。<Cite n={1} />
+
+所以 off-policy 不是 OPD 的敌人，而是 OPD 的起跑器。真正的问题不是“离线还是在线”，而是 **什么时候切换**：student 还没进入 teacher 的有效教学区域时，先离线；进入之后，再用 on-policy 信号做精细对齐。
+
+### 7.2 Teacher-aligned prompts：对齐模板，也要对齐内容
+
+第二个策略从数据侧入手：teacher 的策略是被它的后训练 prompt 塑造的，所以用更接近 teacher 后训练分布的 prompt 做 OPD，监督会更有效。论文把这个问题拆成两个粒度：**模板** 和 **内容**。<Cite n={1} />
+
+**模板对齐。** 固定 student 为 R1-Distill-1.5B、teacher 为 JustRL-1.5B，prompt 集合都是 DAPO-Math-17K，题目完全相同，只换呈现格式。原始模板是标准 DAPO 格式，teacher-aligned 模板则匹配 JustRL 后训练时使用的格式：
+
+```text
+{Question} Please reason step by step, and put your final answer within \boxed{}.
+```
+
+仅仅换模板，三个 benchmark 的平均验证准确率就提高了，overlap ratio 也从更高起点出发、收敛到更高水平。<Cite n={1} />这说明即使是格式这种“小事”，也会改变 student 生成状态与 teacher 的兼容性。
+
+<figure className="my-6">
+  <img src="./fig9-prompt-template.svg" alt="prompt 模板对齐的效果：teacher-aligned 模板在平均验证准确率和 overlap ratio 上都优于原始 DAPO 模板" className="mx-auto h-auto max-w-full rounded-lg border border-zinc-200 shadow-sm dark:border-zinc-800" />
+  <figcaption className="mt-2 text-center text-xs text-zinc-500 dark:text-zinc-400">
+    <span className="figure-caption-main">只替换 prompt 模板，不换题目：teacher-aligned 模板带来更高的平均准确率与更快的 overlap 增长</span>
+    <span className="figure-caption-source">图源：Li et al., <em>Rethinking On-Policy Distillation of Large Language Models</em>, Figure 9（arXiv:2604.13016）</span>
+  </figcaption>
+</figure>
+
+**内容对齐。** 固定 student 为 Qwen3-1.7B-Base、teacher 为 Qwen3-4B-Base-GRPO，比较两组等量 prompt：DAPO-Math-17K（与 teacher 的 RL 数据对齐）与去重后的 DeepMath 子集。<Cite n={[1,13]} />结果同样带来下游优势，但机制更微妙：它的 **overlap ratio 反而更低**，然而 student 在 overlap token 上集中的概率质量更高——共享集合更小，但更“重”。<Cite n={1} />
+
+这也带来一个代价：只用 teacher 后训练见过的 prompt，会显著降低 student entropy，压缩探索空间。论文建议把 teacher-aligned prompts 与分布外 prompt 混合使用，以保留策略熵。<Cite n={1} />这条建议很实用：prompt 对齐不是越纯越好，过纯会把 student 训得又窄又自信。
+
+## 八、代价：密集奖励在长轨迹上会失效
+
+OPD 的吸引力在于 dense supervision：每个 token 都有 teacher 给的奖励，而 RL 只有终局的对错。但这份“免费午餐”有代价，而且代价随轨迹长度累积。<Cite n={1} />
+
+### 8.1 响应长度存在甜点区
+
+论文以 R1-Distill-1.5B 为 student、JustRL-1.5B 为 teacher，做了六组最大响应长度实验：0.5K、1K、3K、7K、10K、15K，各训练 200 步。<Cite n={1} />结果是：
+
+- 0.5K 和 1K 太短，监督 token 太少，样本效率低；
+- **3K 和 7K 最强**；
+- 10K 和 15K 进入平台期甚至下降，训练后期出现 collapse：overlap ratio 突然下掉，student entropy 和梯度范数同时尖峰。
+
+不稳定性从轨迹尾部开始。论文分析了 15K 设置下 student entropy 随输出位置的变化，发现高熵先在回答末尾出现，随着训练推进逐渐向更早的 token 传播；teacher entropy 也呈现类似的从后缀到前缀的趋势，说明 teacher 在越来越陌生的前缀上给出越来越嘈杂的奖励。<Cite n={1} />
+
+<figure className="my-6">
+  <img src="./fig11-reward-depth.svg" alt="响应长度甜点区与 teacher continuation 增益随 student 前缀长度衰减：1K 前缀增益约 0.37，16K 前缀仅约 0.02" className="mx-auto h-auto max-w-full rounded-lg border border-zinc-200 shadow-sm dark:border-zinc-800" />
+  <figcaption className="mt-2 text-center text-xs text-zinc-500 dark:text-zinc-400">
+    <span className="figure-caption-main">左：不同最大响应长度下的验证准确率，3K 与 7K 最好，10K/15K 不再提升；右：让 teacher 从 student 前缀继续作答，前缀越长，teacher 的相对增益越小</span>
+    <span className="figure-caption-source">图源：Li et al., <em>Rethinking On-Policy Distillation of Large Language Models</em>, Figure 11（arXiv:2604.13016）</span>
+  </figcaption>
+</figure>
+
+论文还直接测了 teacher 的“续写优势”：从 student rollout 的不同位置截断，让 teacher 接着写，看它的准确率比 student 高多少。前缀为 1K 时增益约 +0.37，4K 时 +0.27，8K 时 +0.15，16K 时只剩 +0.02。<Cite n={1} />这说明 student 走得越远，前缀越偏离 teacher 熟悉的状态，teacher 的局部监督越不可靠。对长链推理和 agentic 多轮任务，这是一个结构性限制。
+
+### 8.2 全局有信息，不等于局部可利用
+
+一个自然的追问是：失败 run 里的 teacher 奖励是不是根本没信息？论文的回答是否定的。<Cite n={1} />
+
+在同一个对照设置中（student 为 R1-Distill-1.5B，teacher 分别为 JustRL-1.5B 和 R1-Distill-7B），论文计算每条 rollout 的序列平均奖励，并比较正确与错误 rollout 的分布。两个 teacher 都给正确 rollout 更高的平均奖励，AUROC 分别为 **0.7333** 和 **0.7511**，差距很小。<Cite n={1} />也就是说，失败的 7B teacher 并没有给出更弱的全局信号；它同样能区分对错。
+
+<figure className="my-6">
+  <img src="./fig14-global-reward.svg" alt="正确与错误 rollout 的序列平均奖励分布：JustRL-1.5B teacher 的 AUROC 为 0.7333，R1-Distill-7B teacher 为 0.7511，两者都能区分对错" className="mx-auto h-auto max-w-full rounded-lg border border-zinc-200 shadow-sm dark:border-zinc-800" />
+  <figcaption className="mt-2 text-center text-xs text-zinc-500 dark:text-zinc-400">
+    <span className="figure-caption-main">失败 run 的 teacher 并未失去全局判别力：两个 teacher 都给正确 rollout 更高奖励，AUROC 接近（0.7333 vs 0.7511）</span>
+    <span className="figure-caption-source">图源：Li et al., <em>Rethinking On-Policy Distillation of Large Language Models</em>, Figure 14（arXiv:2604.13016）</span>
+  </figcaption>
+</figure>
+
+那为什么 OPD 还是失败？论文提出一个关于 **局部优化几何** 的假设：7B teacher 的逐 token advantage 虽然单点数值可能更大，但在序列内不同位置上方向不一致（anisotropic）；聚合为梯度更新时，这些异质信号会部分抵消，导致有效梯度很小。相反，JustRL-1.5B 与 student 的 thinking pattern 更兼容，advantage 可能集中在更一致的一小部分 token 上，虽然单点信号更小，却指向一致方向，reverse KL 的 mode-seeking 还能放大它。<Cite n={1} />
+
+论文明确说明，这个 anisotropy 假设 **没有被直接验证**，需要分析逐 token 梯度的方向结构，留给未来工作。但这个现象本身很重要：**全局可用的奖励，不代表局部可优化**。失败不是“奖励没信息”，而是“信息在 student 当前策略附近无法形成有效梯度”。<Cite n={1} />
+
+### 8.3 采样一个 token 就够了吗？
+
+一个常见的工程问题是 top-$k$ 的 $k$ 该取多大。论文比较了 sampled-token OPD 与 Top-$k$ OPD（$k\in\{1,4,16,64\}$），student 为 R1-Distill-1.5B，teacher 为 JustRL-1.5B。<Cite n={1} />
+
+| 监督方式 | AIME 2024 | AIME 2025 | AMC 2023 |
+|---|---:|---:|---:|
+| Sampled-token OPD | 0.454 | 0.327 | 0.782 |
+| Top-1 OPD | 0.446 | 0.310 | 0.772 |
+| Top-4 OPD | 0.473 | 0.331 | 0.793 |
+| Top-16 OPD | 0.458 | 0.338 | 0.791 |
+| Top-64 OPD | 0.463 | 0.338 | 0.785 |
+
+结论有两层：
+
+1. **Sampled-token OPD 已经够好**，与 Top-$k$ 的平均表现相当；$k$ 超过 4 之后收益可以忽略，但计算开销继续增加。
+2. **Top-1 是明显的坏配置**。它不是“token 太少”，而是选择规则有偏：Top-1 永远取 argmax，把奖励集中在一个 mode 上；策略的微小变化就可能翻转哪个 token 排第一，奖励信号因此不稳定，而且不会在训练中平均掉。Sampled-token 每次按 student 自己的分布抽一个 token，虽然在单步只用一个 token，但在训练过程中无偏地覆盖高概率区域，所以反而稳定。
+
+这条结论对实现很友好：如果工程上已经在用 sampled-token OPD，不必为了“更 dense”强行上大 $k$；真正要避免的是只盯 argmax 的退化做法。
+
+## 九、工程落地：从论文到训练日志
+
+把论文的结论映射成训练时的检查表，可以更早判断 OPD 是在有效对齐，还是昂贵地原地打转。下表中的阈值不是论文给出的硬指标，只是读曲线时的经验判断：
+
+| 日志信号 | 可能含义 | 应对 |
 |---|---|---|
-| `teacher_mass` 低 | teacher top-k 截断覆盖不足 | 增大 top-k 或换 loss / teacher |
-| `student_mass` 低 | student 不认 teacher 高概率 token | 先 cold start 或降低学习难度 |
-| `overlap_ratio` 低 | teacher-student 高概率集合错位 | 检查 teacher 兼容性、prompt 选择 |
-| loss 不降但 teacher 分数高 | teacher 优势不在 student 状态附近 | 换 prompt、换 teacher 或先 SFT |
-| 短期涨分长期回退 | 多域能力冲突 | 用 MOPD / replay / 分域 routing |
+| 初始 overlap ratio 明显偏低 | student 与 teacher 的思考模式不兼容 | 先做 off-policy cold start，或换更兼容的 teacher |
+| overlap ratio 长期平躺 | 正反馈没有启动，共享高概率区域没有扩张 | 检查 teacher 是否带来新知识、prompt 是否对齐 |
+| overlap mass 低但 ratio 尚可 | 共享集合没覆盖 teacher 的高概率质量 | 检查 top-$k$ 截断、teacher 分布是否错位 |
+| overlap-token advantage 长期明显为负 | student 在共享 token 上过度自信 | 先确认是否失败 run，再考虑 cold start / 校准 |
+| loss 低但梯度范数一直很弱 | 不是收敛，而是 teacher 信号本来就弱 | 不要只看 loss 早停；结合 overlap 动态判断 |
+| 长回答后期 overlap 骤降、entropy 与 grad norm 尖峰 | 轨迹尾部奖励退化并向回传播 | 缩短最大响应长度，或对长轨迹分段监督 |
+| teacher-aligned prompt 下 entropy 持续塌缩 | prompt 过纯，探索空间被压缩 | 混入分布外 prompt |
 
-这个表也说明：OPD 的“可观测性”很重要。如果只看最终 benchmark，调参会非常慢；如果能看 token-level overlap 和概率质量，就能更早判断训练是不是在有效对齐。<Cite n={4} />
+一个最小诊断流程可以是：固定 student，先用两个 teacher 各跑一小段 OPD，记录 overlap ratio、overlap mass、overlap-token advantage、entropy gap 和梯度范数；如果两个 teacher 的曲线几乎重合，先怀疑“新知识”条件不满足；如果 overlap 起点低且不涨，先怀疑 thinking pattern 不兼容，优先做 cold start。这个流程比只看最终 benchmark 更容易定位问题。<Cite n={1} />
+
+## 十、局限与边界
+
+论文的结论很强，但作者也划出了边界：<Cite n={1} />
+
+- **只覆盖数学推理。** 所有实验都在数学 benchmark 上完成，代码、开放式生成、agentic 任务是否遵循同样的条件和 token 机制，仍是开放问题。
+- **“新知识”难以独立测量。** 它隐含依赖预训练语料的差异，但跨家族蒸馏会把数据差异与 tokenizer、架构差异混在一起，受控的预训练 ablation 成本又极高。
+- **自蒸馏尚未覆盖。** 自蒸馏里 thinking pattern 天然一致，“新知识”来自 privileged information，而不是独立 teacher；论文的结论能否平移还需要验证。
+- **长轨迹是结构性弱点。** 密集 token 监督在中等长度推理上有效，但随着前缀变长，teacher 的局部可靠性下降；论文建议未来结合短段 dense 监督与长程 sparse 结果奖励，或用课程式方法逐步延长监督视野。
+- **局部几何假设未验证。** anisotropy 假设能解释“全局有信息但局部不可利用”，但论文没有直接测量逐 token 梯度的方向结构。
+
+这些边界也与容量差文献相呼应：蒸馏 scaling law 发现 teacher 过强时会出现 U 形退化，<Cite n={11} />而“小模型难以从强推理教师的长思维链中学习”也说明 teacher 的推理复杂度需要匹配 student 容量。<Cite n={12} />Rethinking OPD 的贡献是把这类“容量差”问题从 off-policy KD 推进到了 on-policy 设置，并给出了 token 级的可观测解释。<Cite n={1} />
 
 ## 小结
 
-Rethinking OPD 的一句话结论是：**OPD 成功不是因为 teacher 强，而是因为 teacher 在 student 会到达的状态上提供了可吸收的新信息。** 它把 OPD 的成败拆成两个条件——思考模式兼容、老师提供新能力——并给出两个 recipe：off-policy cold start 和 teacher-aligned prompt selection。对工程实践来说，这篇是 OPD 从“高效技巧”走向“可诊断系统”的关键一步。
+这篇论文的一句话结论是：**OPD 成功不是因为 teacher 强，而是因为 teacher 在 student 会到达的状态上，提供了可吸收的新信息。** 它把 OPD 的成败拆成两个条件——思考模式兼容、teacher 带来新知识——并从 token 层面指出，有效梯度集中在 student 与 teacher 共享的高概率 token 上，overlap 的扩张是一个自我强化的过程。<Cite n={1} />
+
+对工程实践来说，最重要的三点是：
+
+1. **选 teacher 不要只看分数。** 先看它是否与 student 的 thinking pattern 兼容，再看它是否带来了 student 没见过的新能力。
+2. **失败 run 可以从 overlap 动力学早期识别。** overlap ratio 不涨、overlap-token advantage 不归零、entropy gap 不收窄，比最终 benchmark 更早暴露问题。
+3. **OPD 不是单独一步。** 弱 student 需要 cold start，prompt 需要与 teacher 对齐但保留分布外样本，长轨迹则要考虑分段或混合稀疏奖励。
 
 ## 参考资料
 
 <References>
-1. Yaxuan Li, Yuxin Zuo, Bingxiang He, Jinqian Zhang, Chaojun Xiao, Cheng Qian, Tianyu Yu, Huan-ang Gao, Wenkai Yang, Zhiyuan Liu, Ning Ding (2026). *Rethinking On-Policy Distillation of Large Language Models: Phenomenology, Mechanism, and Recipe*. arXiv: [2604.13016](https://arxiv.org/abs/2604.13016). —— 本文主论文，系统分析 OPD 成败条件、token-level 机制与修复 recipe。
-2. Rishabh Agarwal, Nino Vieillard, Yongchao Zhou, Piotr Stanczyk, Sabela Ramos, Matthieu Geist, Olivier Bachem (2024). *On-policy Distillation of Language Models: Learning from Self-Generated Mistakes*. ICLR 2024, arXiv: [2306.13649](https://arxiv.org/abs/2306.13649). —— OPD / GKD 的基础框架。
-3. Kevin Lu, Thinking Machines Lab (2025). *On-Policy Distillation*. [thinkingmachines.ai/blog/on-policy-distillation](https://thinkingmachines.ai/blog/on-policy-distillation/). —— OPD 高效实验与工程 recipe 的代表性博客。
-4. veRL contributors (2026). *On-Policy Distillation (OPD)*. [verl.readthedocs.io/en/latest/algo/opd.html](https://verl.readthedocs.io/en/latest/algo/opd.html). —— top-k mass、overlap 等实现指标与多教师 routing 背景。
+1. Yaxuan Li, Yuxin Zuo, Bingxiang He, Jinqian Zhang, Chaojun Xiao, Cheng Qian, Tianyu Yu, Huan-ang Gao, Wenkai Yang, Zhiyuan Liu, Ning Ding (2026). *Rethinking On-Policy Distillation of Large Language Models: Phenomenology, Mechanism, and Recipe*. arXiv: [2604.13016](https://arxiv.org/abs/2604.13016). —— 本文主论文：两个成功条件、token 级机制、cold start 与 teacher-aligned prompt、长轨迹代价。
+2. An Yang, Anfeng Li, Baosong Yang, et al. (2025). *Qwen3 Technical Report*. arXiv: [2505.09388](https://arxiv.org/abs/2505.09388). —— Qwen3 系列模型与 OPD 后训练背景；本文的 Qwen student / teacher 配置。
+3. Kevin Lu, Thinking Machines Lab (2025). *On-Policy Distillation*. [thinkingmachines.ai/blog/on-policy-distillation](https://thinkingmachines.ai/blog/on-policy-distillation/). —— OPD 的工程 recipe 与低成本实验，本文引言中的产业背景。
+4. Rishabh Agarwal, Nino Vieillard, Yongchao Zhou, Piotr Stanczyk, Sabela Ramos, Matthieu Geist, Olivier Bachem (2024). *On-Policy Distillation of Language Models: Learning from Self-Generated Mistakes*. ICLR 2024, arXiv: [2306.13649](https://arxiv.org/abs/2306.13649). —— GKD 框架，OPD 目标的经典表述之一。
+5. Yuxian Gu, Li Dong, Furu Wei, Minlie Huang (2023). *MiniLLM: On-Policy Distillation of Large Language Models*. arXiv: [2306.08543](https://arxiv.org/abs/2306.08543). —— reverse KL 在 LLM 蒸馏中的早期系统化工作。
+6. Daya Guo, Dejian Yang, Haowei Zhang, et al. (2025). *DeepSeek-R1: Incentivizing Reasoning Capability in LLMs via Reinforcement Learning*. arXiv: [2501.12948](https://arxiv.org/abs/2501.12948). —— R1-Distill 系列模型，本文的 student / teacher 来源。
+7. Bingxiang He, Zekai Qu, Zeyuan Liu, et al. (2025). *JustRL: Scaling a 1.5B LLM with a Simple RL Recipe*. arXiv: [2512.16649](https://arxiv.org/abs/2512.16649). —— JustRL-1.5B，反向蒸馏与成功 run 的关键 teacher。
+8. Jujie He, Jiacai Liu, Chris Yuhao Liu, et al. (2025). *Skywork Open Reasoner 1 Technical Report*. arXiv: [2505.22312](https://arxiv.org/abs/2505.22312). —— Skywork-OR1-Math-7B，DeepSeek 家族的后训练 teacher。
+9. Zhihong Shao, Peiyi Wang, Qihao Zhu, et al. (2024). *DeepSeekMath: Pushing the Limits of Mathematical Reasoning in Open Language Models*. arXiv: [2402.03300](https://arxiv.org/abs/2402.03300). —— GRPO 算法，本文用于训练 Qwen3-4B-Base-GRPO teacher。
+10. Qiying Yu, Zheng Zhang, Ruofei Zhu, et al. (2025). *DAPO: An Open-Source LLM Reinforcement Learning System at Scale*. arXiv: [2503.14476](https://arxiv.org/abs/2503.14476). —— DAPO-Math-17K 数据集与训练设置。
+11. Dan Busbridge, Amitis Shidani, Floris Weers, Jason Ramapuram, Etai Littwin, Russ Webb (2025). *Distillation Scaling Laws*. arXiv: [2502.08606](https://arxiv.org/abs/2502.08606). —— teacher 过强时蒸馏效率出现 U 形退化的容量差分析。
+12. Yuetai Li, Xiang Yue, Zhangchen Xu, et al. (2025). *Small Models Struggle to Learn from Strong Reasoners*. Findings of ACL 2025, arXiv: [2502.12143](https://arxiv.org/abs/2502.12143). —— “learnability gap”：小模型难以直接吸收强推理教师的长思维链。
+13. Zhiwei He, Tian Liang, Jiahao Xu, et al. (2025). *DeepMath-103K: A Large-Scale, Challenging, Decontaminated, and Verifiable Mathematical Dataset for Advancing Reasoning*. arXiv: [2504.11456](https://arxiv.org/abs/2504.11456). —— 本文 prompt content 对齐实验中的 DeepMath 子集。
 </References>

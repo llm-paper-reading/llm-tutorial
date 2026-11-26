@@ -1,0 +1,204 @@
+import paper from "./meta";
+import { paperMetadata } from "@/lib/papers";
+
+export const metadata = paperMetadata(paper);
+
+<PaperHeader slug={paper.slug} />
+
+# 用条件表格 VAE 做产品线延伸的 what-if 决策支持
+
+产品线延伸——换容量、换包装、换口味、改卡路里——是快消公司最常见的增长手段。但新规格在上市前没有真实购买数据，管理者只能靠经验、小规模试销或上市后的销售分析，很难提前判断：**新设计会吸引哪些消费者？会不会只是蚕食原有产品？**
+
+这篇论文把问题转成一个条件生成任务：给定可控的产品属性，生成对应的消费者属性分布。模型叫 **CTVAE（Conditional Tabular VAE）**，在 20,682 名日本消费者、206,561 条软饮购买记录上训练，用 674 个产品训练、72 个产品做 hold-out，验证它能在没见过的产品上生成合理的消费者画像。<Cite n={1} />论文的贡献不是新的预测指标，而是把“生成模型”接进营销决策支持：让管理者可以对未上市的产品设计做 forward-looking 的 what-if 分析。<Cite n={1} />
+
+> 📌 前置：可以和 [LLM 模拟消费者](/papers/ssr-purchase-intent) 对照阅读。那篇用 LLM 生成调查回答，这篇用条件表格生成模型生成消费者属性分布；两者都属于「用合成数据支持营销决策」。
+
+## 一、问题：未上市产品的消费者反应
+
+产品线延伸的决策难点在于“反事实”：新设计不存在，因此没有直接的消费者反馈。传统做法有三类：<Cite n={1} />
+
+- **管理经验 / 专家判断**：快，但不可复现、难以规模化；
+- **试销 / 消费者调研**：有数据，但贵、慢，只能覆盖少量设计组合；<Cite n={5} />
+- **上市后销售分析**：真实，但已经太晚，无法支持 pre-launch 决策。
+
+代理模型（agent-based simulation）可以模拟消费者行为，但把大规模真实购买数据映射成代理规则很困难，模拟结果与真实行为的对应关系也难以验证。<Cite n={[1,6]} />
+
+论文的切入点是：**不要预测“某个消费者买不买”，而是学习“在给定产品属性下，消费者属性服从什么分布”。** 如果能生成这个条件分布，就可以比较不同设计下的人群结构，推断蚕食风险和目标 segment。<Cite n={1} />
+
+<figure className="my-6">
+  <img src="./fig1-framework.svg" alt="CTVAE 决策支持框架：上半部分是历史扫描面板数据，包含产品属性表和消费者人口统计/购买场景分布；下半部分是产品线延伸模拟，给定新产品属性，经条件表格 VAE 生成合成消费者画像与场景分布" className="mx-auto h-auto max-w-full rounded-lg border border-zinc-200 shadow-sm dark:border-zinc-800" />
+  <figcaption className="mt-2 text-center text-xs text-zinc-500 dark:text-zinc-400">
+    <span className="figure-caption-main">框架：从历史购买数据学习产品属性与消费者特征的联合分布，再对假设的新产品属性做条件生成，得到模拟的人群与购买场景分布</span>
+    <span className="figure-caption-source">图源：Li & Ishigaki, <em>What-If Decision Support for Product Line Extension Using Conditional Deep Generative Models</em>, Fig. 1（arXiv:2511.11646）</span>
+  </figcaption>
+</figure>
+
+## 二、方法：CTVAE
+
+### 2.1 条件生成的目标
+
+把表格数据分成两组变量：<Cite n={1} />
+
+- $x_s$：要生成的消费者属性（age、gender、household、income、purchase quantity、season 等）；
+- $x_c$：作为条件的产品属性（container type、volume、calories、ingredients 等）。
+
+普通表格生成模型学的是联合分布 $p(x_s, x_c)$；CTVAE 学的是条件分布：
+
+$$
+p_\theta(x_s\mid x_c).
+$$
+
+这样在推理时，只要给定一组新的产品属性 $x_c$，就能采样出对应的消费者属性 $x_s$，从而比较不同设计下的人群分布。<Cite n={1} />
+
+### 2.2 模型结构
+
+CTVAE 沿用 VAE 的框架，但把条件显式加进编码器和解码器：<Cite n={[1,3]} />
+
+$$
+q_\phi(z\mid x_s,x_c),\qquad p_\theta(x_s\mid z,x_c).
+$$
+
+训练目标是最大化条件对数似然的 ELBO：
+
+$$
+\log p_\theta(x_s\mid x_c)
+\ge \mathbb E_{q_\phi(z\mid x_s,x_c)}\left[\log p_\theta(x_s\mid z,x_c)\right]
+-\mathrm{KL}\left(q_\phi(z\mid x_s,x_c)\,\|\,p(z\mid x_c)\right).
+$$
+
+其中先验设为 $p(z\mid x_c)=\mathcal N(\mu,\sigma^2I)$。编码器输入 $r_s\oplus r_c$（mode-specific normalization 后的消费者与产品特征），经过 256→128 两层全连接得到潜变量 $z$；解码器再把 $z\oplus r_c$ 映射回消费者属性。<Cite n={1} />
+
+<figure className="my-6">
+  <img src="./fig2-ctvae.svg" alt="CTVAE 架构：输入数据分成消费者属性 x_s 和产品属性 x_c，经 mode-specific normalization 得到 r_s 与 r_c；编码器拼接后经 h1、h2 得到潜变量 z；解码器把 z 与 r_c 拼接，经 h2、h1 生成合成样本，再做 inverse mode-specific normalization" className="mx-auto h-auto max-w-full rounded-lg border border-zinc-200 shadow-sm dark:border-zinc-800" />
+  <figcaption className="mt-2 text-center text-xs text-zinc-500 dark:text-zinc-400">
+    <span className="figure-caption-main">CTVAE 的编码器—解码器结构：产品属性作为条件一路送入编码器和解码器，潜变量只负责消费者属性的剩余变异</span>
+    <span className="figure-caption-source">图源：Li & Ishigaki, <em>What-If Decision Support for Product Line Extension Using Conditional Deep Generative Models</em>, Fig. 2（arXiv:2511.11646）</span>
+  </figcaption>
+</figure>
+
+### 2.3 和 TVAE / CTGAN 的区别
+
+TVAE 和 CTGAN 也处理表格数据，也用了条件机制，但它们的条件主要用于稳定训练和处理不平衡类别，而不是“给定用户指定的控制变量做条件采样”。<Cite n={[1,2,4]} />CTVAE 把条件分布作为核心目标，因此在推理时可以直接对新产品属性做条件生成；论文也指出，对 CTGAN/TVAE 做高维条件采样计算成本很高，实际操作不现实。<Cite n={1} />
+
+mode-specific normalization 沿用 TVAE 的做法：连续变量用高斯混合建模，再按分量归一化；离散变量保留类别表示。这样异构表格数据可以统一送入全连接网络。<Cite n={[1,2]} />
+
+## 三、数据与实验设置
+
+数据来自 Macromill 的日本家庭扫描面板：<Cite n={1} />
+
+| 项目 | 设置 |
+|---|---|
+| 消费者 | 20,682 人 |
+| 购买记录 | 206,561 条 |
+| 产品 | 746 个软饮产品 |
+| 时间范围 | 2018-10 至 2019-09 |
+| 消费者属性 $x_s$ | 13 个字段：都道府县、年龄、性别、婚姻、是否有孩子、职业、家庭结构、住房、收入、购买数量、购买时间、购买季节等 |
+| 产品属性 $x_c$ | 11 个字段：产品名、厂商、原产地、容器类型、容量、卡路里、前五条配料等 |
+| 配料 | 312 种唯一配料名，每个产品取前五条 |
+| 训练 / 测试 | 674 个产品训练，72 个产品 hold-out |
+| 合成样本 | 每个测试产品生成 30,000 条 |
+
+mode-specific normalization 后，$r_s$ 为 140 维、$r_c$ 为 1,273 维，编码器输入是 1,413 维。<Cite n={1} />
+
+## 四、结果
+
+### 4.1 生成质量：CTVAE 优于 CTGAN / TVAE
+
+评价指标是分布匹配：<Cite n={1} />
+
+- 连续变量用 **KS complement**：$1-\mathrm{KS\ distance}$；
+- 离散变量用 **TV complement**：$1-\frac12\|\mathrm{hist}(x)-\mathrm{hist}(\hat x)\|_1$；
+- 对变量取平均得到 **MC**；再按产品购买量加权得到 **weighted MC**，避免低频产品主导。
+
+| 模型 | 平均 MC（256 维） | Weighted MC（256 维） |
+|---|---:|---:|
+| TVAE | 0.737 | 0.833 |
+| CTGAN | 0.745 | 0.831 |
+| CTVAE | **0.764** | **0.866** |
+
+CTVAE 在四个潜变量维度配置（64/128/256/512）下都优于两个基线；256 维表现最好，但不同维度之间差异不大，说明模型对容量选择不敏感。<Cite n={1} />注意：这些基线不是在条件分布上采样的，而是在联合分布上采样；CTVAE 的优势部分来自“条件生成”这个任务设定本身。<Cite n={1} />
+
+### 4.2 案例一：容器与卡路里
+
+产品 A1（500 mL 塑料瓶）和 A2（350 mL 易拉罐）内容相同、设计不同；图 3 的条件表还列出了两者的卡路里属性。观测数据中：<Cite n={1} />
+
+- A1：有孩家庭 0.59，无孩家庭 0.41；
+- A2：有孩家庭 0.47，无孩家庭 0.53。
+
+用 CTVAE 做反事实：把 A2 的容器、容量、卡路里改成 A1 的属性（A2→A1），生成的有孩家庭比例升到 **0.63**，无孩降到 **0.37**；反过来 A1→A2 得到 0.58/0.42，向 A2 的观测分布移动，但没有完全到位。<Cite n={1} />
+
+<figure className="my-6">
+  <img src="./fig3-container.svg" alt="容器与卡路里案例：A1（500mL 塑料瓶、36 kcal）与 A2（350mL 易拉罐、0 kcal）的观测和条件生成分布；A2→A1 的有孩家庭比例升到 0.63，A1→A2 降到 0.58，说明设计属性变化会系统性地移动人群结构" className="mx-auto h-auto max-w-full rounded-lg border border-zinc-200 shadow-sm dark:border-zinc-800" />
+  <figcaption className="mt-2 text-center text-xs text-zinc-500 dark:text-zinc-400">
+    <span className="figure-caption-main">容器/卡路里反事实：把 A2 改成 A1 的容器与容量后，合成数据中“有孩家庭”占比从 0.47 升到 0.63，方向与“大瓶装更家庭化”的直觉一致</span>
+    <span className="figure-caption-source">图源：Li & Ishigaki, <em>What-If Decision Support for Product Line Extension Using Conditional Deep Generative Models</em>, Fig. 3（arXiv:2511.11646）</span>
+  </figcaption>
+</figure>
+
+这个例子说明模型能把“容器/容量”这类设计变量翻译成可解释的 segment 变化，而不是只给一个抽象的生成分数。<Cite n={1} />
+
+### 4.3 案例二：口味与购买季节
+
+B1（无糖、0 kcal、2,339 条购买记录）和 B2（柠檬味、38 kcal、1,079 条记录）的购买季节分布不同：B1 夏季集中，B2 相对平稳。用 CTVAE 做 B2→B1 / B1→B2 的条件生成，合成分布能复现这两种季节性模式。<Cite n={1} />
+
+<figure className="my-6">
+  <img src="./fig4-flavor.svg" alt="口味与购买季节案例：B1（无糖 0 kcal）夏季购买集中，B2（柠檬味 38 kcal）季节分布更平；中间四张表给出配料与卡路里条件，下方两张图对比观测与合成的季节分布" className="mx-auto h-auto max-w-full rounded-lg border border-zinc-200 shadow-sm dark:border-zinc-800" />
+  <figcaption className="mt-2 text-center text-xs text-zinc-500 dark:text-zinc-400">
+    <span className="figure-caption-main">口味反事实：B1 的夏季集中与 B2 的平稳季节分布都被条件生成复现，说明模型学到了配料/卡路里与消费场景的关联</span>
+    <span className="figure-caption-source">图源：Li & Ishigaki, <em>What-If Decision Support for Product Line Extension Using Conditional Deep Generative Models</em>, Fig. 4（arXiv:2511.11646）</span>
+  </figcaption>
+</figure>
+
+### 4.4 决策场景：包装与口味延伸
+
+论文还给出两个更贴近决策的例子：<Cite n={1} />
+
+- **产品 C：塑料瓶 → 软袋**（3,267 条购买记录）。合成数据显示 60 多岁消费者占比上升、40 多岁下降，暗示软袋延伸可以针对老年群体做营销。
+- **产品 D：加入苹果醋口味**（708 条购买记录）。合成数据显示“自己喝”下降约 11 个百分点，“和家人朋友一起”上升约 13 个百分点，说明口味变化会改变消费场景。
+
+<figure className="my-6">
+  <img src="./fig6-flavor-d.svg" alt="产品 D 加入苹果醋口味后的购买场景模拟：观测数据中自己喝约 0.56、和家人朋友一起约 0.27；合成数据中自己喝降到约 0.45、和家人朋友一起升到约 0.40" className="mx-auto h-auto max-w-full rounded-lg border border-zinc-200 shadow-sm dark:border-zinc-800" />
+  <figcaption className="mt-2 text-center text-xs text-zinc-500 dark:text-zinc-400">
+    <span className="figure-caption-main">产品 D 加苹果醋口味：合成数据预测“自己喝”下降约 11 个百分点，“和家人朋友一起”上升约 13 个百分点，可用于包装文案与场景定位</span>
+    <span className="figure-caption-source">图源：Li & Ishigaki, <em>What-If Decision Support for Product Line Extension Using Conditional Deep Generative Models</em>, Fig. 6（arXiv:2511.11646）</span>
+  </figcaption>
+</figure>
+
+## 五、贡献、局限与工程启示
+
+**贡献：**
+
+- 把产品线延伸从“事后分析”变成“事前条件生成”：给定设计变量，生成消费者属性分布，支持 what-if 推理。<Cite n={1} />
+- 把条件表格生成模型接进决策支持系统，强调可解释的 segment 变化，而不是只追求生成指标。<Cite n={1} />
+- 在真实大规模扫描面板上验证，并给出容器、卡路里、口味、包装等多个案例。<Cite n={1} />
+
+**局限：**
+
+- **静态消费者属性。** 没有显式建模时间动态、学习效应或复购行为。<Cite n={1} />
+- **只用结构化表格数据。** 没有纳入评论、社交媒体、专家知识等非结构化信息。<Cite n={1} />
+- **边界条件未系统化。** 论文承认还需要研究“什么时候生成的知识可靠”，以及如何评估生成知识的有效性、稳定性和决策相关性。<Cite n={1} />
+- **不是销量预测。** 生成的是消费者属性分布，蚕食风险和 segment 变化是推断出来的，不是直接预测销售额；实际决策仍需结合价格、渠道、竞争等信息。
+
+**工程启示：**
+
+1. **把设计变量显式作为条件。** 只有条件可控制，生成模型才能用于 what-if；否则只是无条件的数据增强。
+2. **产品级 hold-out 很关键。** 训练和测试按产品划分，才能验证模型对“没见过的产品”是否有效，而不是记住产品 ID。
+3. **分布指标要配合业务指标。** MC/weighted MC 只能说明像不像真实分布，最终还要看 segment 变化是否符合业务直觉。
+4. **生成模型是决策支持，不是自动决策。** 它适合做概念筛选和假设生成，最终仍要人类判断和小规模验证。
+
+## 小结
+
+这篇论文的一句话结论是：**把产品属性当作可控条件、把消费者属性当作生成目标，就能在历史购买数据上对未上市的产品线延伸做 what-if 分析。** CTVAE 在分布匹配上优于 CTGAN/TVAE，容器、卡路里、口味、包装案例表明生成的人群变化具有方向性和可解释性。<Cite n={1} />
+
+对营销和数据团队来说，最值得记住的是“条件生成”这个框架：不是问模型“这个产品会不会成功”，而是问“如果改成这个设计，消费者画像会怎么移动”。前者需要真实市场结果，后者可以从历史数据里学出来。
+
+## 参考资料
+
+<References>
+1. Yinxing Li, Tsukasa Ishigaki (2025). *What-If Decision Support for Product Line Extension Using Conditional Deep Generative Models*. arXiv: [2511.11646](https://arxiv.org/abs/2511.11646). —— 本文主论文：CTVAE、条件表格生成、扫描面板实验与决策案例。
+2. Lei Xu, Maria Skoularidou, Alfredo Cuesta-Infante, Kalyan Veeramachaneni (2019). *Modeling Tabular Data Using Conditional GAN*. NeurIPS 2019, arXiv: [1907.00503](https://arxiv.org/abs/1907.00503). —— CTGAN / TVAE 与 mode-specific normalization 的来源。
+3. Diederik P. Kingma, Max Welling (2013). *Auto-Encoding Variational Bayes*. ICLR 2014, arXiv: [1312.6114](https://arxiv.org/abs/1312.6114). —— VAE 与 ELBO 的原始论文。
+4. Vadim Borisov, Tobias Leemann, Kathrin Seßler, Johannes Haug, Martin Pawelczyk, Gjergji Kasneci (2024). *Deep Neural Networks and Tabular Data: A Survey*. IEEE TNNLS, arXiv: [2110.01889](https://arxiv.org/abs/2110.01889). —— 表格数据深度学习方法与生成模型的背景。
+5. David A. Aaker, Kevin Lane Keller (1990). *Consumer Evaluations of Brand Extensions*. Journal of Marketing 54(1):27–41. —— 品牌/产品线延伸的消费者评价研究。
+6. William Rand, Roland T. Rust (2011). *Agent-Based Modeling in Marketing: Guidelines for Rigor*. International Journal of Research in Marketing 28(3):181–193. —— 代理模型在营销模拟中的严谨性问题。
+</References>

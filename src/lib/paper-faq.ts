@@ -14,6 +14,15 @@ import deepseekOcrFAQ from "@/app/papers/deepseek-ocr/faq";
 import deepseekV3FAQ from "@/app/papers/deepseek-v3/faq";
 import deepseekV32FAQ from "@/app/papers/deepseek-v3-2/faq";
 import deepseekV4FAQ from "@/app/papers/deepseek-v4/faq";
+import dsparkFAQ from "@/app/papers/dspark/faq";
+import timesfmFAQ from "@/app/papers/timesfm/faq";
+import timesfm3FAQ from "@/app/papers/timesfm-3/faq";
+import deepTsSurveyFAQ from "@/app/papers/deep-ts-survey/faq";
+import timexerFAQ from "@/app/papers/timexer/faq";
+import momentFAQ from "@/app/papers/moment/faq";
+import moiraiFAQ from "@/app/papers/moirai/faq";
+import ssrPurchaseIntentFAQ from "@/app/papers/ssr-purchase-intent/faq";
+import ctvaeProductLineFAQ from "@/app/papers/ctvae-product-line/faq";
 import distillingKnowledgeFAQ from "@/app/papers/distilling-knowledge/faq";
 import knowledgeDistillationSurveyFAQ from "@/app/papers/kd-survey-gou-2021/faq";
 import kdComprehensiveSurveyFAQ from "@/app/papers/kd-survey-mansourian-2025/faq";
@@ -73,6 +82,15 @@ const paperFAQBySlug: Partial<Record<string, PaperFAQ>> = {
   "deepseek-v3": deepseekV3FAQ,
   "deepseek-v3-2": deepseekV32FAQ,
   "deepseek-v4": deepseekV4FAQ,
+  "dspark": dsparkFAQ,
+  "timesfm": timesfmFAQ,
+  "timesfm-3": timesfm3FAQ,
+  "deep-ts-survey": deepTsSurveyFAQ,
+  "timexer": timexerFAQ,
+  "moment": momentFAQ,
+  "moirai": moiraiFAQ,
+  "ssr-purchase-intent": ssrPurchaseIntentFAQ,
+  "ctvae-product-line": ctvaeProductLineFAQ,
   "distilling-knowledge": distillingKnowledgeFAQ,
   "kd-survey-gou-2021": knowledgeDistillationSurveyFAQ,
   "kd-survey-mansourian-2025": kdComprehensiveSurveyFAQ,

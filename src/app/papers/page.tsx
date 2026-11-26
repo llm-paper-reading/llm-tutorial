@@ -12,7 +12,14 @@ import {
   type Paper,
 } from "@/lib/papers";
 import PaperTagIcon from "@/components/PaperTagIcon";
-import { getTagHint } from "@/lib/paper-tags";
+import {
+  getAllKeywords,
+  getTagDescription,
+  getTagEnglish,
+  getTagHint,
+  getTagReference,
+  getTagTitle,
+} from "@/lib/paper-tags";
 
 const SERIES_TAGS = [
   "DeepSeek 系列",
@@ -39,7 +46,7 @@ function TagChips({ p }: { p: Paper }) {
       {p.tags.map((t) => (
         <span
           key={t}
-          title={getTagHint(t)}
+          title={getTagTitle(t)}
           className="rounded-full bg-zinc-100 px-2 py-0.5 text-xs text-zinc-500 dark:bg-zinc-800 dark:text-zinc-400"
         >
           {t}
@@ -96,7 +103,7 @@ function PaperRow({ p }: { p: Paper }) {
           {p.tags.map((t) => (
             <span
               key={t}
-              title={getTagHint(t)}
+              title={getTagTitle(t)}
               className="rounded-full bg-zinc-100 px-1.5 py-0.5 text-[11px] text-zinc-500 dark:bg-zinc-800 dark:text-zinc-400"
             >
               {t}
@@ -180,7 +187,7 @@ function PapersHomeInner() {
             <Link
               key={t}
               href={qs({ tag: t })}
-              title={getTagHint(t)}
+              title={getTagTitle(t)}
               aria-current={active ? "page" : undefined}
               className={`inline-flex items-center rounded-full px-3 py-1.5 text-sm transition ${
                 active
@@ -206,6 +213,9 @@ function PapersHomeInner() {
               <>
                 <PaperTagIcon tag={selected} />
                 <span>{selected}</span>
+                <span className="text-xs font-normal text-zinc-500 dark:text-zinc-400">
+                  {getTagEnglish(selected)}
+                </span>
                 <span className="text-sm font-normal text-zinc-400">
                   · {shown.length} 篇
                 </span>
@@ -271,6 +281,48 @@ function PapersHomeInner() {
             ))}
           </ul>
         )}
+
+        {/* 关键词说明：中文名、标准英文、释义与解释页面 */}
+        <section className="mt-16 border-t border-zinc-200 pt-8 dark:border-zinc-800">
+          <h2 className="text-xl font-semibold">关键词说明</h2>
+          <p className="mt-2 text-sm text-zinc-500 dark:text-zinc-400">
+            每个关键词都给出标准英文表述与一个高认可度的解释页面，便于跨语言检索与进一步阅读。
+          </p>
+          <dl className="mt-6 grid gap-3 sm:grid-cols-2">
+            {getAllKeywords().map((t) => {
+              const reference = getTagReference(t);
+              return (
+                <div
+                  key={t}
+                  className="rounded-xl border border-zinc-200 bg-white p-4 dark:border-zinc-800 dark:bg-zinc-900"
+                >
+                  <dt className="flex flex-wrap items-center gap-2 font-medium">
+                    <PaperTagIcon tag={t} className="block h-4 w-4 shrink-0" />
+                    <span>{t}</span>
+                    <span className="text-xs font-normal text-zinc-500 dark:text-zinc-400">
+                      {getTagEnglish(t)}
+                    </span>
+                  </dt>
+                  <dd className="mt-1.5 text-sm leading-6 text-zinc-600 dark:text-zinc-400">
+                    {getTagDescription(t)}
+                  </dd>
+                  {reference && (
+                    <dd className="mt-2 text-xs">
+                      <a
+                        href={reference.url}
+                        target="_blank"
+                        rel="noreferrer"
+                        className="text-emerald-600 underline decoration-emerald-300 underline-offset-2 hover:text-emerald-700 dark:text-emerald-400 dark:decoration-emerald-800 dark:hover:text-emerald-300"
+                      >
+                        {reference.label} ↗
+                      </a>
+                    </dd>
+                  )}
+                </div>
+              );
+            })}
+          </dl>
+        </section>
       </div>
     </div>
   );

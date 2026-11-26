@@ -1,0 +1,212 @@
+import paper from "./meta";
+import { paperMetadata } from "@/lib/papers";
+
+export const metadata = paperMetadata(paper);
+
+<PaperHeader slug={paper.slug} />
+
+# LLM 模拟消费者：用语义相似度还原 Likert 购买意愿
+
+让 LLM 扮演消费者做产品调研，听起来很自然：给它一个人设、看一张产品概念图、问“你有多想买”，再让它打 1–5 分。但直接这么做，模型会挤在中间值——大量回答是 3 分，几乎不给 1 或 5；而真实消费者的购买意愿通常集中在 4 和 5。<Cite n={1} />结果就是分布完全不像人，虽然产品排序可能还凑合。
+
+这篇论文的核心主张是：**问题不在 LLM 不会模拟消费者，而在“直接要数字”这种 elicitation 方式。** 他们提出 Semantic Similarity Rating（SSR）：先让 LLM 自由写一两句购买意愿，再把这段文本嵌入到五条 Likert 锚点语句上，用余弦相似度得到响应分布。<Cite n={1} />在 57 个真实个人护理产品调研、9,300 份人类回答上，SSR 达到人类 test–retest 相关上限的约 90%，GPT-4o 的分布相似度约 0.88。<Cite n={1} />
+
+> 📌 这是一篇应用研究，不是新的 LLM 架构。它值得读的地方在于：**同一个模型，换一种问法，合成数据的分布和排序都会明显变好。**
+
+## 〇、背景：什么是 Likert 量表
+
+**Likert 量表**（李克特量表）是一种常用的态度测量工具，由美国心理学家 Rensis Likert 在 1932 年提出。<Cite n={7} />它让受访者对一条陈述表示同意或不同意的程度，通常用 5 点或 7 点量表。购买意愿研究里最常见的 5 点版本是：
+
+| 分数 | 含义 |
+|---:|---|
+| 1 | 肯定不会买 |
+| 2 | 可能不会买 |
+| 3 | 不确定 / 中立 |
+| 4 | 可能会买 |
+| 5 | 肯定会买 |
+
+几个容易混淆的概念：
+
+- **Likert item**：单个 1–5 的问题，例如“你有多可能购买这个产品？”
+- **Likert scale**：由多个 Likert item 组成的量表，通常把多项得分加总或平均后再分析；
+- Likert 数据本质上是**有序类别**（ordinal）：1 到 5 有顺序，但不保证相邻分数之间的距离完全相等。因此严格分析时，不一定要把它当连续变量；中位数、分布形状往往比均值更稳妥。
+
+这篇论文里的“购买意愿”就是一个 5 点 Likert item。人类受访者直接选 1–5；SSR 方法则让 LLM 先写自由文本，再把它映射成 1–5 上的概率分布。论文用 KS 相似度而不是普通欧氏距离来比较分布，正是为了尊重 Likert 量表的有序性。<Cite n={1} />
+
+## 一、动机：消费者调研贵、有偏，LLM 直接打分又不真实
+
+传统消费者调研每年花费数十亿美元，但人类面板本身有几种系统性作答偏差，测量到的需求带有噪声：<Cite n={[1,8]} />
+
+- **满意化（satisficing）**：受访者不愿逐条仔细权衡，给出“够用就好”的答案，而不是真正最优的判断；
+- **默许偏差（acquiescence bias）**：倾向于顺着题目或社会期望说“同意”，不管内容本身；
+- **正面偏差（positivity bias）**：对产品、品牌或体验给出过于正面的评价，抬高购买意愿。
+
+这些偏差会让调研分布偏窄、偏高，难以区分产品之间的真实差异。<Cite n={[1,8]} />LLM 作为合成消费者的吸引力在于：可规模化、可重复、可条件化到不同人设。
+
+已有研究确实在多个领域尝试用 LLM 模拟人类样本<Cite n={[2,3]} />，也发现了共同问题：**直接要求数值评分时，模型会回归到“典型答案”，方差远小于真人。**<Cite n={1} />论文把现有的数值 elicitation（直接打 Likert 分、feeling thermometer、离散选择）作为基线，并指出：这些方法的分布太窄，给出的置信度也不现实。<Cite n={[1,4]} />
+
+作者认为，文本才是 LLM 更自然的输出模态。与其强迫它输出一个整数，不如让它先描述态度，再把描述映射回量表。这个思路借用了 NLP 里的语义相似度分类和 survey methodology 里的 anchoring vignettes。<Cite n={[1,5,6]} />
+
+## 二、方法：三种 elicitation，SSR 是关键
+
+论文比较了三种让 LLM 回答购买意愿的方式（Figure 1A）：<Cite n={1} />
+
+| 方法 | 做法 | 输出 |
+|---|---|---|
+| Direct Likert Rating（DLR） | 直接要求模型只回答 1、2、3、4、5 | 单个整数 |
+| Follow-up Likert Rating（FLR） | 先自由写购买意愿，再让同一个模型扮演“Likert 专家”打分 | 单个整数 |
+| Semantic Similarity Rating（SSR） | 先自由写购买意愿，再与五条锚点语句算余弦相似度 | 五点的概率分布 |
+
+<figure className="my-6">
+  <img src="./fig1-methods.svg" alt="三种 elicitation 方式：DLR 直接让 LLM 输出 1–5；FLR 先写自由文本再由 LLM 专家打分；SSR 把自由文本编码成向量，与五条 Likert 锚点语句算余弦相似度，得到响应分布" className="mx-auto h-auto max-w-full rounded-lg border border-zinc-200 shadow-sm dark:border-zinc-800" />
+  <figcaption className="mt-2 text-center text-xs text-zinc-500 dark:text-zinc-400">
+    <span className="figure-caption-main">三种 elicitation：DLR 直接打星、FLR 让 LLM 专家把文本翻成分数、SSR 用嵌入相似度把文本映射成五点上分布</span>
+    <span className="figure-caption-source">图源：Maier et al., <em>LLMs Reproduce Human Purchase Intent via Semantic Similarity Elicitation of Likert Ratings</em>, Figure 1（arXiv:2510.08338）</span>
+  </figcaption>
+</figure>
+
+### 2.1 SSR 的具体步骤
+
+1. 用系统 prompt 让 LLM 扮演具有特定人口统计属性的消费者，展示产品概念图，问“你有多可能购买这个产品”；<Cite n={1} />
+2. 让模型用一两句话自由描述购买意愿，而不是输出数字；
+3. 用 `text-embedding-3-small` 把这段回答编码成向量；<Cite n={1} />
+4. 准备五条锚点语句，分别对应 Likert 1–5（例如“我肯定不会买”到“我非常可能会买”）；
+5. 计算回答向量与五条锚点向量的余弦相似度，归一化成五个概率；
+6. 主实验对六套不同锚点语句取平均，降低单套锚点带来的偏差。<Cite n={1} />
+
+直觉是：自由文本保留了“有点兴趣，但如果太贵就不买”这类细微态度；嵌入相似度把这段态度投影到量表上，得到一个分布而不是一个硬标签。<Cite n={1} />
+
+### 2.2 两个成功指标
+
+**分布相似度（KS similarity）。** 对每个调查，计算合成分布与真实分布的 Kolmogorov–Smirnov 距离，取 `1 - KS distance`，再对 57 个调查取平均。它保留量表的序数信息，不会因为把 3 和 4 搞反就完全失真。<Cite n={1} />
+
+**Correlation attainment（相关达成率）。** 先算真实与合成的平均购买意愿 Pearson 相关 $R_{xy}$；但人类数据本身有噪声、均值分布又窄，相关系数有上限。论文把每个调查随机拆成两半，重复 2,000 次，估计人类自身的 test–retest 相关上限 $R_{xx}$，再定义：<Cite n={1} />
+
+$$
+\rho=\frac{\mathbb E[R_{xy}]}{\mathbb E[R_{xx}]}.
+$$
+
+所以 $\rho=90\%$ 不是“预测准确率 90%”，而是“达到了人类重复测量相关上限的 90%”。这个口径比裸相关更公平，也更接近 survey 研究里的 reliability 概念。<Cite n={1} />
+
+## 三、实验设置：57 个真实产品调研
+
+数据来自一家领先个人护理公司的数字消费者调研平台：<Cite n={1} />
+
+| 项目 | 设置 |
+|---|---|
+| 调查数 | 57 个产品概念调研 |
+| 每个调查人数 | 150–400 名美国参与者 |
+| 总样本 | 9,300 份人类回答 |
+| 核心问题 | “基于你看到和听到的一切，你有多可能购买这个产品？”（5 点 Likert） |
+| 真实均值 | 跨调查平均 4.0，标准差 0.1（明显偏正面且分布窄） |
+| 人口统计 | 大多数有年龄、性别、地点；部分有收入；9 个调查有族裔 |
+| 刺激 | 默认使用完整产品概念图（含文字描述，很多还有概念图） |
+| 模型 | GPT-4o、Gemini-2.0-flash |
+| 温度 | 主文报告 $T=0.5$；$T=1.5$ 差异不大 |
+
+每个受访者还有一组人口统计属性，合成消费者就是让 LLM impersonate 一个具有相同属性的人。论文还比较了只用文本描述、不用图片的刺激，结果通常略差。<Cite n={1} />
+
+## 四、结果：SSR 同时修好分布和排序
+
+### 4.1 三种方法对比
+
+以 GPT-4o、$T=0.5$、图片刺激为例：<Cite n={1} />
+
+| 方法 | correlation attainment $\rho$ | KS similarity |
+|---|---:|---:|
+| DLR（直接打分） | 81.7% | 0.26 |
+| FLR（文本 + LLM 专家打分） | 84.7% | 0.72 |
+| SSR（文本 + 语义相似度） | **90.2%** | **0.88** |
+
+Gemini-2.0-flash 上趋势一致：DLR 的 $\rho\approx80\%$、KS≈0.39；FLR 的 KS≈0.59；SSR 的 KS≈0.80。论文摘要里的 “KS > 0.85” 主要对应 GPT-4o 的 SSR 结果。<Cite n={1} />
+
+<figure className="my-6">
+  <img src="./fig2-results.svg" alt="GPT-4o 下三种 elicitation 的对比：A.i–A.iii 为真实与合成的平均购买意愿散点，DLR 相关 81.7%、FLR 84.7%、SSR 90.2%；B.i–B.viii 为八个调查的真实与合成响应分布，SSR 最接近灰色真实分布" className="mx-auto h-auto max-w-full rounded-lg border border-zinc-200 shadow-sm dark:border-zinc-800" />
+  <figcaption className="mt-2 text-center text-xs text-zinc-500 dark:text-zinc-400">
+    <span className="figure-caption-main">GPT-4o 下的三种方法：上排是真实 vs 合成的平均购买意愿，SSR 的相关最高；下排是八个调查的响应分布，DLR 集中在 3，SSR 更接近真实分布</span>
+    <span className="figure-caption-source">图源：Maier et al., <em>LLMs Reproduce Human Purchase Intent via Semantic Similarity Elicitation of Likert Ratings</em>, Figure 2（arXiv:2510.08338）</span>
+  </figcaption>
+</figure>
+
+<figure className="my-6">
+  <img src="./fig3-ks.svg" alt="三种方法的 KS 相似度分布：DLR 集中在 0.26 附近，FLR 约 0.72，SSR 约 0.88，越靠右表示合成分布越接近真实分布" className="mx-auto h-auto w-full max-w-md rounded-lg border border-zinc-200 shadow-sm dark:border-zinc-800" />
+  <figcaption className="mt-2 text-center text-xs text-zinc-500 dark:text-zinc-400">
+    <span className="figure-caption-main">KS 相似度分布：DLR 的分布与真实数据严重错位（均值 0.26），FLR 明显改善（0.72），SSR 最接近真实（0.88）</span>
+    <span className="figure-caption-source">图源：Maier et al., <em>LLMs Reproduce Human Purchase Intent via Semantic Similarity Elicitation of Likert Ratings</em>, Figure 3（arXiv:2510.08338）</span>
+  </figcaption>
+</figure>
+
+为什么 DLR 会失败？论文观察到模型几乎从不给 1 或 5，而是大量给 3，形成“安全的中间值”；偶尔出现 2 或 4，才让相关性能到 80% 左右。<Cite n={1} />FLR 通过自由文本缓解了这一点，但让 LLM 专家再打一次分，仍然会损失一部分分布信息；SSR 直接用嵌入空间保留文本的细微差异，所以分布最接近。<Cite n={1} />
+
+### 4.2 人口统计与产品属性
+
+论文按年龄、收入、概念类别、概念来源、价格段分层，比较真实与合成的平均购买意愿（Figure 4）：<Cite n={1} />
+
+<figure className="my-6">
+  <img src="./fig4-demographics.svg" alt="按年龄、收入水平、概念类别、概念来源、价格段分层的平均购买意愿：真实、GPT-4o、Gem-2f 三条线在年龄凹形、收入 1–4 偏低、Cat IV 最高、Source B 偏低、Tier 3/4 偏高上趋势一致" className="mx-auto h-auto w-full max-w-md rounded-lg border border-zinc-200 shadow-sm dark:border-zinc-800" />
+  <figcaption className="mt-2 text-center text-xs text-zinc-500 dark:text-zinc-400">
+    <span className="figure-caption-main">五类分层的平均购买意愿：年龄呈中间高两端低的凹形；收入 1–4 有预算压力时更低；Cat IV 最高、Cat I 最低；Source B 被压低；Tier 3/4 高于 Tier 1</span>
+    <span className="figure-caption-source">图源：Maier et al., <em>LLMs Reproduce Human Purchase Intent via Semantic Similarity Elicitation of Likert Ratings</em>, Figure 4（arXiv:2510.08338）</span>
+  </figcaption>
+</figure>
+
+具体模式：<Cite n={1} />
+
+- **年龄**：真实数据呈凹形，年轻和年长群体购买意愿低于中年；GPT-4o 复现了这个形状，Gem-2f 只复现了年轻人偏低。
+- **收入**：收入 1–4 对应有预算压力的陈述，购买意愿明显更低；5 和 “None of these” 更高。两个模型都复现了这个趋势，GPT-4o 对收入 2 的负面措辞反应尤其强。
+- **概念类别**：Cat IV 一致最高，Cat I 一致最低。
+- **概念来源**：Source B 的产品被真实和合成消费者一致压低。
+- **价格段**：Tier 3/4 更正面，Tier 1 最低。
+- **性别与地区**：复现较差，但这两个特征本身对真实购买意愿的影响也不大。
+
+### 4.3 人设到底在起什么作用？
+
+一个反直觉的发现：如果把系统 prompt 里的人口统计信息全部去掉，合成分布反而更接近真实数据（KS≈0.91，均值 4.0±0.1），但 correlation attainment 只有约 50%；而带人设的 Gem-2f SSR 可达约 92%。<Cite n={1} />
+
+这说明人设不是为了“让分布更像”，而是为了让模型区分不同产品：没有具体人设时，模型会整体偏正面，给所有产品都打高分，失去了排序信号；有了人设，模型才会根据产品属性调整购买意愿。**分布相似和排序能力是两个不同的目标，SSR + 人设是在两者之间取平衡。**<Cite n={1} />
+
+### 4.4 泛化与基线
+
+- **换一个问题**：把 “购买意愿” 换成 “这个概念与你有多相关”，Gem-2f 的 SSR 仍达到 $\rho\approx82\%$、KS≈0.81（FLR 的 $\rho$ 更高但 KS 更低，约 0.62），说明方法不限于购买意愿。<Cite n={1} />
+- **和监督模型比**：用一半调查训练 LightGBM、预测另一半，correlation attainment 只有约 65%、KS≈0.80；同一比较中 SSR 约 88%、KS≈0.88。零样本的语义映射反而强于用调查数据训练的模型。<Cite n={1} />
+- **文本 vs 图片刺激**：只用文字描述、不给概念图，性能通常略降，但趋势不变。<Cite n={1} />
+
+### 4.5 定性反馈
+
+SSR 的副产品是自由文本。论文比较了人类和 LLM 的开放式回答，发现合成回答“信息更丰富”：会主动强调产品的正面特征，也会明确指出不喜欢的设计或顾虑。<Cite n={1} />同时，合成消费者似乎比真人更少受 positivity bias 影响，购买意愿的分布更宽，这对早期概念筛选可能更有区分度。<Cite n={1} />
+
+## 五、局限与工程启示
+
+**局限：**
+
+- **锚点是为这 57 个调查手工优化的。** 换到其他问卷、其他领域是否有效还不确定；论文建议未来可以自动优化或动态生成锚点。<Cite n={1} />
+- **依赖嵌入模型和相似度度量。** 论文只用 `text-embedding-3-small` + 余弦相似度；换嵌入空间可能得到不同的映射。<Cite n={1} />
+- **人口统计只部分复现。** 年龄、收入较好，性别、地区、族裔不稳定；不能把合成子群分析当作真实子群结论。<Cite n={1} />
+- **领域知识依赖。** 方法在口腔护理产品上有效，很可能是因为 LLM 训练语料里有大量相关讨论；在训练数据稀疏的领域，SSR 不能凭空创造有效的消费者偏好。<Cite n={1} />
+- **不能替代真实购买行为。** 合成消费者复现的是 survey response，不是预算约束、文化语境、营销曝光下的真实购买。<Cite n={1} />
+
+**工程启示：**
+
+1. **先改 elicitation，再考虑换模型。** DLR 的失败不是模型能力不足，而是“直接要数字”把模型逼进了安全中间值；自由文本 + 语义映射能释放同一模型的能力。
+2. **分布和排序要分开评估。** 只看均值相关会忽略分布形状，只看 KS 又会忽略产品区分度；论文用 correlation attainment + KS 两个指标，值得借鉴。
+3. **人设是排序信号，不是分布校准。** 去掉人设分布更像但排序崩掉；实际使用时要明确目标是“模拟人群分布”还是“区分产品”。
+4. **保留自由文本。** SSR 的定性反馈是 Likert 分数之外的额外价值，可用于提炼卖点、顾虑和概念改进方向。
+
+## 小结
+
+这篇论文的一句话结论是：**LLM 直接打 Likert 分会挤在中间值，但先让它自由描述、再用语义相似度映射到量表，就能同时恢复真实分布和产品排序。** 在 57 个真实产品调研上，SSR 达到人类 test–retest 相关上限的约 90%，GPT-4o 的 KS 相似度约 0.88，且不需要任何调查数据训练。<Cite n={1} />
+
+它给出的方法论启示很通用：**当模型在某个结构化输出上表现不自然时，先怀疑 elicitation，而不是模型本身。** 把“让它直接说答案”换成“让它自然表达，再把表达映射回答案”，往往能同时改善分布、可解释性和定性信息。
+
+## 参考资料
+
+<References>
+1. Benjamin F. Maier, Ulf Aslak, Luca Fiaschi, Nina Rismal, Kemble Fletcher, Christian C. Luhmann, Robbie Dow, Kli Pappas, Thomas V. Wiecki (2025). *LLMs Reproduce Human Purchase Intent via Semantic Similarity Elicitation of Likert Ratings*. arXiv: [2510.08338](https://arxiv.org/abs/2510.08338). —— 本文主论文：SSR 方法、57 个消费者调研、KS/correlation attainment 指标与全部实验。
+2. Lisa P. Argyle, Ethan C. Busby, Nancy Fulda, Joshua Gubler, Caden Rytting, David Wingate (2023). *Out of One, Many: Using Language Models to Simulate Human Samples*. Political Analysis 31(3):337–351, arXiv: [2209.06899](https://arxiv.org/abs/2209.06899). —— 用 LLM 模拟人类样本的代表性工作。
+3. James Bisbee, Joshua D. Clinton, Cassy Dorff, Brenton Kenkel, Jennifer Larson, R. Blake Patterson, Matthew Carlson (2024). *Synthetic Replacements for Human Survey Data? The Perils of Large Language Models*. Political Analysis 32(4):401–416. —— 合成调查数据的风险与分布偏差。
+4. Peiyao Li, Vineet Kumar, Donald Ngwe, Mengjie Sun (2024). *Determining the Validity of Large Language Models for Automated Perceptual Analysis*. Marketing Science 43(2):254–266. —— LLM 在市场研究中的效度讨论。
+5. Wenpeng Yin, Jamaal Hay, Dan Roth (2019). *Benchmarking Zero-shot Text Classification: Datasets, Evaluation and Entailment Approach*. EMNLP 2019, arXiv: [1909.00161](https://arxiv.org/abs/1909.00161). —— 语义相似度/零样本文本分类的方法背景。
+6. Gary King, Christopher J. L. Murray, Joshua A. Salomon, Ajay Tandon (2004). *Enhancing the Validity and Cross-Cultural Comparability of Measurement in Survey Research*. American Political Science Review 98(1):191–207. —— anchoring vignettes，SSR 用锚点语句映射量表的 survey 方法来源。
+7. Rensis Likert (1932). *A Technique for the Measurement of Attitudes*. Archives of Psychology 22(140):1–55. —— Likert 量表的原始提出，本页背景说明的来源。
+8. Jon A. Krosnick (1991). *Response Strategies for Coping with the Cognitive Demands of Attitude Measures in Survey Research*. Applied Cognitive Psychology 5(3):213–236. —— satisficing、acquiescence 等 survey response bias 的方法学来源。
+</References>

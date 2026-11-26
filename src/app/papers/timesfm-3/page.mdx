@@ -1,0 +1,133 @@
+import paper from "./meta";
+import { paperMetadata } from "@/lib/papers";
+
+export const metadata = paperMetadata(paper);
+
+<PaperHeader slug={paper.slug} />
+
+# TimesFM-3：多变量零样本预测，一次前向完成
+
+TimesFM 系列从 2024 年开始做时序基础模型，但直到 TimesFM-2.5（2025 年 9 月）都严格限定在**单变量预测**：只用一个序列自己的历史预测未来。<Cite n={[1,2]} />现实中的预测却几乎都是多变量的——预测冰淇淋销量，除了历史销量，还要看蛋筒/糖浆等关联产品、门店客流，以及已知的未来促销、天气和节假日。<Cite n={1} />
+
+TimesFM-3 的重点就是把这个缺口补上：**330M 参数、超过 1 万亿个时间点预训练，原生支持多目标、历史协变量和未来已知协变量，并且用一次前向就生成整个预测 horizon。**<Cite n={1} />博客给出的定位很明确：不是给单变量模型外挂一个协变量拼接层，而是从预训练阶段就把多变量联合预测作为目标。<Cite n={1} />
+
+> 📌 前置：建议先读 [TimesFM](/papers/timesfm) 和 [时序综述与 TSLib](/papers/deep-ts-survey)。这篇是产品/方法博客，不是完整技术报告；架构讲得清楚，但训练细节和逐任务数字较少。
+
+## 一、动机：单变量模型看不到“其他序列”和“已知未来”
+
+博客用冰淇淋销量举例：只看历史销量，模型能学到周周期和大致趋势，但它不知道下周哪天有促销；而促销日往往会出现明显的销量抬升。<Cite n={1} />一个可用的预测系统至少要能利用三类信息：
+
+- **多条目标序列**：同一品类下不同品牌/ SKU 的销量会共同变化；
+- **历史协变量**：过去已知、但未来未知的特征，例如历史门店客流；
+- **未来动态协变量**：未来也已知的特征，例如计划中的促销、天气预报、节假日安排。
+
+TimesFM-3 把这三类输入统一进一个模型，并且保持零样本：不需要针对新数据集做任务特定微调。<Cite n={1} />
+
+## 二、架构：多变量 token + 交替注意力
+
+TimesFM-3 沿用前代的 decoder-only Transformer，把连续时间点按 **32 个点一个 patch** 切分，并对每条序列单独做归一化，以处理量纲差异很大的数据。<Cite n={1} />
+
+### 2.1 多变量 token 构造
+
+- **目标序列 / 历史协变量**：一个 token 直接来自一个 patch；
+- **未来动态协变量**：使用 **lookahead** 策略，每个 token 把当前 patch 与未来 patch 拼接，让模型在预测时能看到已知的未来信号。<Cite n={1} />
+
+这个设计的关键是：未来协变量不是简单拼到输入特征里，而是以“可以看到后续 patch”的 token 形式进入注意力，从而在时间轴上对齐。<Cite n={1} />
+
+### 2.2 交替注意力
+
+token 经过输入 residual block 后进入 Transformer 栈，注意力在二维网格上交替进行：<Cite n={1} />
+
+- **Causal temporal attention**：沿时间轴水平注意，token 只能看自己这条序列的过去，严格因果，防止未来信息泄漏；
+- **Full variate attention**：沿变量轴垂直注意，同一时间步的 token 可以看到所有其他序列，学习跨序列相关。
+
+两种注意力交替堆叠若干层，把时间模式和变量关系混在一起。这比“每个变量独立建模”多了跨序列信息，也比“所有变量拍平后全注意力”更可控。<Cite n={1} />
+
+<figure className="my-6">
+  <img src="./architecture.png" alt="TimesFM-3 架构：T1/T2 是目标序列，P1 是历史协变量，F1 是未来动态协变量；每条序列按 32 点切 patch，F1 的 token 拼接未来 patch；因果时间注意力与全变量注意力交替，horizon 用 mask 占位，一次输出所有目标的分位数预测" className="mx-auto h-auto w-full max-w-full rounded-lg border border-zinc-200 shadow-sm dark:border-zinc-800" />
+  <figcaption className="mt-2 text-center text-xs text-zinc-500 dark:text-zinc-400">
+    <span className="figure-caption-main">TimesFM-3 架构：目标、历史协变量、未来协变量三类 token 进入交替的因果时间注意力与全变量注意力，horizon 用 mask 占位，一次前向输出预测</span>
+    <span className="figure-caption-source">图源：Google Research Blog, <em>TimesFM-3: A zero-shot foundation model for multivariate forecasting</em>（2026-08-31）</span>
+  </figcaption>
+</figure>
+
+## 三、单次前向：Contiguous Patch Masking
+
+前代 TimesFM 逐 patch 自回归生成预测，会带来延迟、误差累积和计算成本。TimesFM-3 改用 **Contiguous Patch Masking**：在观测上下文后面接上一整段被 mask 的 horizon token，让模型一次填完。<Cite n={1} />
+
+具体做法是：<Cite n={1} />
+
+1. 目标序列和历史协变量在 horizon 上被遮住（未来未知）；
+2. 未来动态协变量保持可见，提供已知的促销/天气/节假日信号；
+3. 交替注意力一次把所有被遮住的 horizon patch 填完，没有迭代循环；
+4. 每个目标序列每个 horizon step 输出 9 个分位数（10% 到 90%），给出概率预测。
+
+<figure className="my-6">
+  <img src="./promotions.png" alt="冰淇淋销量示例：灰色为观测销量，橙色点为促销日；红色单变量预测看不到未来促销，蓝色多变量预测使用促销 schedule，在每个促销日出现约 20% 的销量抬升" className="mx-auto h-auto w-full max-w-full rounded-lg border border-zinc-200 shadow-sm dark:border-zinc-800" />
+  <figcaption className="mt-2 text-center text-xs text-zinc-500 dark:text-zinc-400">
+    <span className="figure-caption-main">促销场景：红色单变量预测忽略未来促销；蓝色多变量预测把促销 schedule 作为未来协变量，在促销日给出约 20% 的销量抬升</span>
+    <span className="figure-caption-source">图源：Google Research Blog, <em>TimesFM-3: A zero-shot foundation model for multivariate forecasting</em>（2026-08-31）</span>
+  </figcaption>
+</figure>
+
+这个例子说明多变量能力不是“多预测几条线”，而是让已知未来信号真正进入预测：单变量模型只能外推历史模式，多变量模型可以把“下周三有促销”翻译成“下周三销量抬升”。<Cite n={1} />
+
+## 四、评测：三个基准上的平均排名
+
+博客在三个公开基准上评测：**Gift-Eval、FEV-Bench、Time**，比较对象包括 Chronos-2、Toto 2.0 系列和上一代 TimesFM-2.5。<Cite n={1} />
+
+结论是：TimesFM-3 在三个基准的**点预测和概率预测平均排名**上都取得预训练基础模型中的最佳成绩；而且它有两个条目——<Cite n={1} />
+
+- **单变量模式**：不看协变量、不跨序列，只把每个目标独立预测；即使这样也已经匹配或超过其他可比基础模型；
+- **多变量模式**：使用跨序列信息和协变量后，平均排名进一步提升。
+
+<figure className="my-6">
+  <img src="./gift-eval.png" alt="Gift-Eval 平均排名散点：横轴为点预测平均排名，纵轴为概率预测平均排名，越低越好；TimesFM-3 位于左下角，单变量模式也已优于其他基础模型" className="mx-auto h-auto max-w-full rounded-lg border border-zinc-200 shadow-sm dark:border-zinc-800" />
+  <figcaption className="mt-2 text-center text-xs text-zinc-500 dark:text-zinc-400">
+    <span className="figure-caption-main">Gift-Eval：TimesFM-3（星标）在点预测和概率预测平均排名上都最低；单变量模式也已领先多数基础模型</span>
+    <span className="figure-caption-source">图源：Google Research Blog, <em>TimesFM-3</em>（2026-08-31）</span>
+  </figcaption>
+</figure>
+
+<figure className="my-6">
+  <img src="./fev-bench.png" alt="FEV-Bench 平均排名散点：TimesFM-3 位于左下角，点预测与概率预测平均排名均最低，优于 TimesFM-2.5、Toto-2.0、TiRex、Chronos-2 等" className="mx-auto h-auto max-w-full rounded-lg border border-zinc-200 shadow-sm dark:border-zinc-800" />
+  <figcaption className="mt-2 text-center text-xs text-zinc-500 dark:text-zinc-400">
+    <span className="figure-caption-main">FEV-Bench：TimesFM-3 在点预测和概率预测平均排名上都最低，单变量模式也优于 Chronos-2 等基线</span>
+    <span className="figure-caption-source">图源：Google Research Blog, <em>TimesFM-3</em>（2026-08-31）</span>
+  </figcaption>
+</figure>
+
+<figure className="my-6">
+  <img src="./time-bench.png" alt="Time 基准平均排名散点：TimesFM-3 位于左下角，点预测和概率预测平均排名最低，单变量模式优于 Toto-2.0、Chronos-2 等" className="mx-auto h-auto max-w-full rounded-lg border border-zinc-200 shadow-sm dark:border-zinc-800" />
+  <figcaption className="mt-2 text-center text-xs text-zinc-500 dark:text-zinc-400">
+    <span className="figure-caption-main">Time 基准：TimesFM-3 同样取得最低平均排名；多变量模式进一步提升，单变量模式本身已很有竞争力</span>
+    <span className="figure-caption-source">图源：Google Research Blog, <em>TimesFM-3</em>（2026-08-31）</span>
+  </figcaption>
+</figure>
+
+需要强调：博客只给**平均排名**，没有给逐任务分数、置信区间或数据集级别的结果；因此这里能说的是“在这三个基准的平均排名上领先”，不能外推成“所有场景都最好”。<Cite n={1} />
+
+## 五、可用性与边界
+
+**可用性。** 博客称 TimesFM-3 已在 GitHub（`google-research/timesfm`）和 Hugging Face（`google/timesfm-3.0-pytorch`）开放，并直接集成进 BigQuery；用户可以用 `AI.FORECAST` 命令做多变量或单变量预测，无需自己搭 ML 管线。<Cite n={1} />
+
+**边界。** 这是一篇产品/方法博客，不是完整技术报告：<Cite n={1} />
+
+- 没有给出预训练数据配比、模型层数/隐藏维度、训练算力等细节；
+- 没有逐任务 benchmark 数字，也没有失败模式分析；
+- 没有展开许可证、商业使用限制和不同领域的可靠性边界。
+
+因此它适合用来理解 TimesFM-3 的架构选择与能力定位，不适合作为复现或选型的唯一依据。真正落地前仍需要看模型卡、GitHub 文档，并用自己的数据做验证。
+
+## 小结
+
+TimesFM-3 的一句话结论是：**把多目标、历史协变量和未来动态协变量统一进 decoder-only 时序 Transformer，用交替的因果时间注意力与全变量注意力建模，再用 Contiguous Patch Masking 一次前向生成整个 horizon。** 它把“多变量零样本预测”从外挂能力变成了原生能力，在三个公开基准的平均排名上领先。<Cite n={1} />
+
+对读者来说，最值得记住的是三个设计：**多变量 token 构造**（尤其是未来协变量的 lookahead）、**时间轴因果 + 变量轴全连接**的交替注意力、以及**用 mask 填坑代替自回归**的单次解码。这三点共同决定了它能不能既看跨序列关系，又保持零样本和低延迟。
+
+## 参考资料
+
+<References>
+1. Ayush Jain, Rajat Sen (2026). *TimesFM-3: A zero-shot foundation model for multivariate forecasting*. Google Research Blog, 2026-08-31. [research.google/blog/timesfm-3-a-zero-shot-foundation-model-for-multivariate-forecasting](https://research.google/blog/timesfm-3-a-zero-shot-foundation-model-for-multivariate-forecasting/). Code: [google-research/timesfm](https://github.com/google-research/timesfm); Weights: [google/timesfm-3.0-pytorch](https://huggingface.co/google/timesfm-3.0-pytorch). —— 本文主来源：TimesFM-3 的架构、解码、评测与可用性说明。
+2. Abhimanyu Das, Weihao Kong, Rajat Sen, Yichen Zhou (2024). *A Decoder-only Foundation Model for Time-series Forecasting*. arXiv: [2310.10688](https://arxiv.org/abs/2310.10688). —— 初代 TimesFM 的 patched decoder 设计与零样本预测背景，站内精读见 [TimesFM](/papers/timesfm)。
+</References>

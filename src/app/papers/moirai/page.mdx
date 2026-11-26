@@ -1,0 +1,192 @@
+import paper from "./meta";
+import { paperMetadata } from "@/lib/papers";
+
+export const metadata = paperMetadata(paper);
+
+<PaperHeader slug={paper.slug} />
+
+# Moirai：统一训练一个任意变量的时序预测器
+
+传统深度预测是“一数据集一模型”：每个数据集固定 context 和 horizon，单独训练、单独调参。Moirai 想做的相反：**在大量异构时序上预训练一个模型，推理时接任意频率、任意变量数、任意 context/horizon，并直接输出概率预测。**<Cite n={1} />
+
+这件事比语言模型难，因为时序没有统一格式。论文把困难拆成三点：不同采样频率如何共享模型、变量数不固定时如何建模变量间关系、不同数据集的分布差异如何用统一概率输出刻画。<Cite n={1} />Moirai 用三个架构改动分别回答：**多 patch size 投影、Any-variate Attention、混合分布**，并在 27.6B 观测的 LOTSA 上训练 14M/91M/311M 三个规模。<Cite n={1} />
+
+> 📌 前置：可以和 [TimesFM](/papers/timesfm)、[MOMENT](/papers/moment)、[时序综述与 TSLib](/papers/deep-ts-survey) 对照阅读。TimesFM 是 decoder-only 点预测，MOMENT 是 encoder-only 表示模型，Moirai 是 encoder-only 概率预测，三者代表不同的基础模型取舍。
+
+## 一、三个难点：频率、变量数、分布
+
+**跨频率。** 分钟级、小时级、日级数据的周期和 patch 尺度差异很大。单一 patch size 要么在高频数据上注意力开销过大，要么在低频数据上丢失细节；已有工作往往干脆为每个频率训练一个模型。<Cite n={1} />
+
+**任意变量数。** 多变量序列的变量数不固定，各变量语义也不同。把每个变量独立建模（channel independence）能绕开维度问题，但放弃了变量间交互和外生协变量；把变量维固定进 embedding，又无法处理变量数变化。<Cite n={[1,4]} />
+
+**分布异质。** 不同数据集的支撑集和形状差异很大：正值数据不适合对称分布，重尾数据不适合正态分布。预定义一个 Student-t 或正态分布，会在很多数据集上给出不合适的预测区间。<Cite n={1} />
+
+与 TimesFM、MOMENT 等基础模型相比，Moirai 的差异在于它同时强调任意变量数和概率预测：前者是 decoder-only 点预测，后者是 encoder-only 表示学习。<Cite n={[2,3]} />
+
+<figure className="my-6">
+  <img src="./fig1-universal.svg" alt="通用时序预测器示意：多个领域的时序输入统一进入一个 Universal Forecaster，输出覆盖多频率、任意变量数和不同分布的概率预测" className="mx-auto h-auto max-w-full rounded-lg border border-zinc-200 shadow-sm dark:border-zinc-800 w-full" />
+  <figcaption className="mt-2 text-center text-xs text-zinc-500 dark:text-zinc-400">
+    <span className="figure-caption-main">通用预测器的三个目标：跨多个领域和频率训练，同时支持任意变量数与不同分布的概率输出</span>
+    <span className="figure-caption-source">图源：Woo et al., <em>Unified Training of Universal Time Series Forecasting Transformers</em>, Figure 1（arXiv:2402.02592）</span>
+  </figcaption>
+</figure>
+
+## 二、架构：三个改动让 Transformer 适配异构时序
+
+Moirai 基于 masked encoder：把时间序列切成不重叠 patch，被预测的 horizon 用可学习的 `[MASK]` 替换，编码器输出再解码成分布参数。核心改动有三处。<Cite n={1} />
+
+### 2.1 多 patch size 投影
+
+模型为 8、16、32、64、128 等 patch size 各学习一套输入/输出投影层。高频数据用更大的 patch，降低注意力开销；低频数据用更小的 patch，把计算留给 Transformer 层。每个频率按预设规则选择 patch size，但同一 patch size 的投影权重在不同频率间共享。<Cite n={1} />
+
+### 2.2 Any-variate Attention：把变量维拍平
+
+Moirai 把多变量序列沿变量维展平成一条 token 序列，用 RoPE 编码时间位置，再用两个可学习的二值 bias 区分“同一个变量”和“不同变量”。注意力分数写成：<Cite n={1} />
+
+$$
+E_{ij,mn}
+=\left(W^Q x_{i,m}\right)^\top R_{i-j}\left(W^K x_{j,n}\right)
++u^{(1)}\mathbf{1}\{m=n\}
++u^{(2)}\mathbf{1}\{m\neq n\},
+$$
+
+$$
+A_{ij,mn}=\frac{\exp\{E_{ij,mn}\}}{\sum_{k,o}\exp\{E_{ik,mo}\}},
+$$
+
+其中 $i,j$ 是时间索引，$m,n$ 是变量索引，$R_{i-j}$ 是 rotary 矩阵，$u^{(1)},u^{(2)}$ 是每个头、每层各自学习的标量。这个设计同时满足：变量顺序置换等变、变量索引置换不变、变量数可以任意变化。<Cite n={1} />
+
+<figure className="my-6">
+  <img src="./fig2-architecture.svg" alt="Moirai 架构：三条变量序列按不同 patch size 切分并投影，时间 ID 与变量 ID 进入 Transformer，全自注意力后由多 patch size 输出投影给出混合分布参数" className="mx-auto h-auto max-w-full rounded-lg border border-zinc-200 shadow-sm dark:border-zinc-800" />
+  <figcaption className="mt-2 text-center text-xs text-zinc-500 dark:text-zinc-400">
+    <span className="figure-caption-main">Moirai 的架构：多 patch size 投影 + 展平的变量序列 + 全自注意力 + 混合分布输出；阴影 patch 是待预测的 horizon</span>
+    <span className="figure-caption-source">图源：Woo et al., <em>Unified Training of Universal Time Series Forecasting Transformers</em>, Figure 2（arXiv:2402.02592）</span>
+  </figcaption>
+</figure>
+
+### 2.3 混合分布：让概率输出适配不同数据
+
+Moirai 不预设单一分布，而是输出一个混合分布：
+
+$$
+p(\mathbf Y_{t:t+h}\mid\hat\phi)
+=\sum_{i=1}^{c}w_i\,p_i(\mathbf Y_{t:t+h}\mid\hat\phi_i).
+$$
+
+混合分量包括 Student-t（稳健）、负二项（正值计数）、对数正态（右偏经济/自然数据）和低方差正态（高置信预测）。模型输出每个分量的权重与参数，训练目标是混合分布的负对数似然。<Cite n={1} />这样同一个模型可以适配不同支撑集和尾部形状，而不是强行用一个对称分布覆盖所有数据。
+
+## 三、LOTSA 与统一训练
+
+### 3.1 LOTSA：27.6B 观测的开放档案
+
+Moirai 的训练语料 LOTSA 约 **27.6B** 个观测，覆盖九个领域：<Cite n={1} />
+
+| 领域 | 数据集数 | 观测占比 |
+|---|---:|---:|
+| 能源 | 30 | 59.17% |
+| 交通 | 23 | 17.73% |
+| 气候 | 6 | 15.15% |
+| 云运维 | 3 | 5.49% |
+| 网络 | 3 | 1.55% |
+| 销售 | 6 | 0.72% |
+| 自然 | 5 | 0.09% |
+| 经济金融 | 23 | 0.10% |
+| 医疗 | 6 | 0.01% |
+
+频率覆盖年度到秒级，其中小时级约占 71.9%、分钟级约 25.4%。LOTSA 用 Arrow 统一存储，数据、模型权重和训练库 UNI2TS 都开源。<Cite n={1} />注意领域和频率高度不平衡：能源占近六成、小时级占七成，这也是后续讨论“数据多样性”的起点。
+
+### 3.2 任务分布：随机 context、horizon 和变量数
+
+训练时从序列中随机裁一段最长 512 的窗口，再切成 lookback 和 horizon；预测长度按窗口的 15%–50% 均匀采样。变量数从 beta-binomial（$n=128,a=2,b=5$，均值约 37）采样；还会对多变量做变量子采样，或把单变量序列随机拼成多变量，以增强任意变量数的泛化。<Cite n={1} />
+
+数据分布上，Moirai 把 LOTSA 看成“数据集的集合”：先采子数据集，再采序列。为了避免大领域主导训练，每个子数据集的采样概率上限设为 $\epsilon=0.001$，再重新归一化。<Cite n={1} />
+
+### 3.3 三个规模
+
+| 模型 | 层数 | $d_{\text{model}}$ | $d_{\text{ff}}$ | heads | $d_{kv}$ | 参数量 |
+|---|---:|---:|---:|---:|---:|---:|
+| Moirai-Small | 6 | 384 | 1536 | 6 | 64 | 14M |
+| Moirai-Base | 12 | 768 | 3072 | 12 | 64 | 91M |
+| Moirai-Large | 24 | 1024 | 4096 | 16 | 64 | 311M |
+
+Small 训练 100K 步，Base/Large 训练 1M 步，batch 256；AdamW（lr $10^{-3}$、weight decay 0.1）、10K 步 warmup + cosine、A100-40G、TF32，并用 sequence packing 处理变长序列。<Cite n={1} />
+
+## 四、实验：一个模型跨数据集
+
+### 4.1 分布内：Monash 上超过逐数据集基线
+
+在 Monash 预测档案上，单个 Moirai 的 normalized MAE 约为 **0.655（Small）/0.60（Base）/0.57（Large）**，低于图中最好的逐数据集基线 FFNN（约 0.745），也低于 SES、Naive、Theta、ARIMA、ETS、DeepAR、TBATS、WaveNet 等。<Cite n={[1,8]} />
+
+<figure className="my-6">
+  <img src="./fig3-monash.png" alt="Monash 基准上的归一化 MAE：SES、Naive、Theta、ARIMA、ETS、PR、N-BEATS、Transformer、CatBoost、DeepAR、TBATS、WaveNet、FFNN 与 Moirai Small/Base/Large 对比，Moirai 三个规模最低" className="mx-auto h-auto max-w-full rounded-lg border border-zinc-200 shadow-sm dark:border-zinc-800" />
+  <figcaption className="mt-2 text-center text-xs text-zinc-500 dark:text-zinc-400">
+    <span className="figure-caption-main">Monash 上的 normalized MAE（越低越好）：单个 Moirai 在三个规模上都低于所有逐数据集训练的基线，Large 约 0.57</span>
+    <span className="figure-caption-source">图源：Woo et al., <em>Unified Training of Universal Time Series Forecasting Transformers</em>, Figure 3（arXiv:2402.02592）</span>
+  </figcaption>
+</figure>
+
+### 4.2 零样本：接近或超过全监督，但不是全面碾压
+
+论文在 6 个未见数据集上做零样本概率预测（Electricity、Solar、Walmart、Weather、Istanbul Traffic、Turkey Power），指标是 CRPS 和 MSIS，对照全监督的 PatchTST、TiDE、TFT、DeepAR 以及 AutoARIMA、Seasonal Naive。<Cite n={[1,5,6,7]} />
+
+Moirai-Large 的结果：<Cite n={1} />
+
+- **Solar**：CRPS 0.406，优于全监督最好的 0.420；
+- **Turkey Power**：CRPS 0.036，优于全监督最好的 0.039；
+- **Electricity**：CRPS 0.050，接近 TiDE 的 0.048；
+- **Istanbul Traffic**：CRPS 0.112，接近 DeepAR 的 0.108；
+- **Weather**：CRPS 0.051，差于 TFT 的 0.043；
+- **Walmart**：CRPS 0.098，差于 TiDE 的 0.077。
+
+同期 TimeGPT-1、Lag-Llama 等也走零样本路线，但权重与数据开放程度不同，横向比较困难。<Cite n={[9,10]} />所以更准确的说法是 **competitive or superior**：一个零样本模型已经能进入全监督模型的范围，但并非每个数据集都最好。论文也指出，零样本模型之间缺少统一 held-out split，横向比较仍然困难。<Cite n={1} />
+
+### 4.3 上下文长度与消融
+
+<figure className="my-6">
+  <img src="./fig5-context.png" alt="Moirai 在 ETTm1、Electricity、Weather 上的 MAE 随 context length 变化：从 100 增加到数千步时误差持续下降，说明模型能利用长上下文" className="mx-auto h-auto max-w-full rounded-lg border border-zinc-200 shadow-sm dark:border-zinc-800" />
+  <figcaption className="mt-2 text-center text-xs text-zinc-500 dark:text-zinc-400">
+    <span className="figure-caption-main">context length 从 100 扩到 5000：三个数据集上的 MAE 都持续下降，Moirai 能处理数千步历史，而不是像传统 Transformer 那样在长上下文上退化</span>
+    <span className="figure-caption-source">图源：Woo et al., <em>Unified Training of Universal Time Series Forecasting Transformers</em>, Figure 5（arXiv:2402.02592）</span>
+  </figcaption>
+</figure>
+
+论文还发现，传统 Transformer 预测器在 context 变长时往往不再改善，而 Moirai 能持续利用更长的历史。<Cite n={1} />这对“任意 context”的承诺很关键：不是只能接短窗口，而是长窗口确实有用。
+
+**消融。** 在 Monash 上，Moirai-Small 的 normalized MAE 为 0.655；去掉多 patch size 后恶化到 **1.156**，去掉 Any-variate Attention 到 **0.904**，去掉 LOTSA（只用 GluonTS+Monash 训练）到 **0.809**，去掉混合分布到 **0.740**，去掉 sequence packing 到 **0.785**。<Cite n={1} />多 patch size 是影响最大的模块，说明跨频率投影是统一训练的前提；数据规模和多样性、任意变量注意力、混合分布也都不可省。
+
+## 五、局限与工程启示
+
+**局限：**
+
+- **最大窗口 512。** 预训练的任务分布限制在 512 以内，推理虽然可以接更长 context，但超出训练分布仍可能退化。<Cite n={1} />
+- **变量展平 + 全注意力。** Any-variate Attention 支持任意变量数，但变量很多时序列长度和注意力开销都会上升；需要靠 patch size 和子采样控制成本。<Cite n={1} />
+- **LOTSA 分布偏斜。** 能源占 59%、小时级占 72%，模型在稀疏领域/频率上的表现未必与总体指标一致。<Cite n={1} />
+- **零样本不总是最好。** Weather、Walmart 上仍不如全监督基线；概率预测的 CRPS 也受混合分布分量选择影响。
+
+**工程启示：**
+
+1. **频率用投影层区分，而不是用多个模型。** 多 patch size 让一个模型共享主干、按频率切换输入输出，这是跨频率训练最直接的做法。
+2. **变量维可以拍平。** 只要给注意力加对变量索引的 bias，就能在任意变量数下保持置换性质，不需要固定维度。
+3. **概率输出要足够灵活。** 混合分布比单一 Student-t 更适合异构数据；如果业务只关心点预测，也可以从混合分布取均值/中位数。
+4. **数据多样性比单纯堆量重要。** 去掉 LOTSA 的消融退化明显，说明跨领域、跨频率的覆盖本身就是模型能力的一部分。
+
+## 小结
+
+Moirai 的一句话结论是：**用多 patch size 处理频率、用 Any-variate Attention 处理变量数、用混合分布处理分布异质，就能在异构时序上统一训练一个通用预测器。** 它在 Monash 上超过逐数据集基线，在零样本概率预测上接近或超过全监督模型，但并非全面碾压。<Cite n={1} />
+
+对读者来说，最值得记住的是三个“解耦”：频率与主干解耦、变量数与架构解耦、概率形状与固定分布解耦。这三点让“一个模型服务所有时序”从口号变成可训练的架构设计。
+
+## 参考资料
+
+<References>
+1. Gerald Woo, Chenghao Liu, Akshat Kumar, Caiming Xiong, Silvio Savarese, Doyen Sahoo (2024). *Unified Training of Universal Time Series Forecasting Transformers*. ICML 2024, arXiv: [2402.02592](https://arxiv.org/abs/2402.02592). Code: [SalesforceAIResearch/uni2ts](https://github.com/SalesforceAIResearch/uni2ts). —— 本文主论文：多 patch size、Any-variate Attention、混合分布、LOTSA 与实验。
+2. Abhimanyu Das, Weihao Kong, Rajat Sen, Yichen Zhou (2024). *A Decoder-only Foundation Model for Time-series Forecasting*. arXiv: [2310.10688](https://arxiv.org/abs/2310.10688). —— TimesFM，decoder-only 时序基础模型对照。
+3. Mononito Goswami, Konrad Szafer, Arjun Choudhry, Yifu Cai, Shuo Li, Artur Dubrawski (2024). *MOMENT: A Family of Open Time-series Foundation Models*. ICML 2024, arXiv: [2402.03885](https://arxiv.org/abs/2402.03885). —— MOMENT，encoder-only 掩码重建对照。
+4. Yuqi Nie, Nam H. Nguyen, Phanwadee Sinthong, Jayant Kalagnanam (2023). *A Time Series is Worth 64 Words: Long-term Forecasting with Transformers*. ICLR 2023, arXiv: [2211.14730](https://arxiv.org/abs/2211.14730). —— patch 化与通道独立设计。
+5. David Salinas, Valentin Flunkert, Jan Gasthaus, Tim Januschowski (2017). *DeepAR: Probabilistic Forecasting with Autoregressive Recurrent Networks*. arXiv: [1704.04110](https://arxiv.org/abs/1704.04110). —— 概率预测与自回归循环网络基线。
+6. Abhimanyu Das, Weihao Kong, Andrew Leach, Rajat Sen, Rose Yu (2023). *Long-term Forecasting with TiDE: Time-series Dense Encoder*. TMLR 2023, arXiv: [2304.08424](https://arxiv.org/abs/2304.08424). —— 全监督概率预测强基线。
+7. Bryan Lim, Sercan Ö. Arık, Nicolas Loeff, Tomas Pfister (2020). *Temporal Fusion Transformers for Interpretable Multi-horizon Time Series Forecasting*. International Journal of Forecasting, arXiv: [1912.09363](https://arxiv.org/abs/1912.09363). —— TFT，分位数概率预测基线。
+8. Rakshitha Godahewa, Christoph Bergmeir, Geoffrey I. Webb, Rob J. Hyndman, Pablo Montero-Manso (2021). *Monash Time Series Forecasting Archive*. arXiv: [2105.06643](https://arxiv.org/abs/2105.06643). —— Monash 基准与归一化 MAE 口径。
+9. Azul Garza, Max Mergenthaler-Canseco (2023). *TimeGPT-1*. arXiv: [2310.03589](https://arxiv.org/abs/2310.03589). —— 闭源零样本预测模型，Moirai 的同期对照。
+10. Kashif Rasul, Arjun Ashok, Andrew Robert Williams, et al. (2023). *Lag-Llama: Towards Foundation Models for Probabilistic Time Series Forecasting*. arXiv: [2310.08278](https://arxiv.org/abs/2310.08278). —— 基于 lag 特征的零样本概率预测模型。
+</References>

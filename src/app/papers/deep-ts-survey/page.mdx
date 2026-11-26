@@ -1,0 +1,233 @@
+import paper from "./meta";
+import { paperMetadata } from "@/lib/papers";
+
+export const metadata = paperMetadata(paper);
+
+<PaperHeader slug={paper.slug} />
+
+# 时序综述与 TSLib：没有万能架构，只有任务匹配
+
+时间序列模型的论文越来越多，但横向比较越来越难：有人用 96 的 lookback，有人搜到 512；有人只报 MSE，有人只报 MAE；同一个 “Transformer 变体” 在不同论文里的预处理、归一化和训练轮数也不一样。结果就是，单看论文里的平均分，很难判断一个架构到底强在哪里、在什么任务上会失效。<Cite n={1} />
+
+这篇 TPAMI 综述做了两件事：第一，把深度时序模型拆成 **基本模块**（stationarization、decomposition、Fourier 分析等）和 **模型架构**（MLP、RNN、CNN、GNN、Transformer）两层来梳理；第二，发布 **TSLib**，在同一套数据协议下实现 41 个模型、覆盖 30 个数据集和 5 类任务，并实际评测 16 个主流深度模型与 6 个时序基础模型。<Cite n={1} />它最有价值的结论不是“某个模型最强”，而是：**不同结构只在特定任务上有优势，选型必须任务匹配**。
+
+> 📌 前置：可以配合 [TimesFM](/papers/timesfm)、[Time-LLM](/papers/time-llm)、[GPT4TS](/papers/one-fits-all) 一起读。前者是时序原生基础模型，后两者是借 LLM 主干的路线；这篇综述把它们放进同一个坐标系里比较。
+
+## 一、动机：模型越多，公平比较越难
+
+传统时序方法（ARIMA、指数平滑、谱分析）依赖线性、平稳等假设，难以处理真实数据里的非线性与长程依赖。深度学习模型则通过表示学习，在预测、插补、分类、异常检测等任务上全面铺开。<Cite n={1} />
+
+但现有综述通常只覆盖一个任务或一类架构：有的只讲预测，有的只讲 Transformer 或 GNN，缺少“从基本模块到现代架构”的统一视角；已有基准（BasicTS、TFB 等）虽然做了公平评测，却很少解释架构设计本身。<Cite n={1} />这篇综述试图补上这两块：**用模型中心的视角讲清设计，再用 TSLib 做统一评测**。
+
+## 二、基本模块：深度模型里的经典时序工具
+
+现代深度时序模型并不是凭空长出来的，很多设计都能追溯到经典时序分析。论文重点讲了三个模块：<Cite n={1} />
+
+### 2.1 Stationarization：把非平稳输入拉回可建模范围
+
+平稳性要求时间序列的均值、方差等统计量不随时间变化。传统方法用差分、对数变换做平稳化；深度模型则用归一化层承担同样的角色。以 Non-Stationary Transformer 的 Stationary 为例：<Cite n={1} />
+
+$$
+\mu_x=\frac1T\sum_{i=1}^{T}x_i,\qquad
+\sigma_x^2=\frac1T\sum_{i=1}^{T}(x_i-\mu_x)^2,
+$$
+
+$$
+\bar X=\frac{X-\mu_x}{\sqrt{\sigma_x^2+\epsilon}},\qquad
+\hat Y=\sigma_x\bar Y+\mu_x.
+$$
+
+模型在标准化后的 $\bar X$ 上预测，再用输入的均值和方差反归一化。RevIN 进一步加入可学习的仿射变换，让模型可以绕开非平稳输入。<Cite n={1} />这类模块几乎是现代长程预测模型的标配。
+
+### 2.2 Decomposition：把趋势和季节拆开
+
+季节-趋势分解把序列拆成 trend、seasonal、cyclical 和 irregular 四部分。Autoformer 把这个思想做成深度模型里的一个基本模块，用平均池化提取趋势：<Cite n={[1,5]} />
+
+$$
+X_T=\mathrm{AvgPool}(\mathrm{Padding}(X)),\qquad
+X_S=X-X_T.
+$$
+
+趋势项 $X_T$ 由池化后的平滑序列表示，剩余部分作为季节项 $X_S$。这个 decomposition block 后来被大量模型复用，成为解耦时序模式的常用组件。<Cite n={1} />
+
+另一条路线是 **basis expansion**：N-BEATS 用全连接层产生基函数系数，并通过 backcast/forecast 的残差堆叠做层次分解；N-HiTS 再加入多尺度采样和插值。<Cite n={1} />
+
+### 2.3 Fourier 分析：从时域到频域
+
+Fourier 变换把序列映射到频域，显式暴露周期成分。TimesNet 用 FFT 找出振幅最大的若干频率，把 1D 序列 reshape 成 2D 张量，再做卷积捕获周期内和周期间的变化。<Cite n={[1,2]} />FEDformer 则随机保留固定数量的 Fourier 分量，兼顾低频趋势和高频波动。<Cite n={1} />
+
+此外还有基于矩阵分解的多元序列分解（TRMF、DeepGLO 等），利用变量间的低秩结构做压缩。论文把这些都归入“基本模块”，强调它们可以和不同骨干自由组合。<Cite n={1} />
+
+## 三、五类架构：各自的归纳偏置
+
+论文把现有深度时序模型按骨干分成五类，并给出一张按年份排列的演化图：<Cite n={1} />
+
+<figure className="my-6">
+  <img src="./fig2-timeline.svg" alt="2018–2024 年代表性时序模型时间线，按 MLP、CNN、RNN、GNN、Transformer 五类架构着色，并标出 TSLib 已实现的模型" className="mx-auto h-auto max-w-full rounded-lg border border-zinc-200 shadow-sm dark:border-zinc-800" />
+  <figcaption className="mt-2 text-center text-xs text-zinc-500 dark:text-zinc-400">
+    <span className="figure-caption-main">代表性时序模型的演化：颜色区分 MLP/CNN/RNN/GNN/Transformer 五类骨干，绿色边框标出 TSLib 已实现的模型</span>
+    <span className="figure-caption-source">图源：Wang et al., <em>Deep Time Series Models: A Comprehensive Survey and Benchmark</em>, Fig. 2（arXiv:2407.13278）</span>
+  </figcaption>
+</figure>
+
+### 3.1 MLP：简单线性层的回归
+
+N-BEATS 用纯全连接堆栈做基展开；DLinear 更进一步，直接用线性层在原始空间做预测，挑战“复杂架构一定更好”的假设；TiDE、TSMixer、FreTS、TimeMixer、Koopa 则在 MLP 上加入协变量、时间/变量混合、频域或动力学结构。<Cite n={[1,6]} />MLP 的优势是简单、快、容易部署，劣势是高层表示能力有限。
+
+### 3.2 RNN：为序列而生，但长程吃力
+
+LSTNet 把循环结构与卷积结合，并用 recurrent-skip 捕捉周期；DA-RNN 加双阶段注意力；DeepAR 输出概率分布而不是点预测。<Cite n={1} />RNN 天然适合顺序建模，但梯度消失和串行计算让它在大规模长程任务上逐渐让位给 Transformer 和卷积。
+
+### 3.3 CNN：局部模式与多尺度
+
+CNN 用卷积核捕捉局部时序模式，SCINet 用多尺度下采样与交互，MICN 用多尺度卷积，TimesNet 则把 1D 序列转成 2D 周期张量再做 inception 卷积。<Cite n={[1,2]} />论文的评测显示，CNN 在多类任务上比较全面，尤其是非预测任务；代价是卷积核多样、训练通常更慢。
+
+### 3.4 GNN：显式建模变量间关系
+
+多元时序可以看成一张图：每个变量是节点，变量间的相关是边。DCRNN、STGCN、Graph WaveNet 用预定义或可学习的图结构做空间聚合；AGCRN、MTGNN 进一步做自适应图学习；StemGNN 在谱域同时建模变量相关和时间依赖。<Cite n={1} />GNN 适合有明确空间/传感器拓扑的场景，但在没有图结构的通用数据集上缺少跨任务的普遍优势。
+
+### 3.5 Transformer：tokenization 决定一切
+
+Transformer 是当前时序建模的主流。论文按注意力表示的粒度分成三类：<Cite n={[1,3,4,5]} />
+
+| 类型 | token 是什么 | 代表模型 | 特点 |
+|---|---|---|---|
+| Point-wise | 单个时间点 | Informer、Autoformer、Stationary | 细粒度，但复杂度高，需要稀疏/近似注意力 |
+| Patch-wise | 一段连续时间点 | PatchTST、Crossformer | 降低 token 数，保留局部语义 |
+| Series-wise | 一整条变量序列 | iTransformer、TimeXer | 直接建模变量间相关，适合多变量 |
+
+point-wise 的经典问题是 $O(T^2)$ 复杂度，于是有了 ProbSparse、Auto-Correlation、Pyramidal Attention 等高效注意力；patch-wise 用 patch 降低序列长度，PatchTST 还采用通道独立设计；series-wise 则把每个变量的整条历史压成一个 token，iTransformer 因此能直接用 vanilla attention 建模变量相关。<Cite n={[1,3,4,5]} />
+
+论文的总体判断是：**Transformer 在各类任务上整体最强，尤其长程预测；但没有一类架构在所有任务上占优。**<Cite n={1} />
+
+## 四、时序基础模型：原生 vs 借 LLM
+
+综述用一章梳理 TSFM，把它们分成两大类：<Cite n={1} />
+
+**时序原生模型** 从零在时序数据上预训练。Encoder 派包括 MOMENT（mask 重建）、Moirai（把多变量展平成一条序列）、Moirai-MoE（稀疏专家）、TTM（轻量 MLP + 自适应 patch）、TiRex（xLSTM）；decoder 派包括 Lag-Llama、TimesFM（patched decoder）、Timer、Time-MoE、Sundial（flow matching）、Toto。<Cite n={[1,7,8,9]} />
+
+**LLM 派模型** 借预训练语言模型的能力。GPT4TS 冻结 GPT2 的自注意力和 FFN，只训练输入输出接口；Time-LLM 把时序 patch 重编程成 LLM 能读的表示；Chronos 把数值缩放、量化成 token，用 T5 做概率预测；Chronos-2 进一步用 group attention 扩展到通用预测。<Cite n={[1,10,11,12]} />
+
+两者的取舍很清楚：原生 TSFM 更贴近数值预测，规模和推理成本可控；LLM 派擅长利用语义先验和跨模态上下文，但推理更贵，时序与文本的模态鸿沟也更难处理。<Cite n={1} />
+
+## 五、TSLib：统一协议的基准
+
+<figure className="my-6">
+  <img src="./fig9-tslib.svg" alt="TSLib 工作流：左侧从输入序列经数据处理、骨干和任务头输出，右侧分三步展示多样数据格式、灵活模型构建（基本模块 + 五类架构 + 41 个模型）和覆盖预测/分类/插补/异常检测的评测" className="mx-auto h-auto max-w-full rounded-lg border border-zinc-200 shadow-sm dark:border-zinc-800" />
+  <figcaption className="mt-2 text-center text-xs text-zinc-500 dark:text-zinc-400">
+    <span className="figure-caption-main">TSLib 的整体设计：把数据、基本模块、模型骨干和任务头解耦，用统一接口支持五类时序任务</span>
+    <span className="figure-caption-source">图源：Wang et al., <em>Deep Time Series Models: A Comprehensive Survey and Benchmark</em>, Fig. 9（arXiv:2407.13278）</span>
+  </figcaption>
+</figure>
+
+TSLib 的规模与覆盖范围：<Cite n={1} />
+
+| 维度 | 内容 |
+|---|---|
+| 模型 | 实现 41 个；论文实际评测 16 个深度模型 + 6 个 TSFM |
+| 数据集 | 30 个，覆盖能源、交通、天气、经济、医疗等 |
+| 任务 | 长期预测、短期预测、插补、分类、异常检测 |
+| 预测数据 | ETT（4 个子集）、Electricity、Weather、Traffic、Exchange、Illness；短期用 M4 的 6 个子集 |
+| 插补数据 | ETT、Electricity、Weather，按 12.5%/25%/37.5%/50% 随机 mask |
+| 分类数据 | UEA 的 10 个多变量数据集 |
+| 异常数据 | SMD、MSL、SMAP、SWaT、PSM |
+| 指标 | 预测/插补用 MSE、MAE；短期用 SMAPE、MASE；分类用 accuracy；异常用 F1 |
+
+默认设置也尽量统一：长期预测 lookback 96，horizon 取 96/192/336/720；ILI 用 lookback 36、horizon 24/36/48/60；短期预测按频率取 6/8/18/13/14/48。训练在 A100 上用 Adam，每个任务有固定的学习率、loss、batch size 和 epoch：<Cite n={1} />
+
+| 任务 | 学习率 | Loss | Batch | Epoch |
+|---|---|---:|---:|---:|
+| 长期预测 | $10^{-4}$ | MSE | 32 | 10 |
+| 短期预测 | $10^{-3}$ | SMAPE | 16 | 10 |
+| 插补 | $10^{-3}$ | MSE | 16 | 10 |
+| 分类 | $10^{-3}$ | Cross Entropy | 16 | 100 |
+| 异常检测 | $10^{-4}$ | MSE | 128 | 10 |
+
+为了公平，论文还对每个模型架构做超参搜索，并额外做了一组 “Look-back Searching”：在 {96, 192, 336, 512} 里搜索最佳输入长度，避免某个模型因为 lookback 不匹配而被低估。<Cite n={1} />
+
+## 六、结果：没有全能选手
+
+<figure className="my-6">
+  <img src="./fig10-leaderboard.svg" alt="TSLib 六类评测的平均结果：长期预测（统一与搜索 lookback）、短期预测、插补、分类、异常检测，按 Transformer/CNN/RNN/MLP/GNN 五类着色，并标出每类任务的前三名" className="mx-auto h-auto max-w-full rounded-lg border border-zinc-200 shadow-sm dark:border-zinc-800" />
+  <figcaption className="mt-2 text-center text-xs text-zinc-500 dark:text-zinc-400">
+    <span className="figure-caption-main">TSLib 统一评测结果：六组任务的平均 MSE/OWA/Accuracy/F1，颜色表示架构类型，奖牌标出每组前三名</span>
+    <span className="figure-caption-source">图源：Wang et al., <em>Deep Time Series Models: A Comprehensive Survey and Benchmark</em>, Fig. 10（arXiv:2407.13278）</span>
+  </figcaption>
+</figure>
+
+论文的主要发现可以归纳为：<Cite n={1} />
+
+- **Transformer 整体最强。** iTransformer、PatchTST 等在长程预测上表现突出，说明专门的 embedding 和注意力设计确实释放了架构容量。
+- **MLP 的性价比被低估。** DLinear 这类简单线性模型在预测上效率极高，但在需要高层表示的任务上明显吃亏。
+- **CNN 更“全能”。** TimesNet 等在多类任务上都有竞争力，代价是训练和推理更慢。
+- **GNN 擅长变量相关。** TimeFilter、MSGNet 等在预测/异常检测上有优势，但缺少跨任务的普遍优势。
+- **RNN 仍有位置。** 在短期任务上可用，但长程预测明显不如 Transformer。
+- **没有单一架构通吃。** 同一个模型在预测上很强，换到分类或异常检测可能就落后；选型必须按任务。
+
+### 6.1 零样本 TSFM：长上下文有用，但非越长越好
+
+论文把 6 个 TSFM（Moirai-2.0、TimesFM-2.5、Time-MoE、TiRex、Sundial、Chronos-2）放进 TSLib，在 ETT 上做零样本评测。<Cite n={1} />注意 ECL、Weather、Traffic 在部分 TSFM 的预训练数据中出现过，所以只选 ETT 以避免泄漏。
+
+<figure className="my-6">
+  <img src="./fig11-zeroshot.svg" alt="六个时序基础模型在 ETTh1/ETTh2/ETTm1/ETTm2 上的零样本 MSE，横轴为输入长度 96 到 8192；总体随输入长度增加而改善，但 Sundial 在 2880 长度下即可优于其他模型在 8192 下的表现" className="mx-auto h-auto max-w-full rounded-lg border border-zinc-200 shadow-sm dark:border-zinc-800" />
+  <figcaption className="mt-2 text-center text-xs text-zinc-500 dark:text-zinc-400">
+    <span className="figure-caption-main">零样本预测随输入长度的变化：总体趋势是更长上下文更好，但过长输入会引入噪声；Sundial 在 2880 下已能超过部分模型在 8192 下的表现</span>
+    <span className="figure-caption-source">图源：Wang et al., <em>Deep Time Series Models: A Comprehensive Survey and Benchmark</em>, Fig. 11（arXiv:2407.13278）</span>
+  </figcaption>
+</figure>
+
+结论有两层：第一，增加输入长度总体能改善零样本性能，说明 TSFM 确实能利用长上下文；第二，**最优 lookback 取决于模型容量和数据可预测性**，过长的输入可能引入无关信息或随机噪声，反而掩盖有意义的模式。<Cite n={1} />
+
+### 6.2 效率与鲁棒性
+
+<figure className="my-6">
+  <img src="./fig12-efficiency.svg" alt="模型效率与鲁棒性：左三图为加噪前后在长期预测、短期预测、分类上的性能对比，右图为 Weather 上的训练时间、推理时间与显存气泡图" className="mx-auto h-auto max-w-full rounded-lg border border-zinc-200 shadow-sm dark:border-zinc-800" />
+  <figcaption className="mt-2 text-center text-xs text-zinc-500 dark:text-zinc-400">
+    <span className="figure-caption-main">左：加随机白噪声后的鲁棒性对比，多数模型只有轻微退化；右：Weather 上的训练/推理时间与显存，MLP 与 Mamba 最轻，CNN 类最重</span>
+    <span className="figure-caption-source">图源：Wang et al., <em>Deep Time Series Models: A Comprehensive Survey and Benchmark</em>, Fig. 12（arXiv:2407.13278）</span>
+  </figcaption>
+</figure>
+
+效率方面，tokenization 直接决定成本：point-wise 的 Autoformer 比 patch-wise 的 PatchTST、series-wise 的 iTransformer 慢；CNN 类（SCINet、TimesNet）因为要多尺度卷积，通常最耗时；MLP 和 Mamba 最轻量。鲁棒性方面，给输入加随机白噪声后，多数模型只有轻微性能下降，说明这些架构在真实噪声下有一定稳定性。<Cite n={1} />
+
+## 七、未来方向
+
+论文最后列出几个开放问题：<Cite n={1} />
+
+- **时序预训练。** 对比学习、masked modeling 已经在做，但如何像 NLP 一样形成通用的预训练—微调范式仍未解决。
+- **概率预测。** 现有方法多依赖预定义分布，难以刻画复杂、异质的不确定性。
+- **超长序列。** patch 能降复杂度，但 patch 长度与性能强绑定，如何在极长序列上保持能力仍是问题。
+- **外生变量。** 真实业务里协变量往往决定走势，但内生/外生变量的统一建模还缺少通用框架。
+- **异构与受扰数据。** 不同采样率、不规则缺失、脉冲噪声等，都会破坏固定长度输入的假设。
+
+## 八、怎么用这份基准
+
+如果你要在实际项目里选模型，建议按这个顺序：<Cite n={1} />
+
+1. **先按任务缩小范围。** 长程预测优先看 iTransformer/PatchTST 一类 Transformer；资源受限时看 DLinear 等 MLP；非预测任务可以看 TimesNet 等 CNN；变量间有明确图结构时看 GNN。
+2. **对齐协议再比较。** 复现时统一 lookback、horizon、归一化、指标和训练轮数，不要直接拿不同论文的平均分做跨数据集排名。
+3. **同时看效率和鲁棒性。** 精度只差一点时，训练/推理成本和噪声下的稳定性往往更决定能不能上线。
+4. **把 TSLib 当筛子。** 先用它快速筛出 1–2 个候选，再在自己的数据上做小规模超参搜索，而不是一上来就大规模训练。
+
+## 小结
+
+这篇综述的核心结论可以概括成一句话：**深度时序模型没有万能架构，不同结构只在特定任务上有优势。** Transformer 整体最强，尤其长程预测；MLP 胜在效率，CNN 胜在任务覆盖，GNN 胜在变量关系，RNN 退守短期任务。<Cite n={1} />
+
+TSLib 的价值则在于把“模型设计”和“公平评测”放在一起：41 个模型、30 个数据集、5 类任务、统一协议。它提醒我们，读时序论文时不要只看某个 benchmark 的最优数字，而要问三个问题：**这个结构假设了什么？它在哪类任务上有归纳偏置？为这个优势付出了多少计算成本？**<Cite n={1} />
+
+## 参考资料
+
+<References>
+1. Yuxuan Wang, Haixu Wu, Jiaxiang Dong, Yong Liu, Chen Wang, Mingsheng Long, Jianmin Wang (2026). *Deep Time Series Models: A Comprehensive Survey and Benchmark*. IEEE TPAMI, arXiv: [2407.13278](https://arxiv.org/abs/2407.13278). Code: [thuml/Time-Series-Library](https://github.com/thuml/Time-Series-Library). —— 本文主论文：基本模块、五类架构、TSFM 谱系与 TSLib 基准。
+2. Haixu Wu, Tengge Hu, Yong Liu, Hang Zhou, Jianmin Wang, Mingsheng Long (2023). *TimesNet: Temporal 2D-Variation Modeling for General Time Series Analysis*. ICLR 2023, arXiv: [2210.02186](https://arxiv.org/abs/2210.02186). —— CNN 代表与 Fourier/2D 周期建模，TSLib 的通用任务基线。
+3. Yong Liu, Tengge Hu, Haoran Zhang, Haixu Wu, Shiyu Wang, Lintao Ma, Mingsheng Long (2024). *iTransformer: Inverted Transformers Are Effective for Time Series Forecasting*. ICLR 2024, arXiv: [2310.06625](https://arxiv.org/abs/2310.06625). —— series-wise tokenization 与长程预测强基线。
+4. Yuqi Nie, Nam H. Nguyen, Phanwadee Sinthong, Jayant Kalagnanam (2023). *A Time Series is Worth 64 Words: Long-term Forecasting with Transformers*. ICLR 2023, arXiv: [2211.14730](https://arxiv.org/abs/2211.14730). —— patch-wise tokenization 与通道独立设计。
+5. Haixu Wu, Jiehui Xu, Jianmin Wang, Mingsheng Long (2021). *Autoformer: Decomposition Transformers with Auto-Correlation for Long-Term Series Forecasting*. NeurIPS 2021, arXiv: [2106.13008](https://arxiv.org/abs/2106.13008). —— decomposition block 与 Auto-Correlation。
+6. Ailing Zeng, Muxi Chen, Lei Zhang, Qiang Xu (2023). *Are Transformers Effective for Time Series Forecasting?*. AAAI 2023, arXiv: [2205.13504](https://arxiv.org/abs/2205.13504). —— DLinear，MLP/线性基线的代表。
+7. Mononito Goswami, Konrad Szafer, Arjun Choudhry, Yifu Cai, Shuo Li, Artur Dubrawski (2024). *MOMENT: A Family of Open Time-series Foundation Models*. ICML 2024, arXiv: [2402.03885](https://arxiv.org/abs/2402.03885). —— encoder 派时序原生 TSFM。
+8. Gerald Woo, Chenghao Liu, Akshat Kumar, Caiming Xiong, Silvio Savarese, Doyen Sahoo (2024). *Unified Training of Universal Time Series Forecasting Transformers*. ICML 2024, arXiv: [2402.02592](https://arxiv.org/abs/2402.02592). —— Moirai，encoder 派多变量 TSFM。
+9. Abhimanyu Das, Weihao Kong, Rajat Sen, Yichen Zhou (2024). *A Decoder-only Foundation Model for Time-series Forecasting*. arXiv: [2310.10688](https://arxiv.org/abs/2310.10688). —— TimesFM，decoder 派 TSFM。
+10. Ming Jin, Shiyu Wang, Lintao Ma, et al. (2024). *Time-LLM: Time Series Forecasting by Reprogramming Large Language Models*. ICLR 2024, arXiv: [2310.01728](https://arxiv.org/abs/2310.01728). —— LLM 派 TSFM，时序重编程。
+11. Tian Zhou, Peisong Niu, Xue Wang, Liang Sun, Rong Jin (2023). *One Fits All: Power General Time Series Analysis by Pretrained LM*. NeurIPS 2023, arXiv: [2302.11939](https://arxiv.org/abs/2302.11939). —— GPT4TS，冻结 GPT2 主干的 LLM 派路线。
+12. Abdul Fatir Ansari, Lorenzo Stella, Caner Turkmen, et al. (2024). *Chronos: Learning the Language of Time Series*. arXiv: [2403.07815](https://arxiv.org/abs/2403.07815). —— 把数值缩放、量化成 token，用 T5 做概率预测。
+</References>

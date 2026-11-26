@@ -9,7 +9,7 @@ export const metadata = paperMetadata(paper);
 
 2024 年 ICLR 上，Monash、蚂蚁集团、IBM 等机构的联合工作提出 Time-LLM：不改 Llama-7B 的任何参数，把时序 patch「翻译」成文本原型空间，再附上一段用自然语言写的任务说明，让冻结的 LLM 直接做预测。<Cite n={1} />只训练输入重编程与输出投影，重编程网络不到 660 万参数（约 Llama-7B 的 0.2%），却在长程、短期、少样本、零样本预测上超过 PatchTST、TimesNet、GPT4TS 等专用模型。<Cite n={1} />这篇笔记拆三件事：为什么要「重编程」而不是微调、文本原型与 Prompt-as-Prefix 怎么配合、以及它在成本与边界上留下了什么。
 
-> 📌 前置：同一「借用预训练模型」路线的另一支是 [One Fits All](/papers/one-fits-all)（冻结 Transformer 块、只微调接口）；LLM 主干背景见 [Llama 3](/papers/llama3) 与 [Attention Is All You Need](/papers/attention-transformer)。
+> 📌 前置：同一「借用预训练模型」路线的另一支是 [One Fits All](/papers/one-fits-all)（冻结 Transformer 块、只微调接口）；LLM 主干背景见 [Llama 3](/papers/llama3) 与 [Attention Is All You Need](/papers/attention-transformer)。如果想看「从零训时序基础模型」的路线，可以读 [TimesFM](/papers/timesfm)、[MOMENT](/papers/moment)、[Moirai](/papers/moirai)；外生变量场景见 [TimeXer](/papers/timexer)。
 
 ## 一、动机：一个任务一个模型，还是让 LLM 学会「读」时序？
 
