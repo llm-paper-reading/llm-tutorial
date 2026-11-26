@@ -40,6 +40,14 @@ $$
 
 这里 $x \in \mathbb{R}^{k}$ 是这一层的输入，$h \in \mathbb{R}^{d}$ 是输出。直观地说，原来的通路 $W_0x$ 原封不动，旁边多了一条“低秩修正”通路 $\frac{\alpha}{r}BAx$。
 
+<figure className="my-6">
+  <img src="./lora-figure1.svg" alt="LoRA 重参数化结构图：左侧蓝色 Pretrained Weights 表示冻结的预训练权重，右侧橙色 A、B 为可训练的低秩矩阵，A 随机初始化、B 初始为零；输入 x 分别经过 W 与 BA 两条通路后相加得到输出 h" className="mx-auto h-auto w-full max-w-sm rounded-lg border border-zinc-200 shadow-sm dark:border-zinc-800" />
+  <figcaption className="mt-2 text-center text-xs text-zinc-500 dark:text-zinc-400">
+    <span className="figure-caption-main">LoRA 的重参数化结构：左侧预训练权重 W 冻结不变，右侧只训练低秩矩阵 A、B；B 初始化为 0，所以训练起点与原模型完全一致，输入 x 经两条通路相加得到输出 h</span>
+    <span className="figure-caption-source">图源：Hu et al., <em>LoRA: Low-Rank Adaptation of Large Language Models</em>（arXiv:2106.09685）Figure 1</span>
+  </figcaption>
+</figure>
+
 参数量对比非常直接：
 
 | 方案 | 单层可训练参数 | $d=k=4096,\ r=8$ 时 |
