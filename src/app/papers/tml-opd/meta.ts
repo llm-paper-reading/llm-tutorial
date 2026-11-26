@@ -13,7 +13,8 @@ const paper = {
   venue: "技术博客",
   year: 2025,
   date: "2025-10",
-  pdfUrl: "https://thinkingmachines.ai/blog/on-policy-distillation/",
+  sourceType: "blog",
+  sourceUrl: "https://thinkingmachines.ai/blog/on-policy-distillation/",
 } satisfies Paper;
 
 export default paper;

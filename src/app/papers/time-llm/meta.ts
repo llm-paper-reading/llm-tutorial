@@ -13,7 +13,7 @@ const paper = {
   venue: "ICLR",
   year: 2024,
   arxivUrl: "https://arxiv.org/abs/2310.01728",
-  pdfUrl: "https://arxiv.org/pdf/2310.01728",
+  sourceUrl: "https://arxiv.org/pdf/2310.01728",
   codeUrl: "https://github.com/KimMeen/Time-LLM",
 } satisfies Paper;
 

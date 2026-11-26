@@ -13,7 +13,7 @@ const paper = {
   venue: "ICML 2024（COLM 2024 口头报告）",
   year: 2023,
   arxivUrl: "https://arxiv.org/abs/2312.00752",
-  pdfUrl: "https://arxiv.org/pdf/2312.00752",
+  sourceUrl: "https://arxiv.org/pdf/2312.00752",
 } satisfies Paper;
 
 export default paper;

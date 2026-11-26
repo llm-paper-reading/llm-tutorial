@@ -13,7 +13,7 @@ const paper = {
   venue: "NeurIPS 2022",
   year: 2022,
   arxivUrl: "https://arxiv.org/abs/2205.14135",
-  pdfUrl: "https://arxiv.org/pdf/2205.14135",
+  sourceUrl: "https://arxiv.org/pdf/2205.14135",
 } satisfies Paper;
 
 export default paper;

@@ -13,7 +13,7 @@ const paper = {
   venue: "SOSP 2023",
   year: 2023,
   arxivUrl: "https://arxiv.org/abs/2309.06180",
-  pdfUrl: "https://arxiv.org/pdf/2309.06180",
+  sourceUrl: "https://arxiv.org/pdf/2309.06180",
 } satisfies Paper;
 
 export default paper;

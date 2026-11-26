@@ -13,7 +13,7 @@ const paper = {
   venue: "NeurIPS",
   year: 2024,
   arxivUrl: "https://arxiv.org/abs/2402.19072",
-  pdfUrl: "https://arxiv.org/pdf/2402.19072",
+  sourceUrl: "https://arxiv.org/pdf/2402.19072",
   codeUrl: "https://github.com/thuml/TimeXer",
 } satisfies Paper;
 

@@ -4,11 +4,22 @@ import { useEffect, useMemo, useRef, useState } from "react";
 
 const KIMI_NEW_CHAT_URL = "https://www.kimi.com/?chat_enter_method=new_chat";
 
-export default function KimiPaperButton({ pdfUrl }: { pdfUrl: string }) {
+type SourceType = "paper" | "blog" | "report";
+
+export default function KimiPaperButton({
+  sourceUrl,
+  sourceType = "paper",
+}: {
+  sourceUrl: string;
+  sourceType?: SourceType;
+}) {
   const [copied, setCopied] = useState(false);
   const timerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
   const openTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
-  const prompt = useMemo(() => buildKimiPrompt(pdfUrl), [pdfUrl]);
+  const prompt = useMemo(
+    () => buildKimiPrompt(sourceUrl, sourceType),
+    [sourceUrl, sourceType]
+  );
 
   useEffect(() => {
     return () => {
@@ -59,8 +70,10 @@ export default function KimiPaperButton({ pdfUrl }: { pdfUrl: string }) {
   );
 }
 
-function buildKimiPrompt(pdfUrl: string) {
-  return `请阅读这篇论文 ${pdfUrl}，回答用户的以下问题`;
+function buildKimiPrompt(sourceUrl: string, sourceType: SourceType) {
+  const label =
+    sourceType === "blog" ? "这篇博客" : sourceType === "report" ? "这份报告" : "这篇论文";
+  return `请阅读${label} ${sourceUrl}，回答用户的以下问题`;
 }
 
 function buildKimiUrl() {

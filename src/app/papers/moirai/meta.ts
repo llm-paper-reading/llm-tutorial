@@ -13,7 +13,7 @@ const paper = {
   venue: "ICML",
   year: 2024,
   arxivUrl: "https://arxiv.org/abs/2402.02592",
-  pdfUrl: "https://arxiv.org/pdf/2402.02592",
+  sourceUrl: "https://arxiv.org/pdf/2402.02592",
   codeUrl: "https://github.com/SalesforceAIResearch/uni2ts",
 } satisfies Paper;
 

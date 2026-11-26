@@ -88,7 +88,10 @@ export interface Paper {
   /** 发表年月（YYYY-MM）。有 arXiv 编号的论文可省略（从编号解析），无编号资料（官方博客等）必填 */
   date?: string;
   arxivUrl?: string;
-  pdfUrl: string;
+  /** 原始资料类型：论文 PDF / 博客 / 技术报告；默认 paper */
+  sourceType?: "paper" | "blog" | "report";
+  /** 原始资料链接：arXiv PDF、会议 PDF，或官方博客 / 技术报告页面 */
+  sourceUrl: string;
   codeUrl?: string;
 }
 // 仅作为注册表；页面展示、tag 分组和上一篇/下一篇都应使用显式排序函数，避免依赖注册顺序。

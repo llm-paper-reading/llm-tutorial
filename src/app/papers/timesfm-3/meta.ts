@@ -13,7 +13,8 @@ const paper = {
   venue: "技术博客",
   year: 2026,
   date: "2026-08",
-  pdfUrl: "https://research.google/blog/timesfm-3-a-zero-shot-foundation-model-for-multivariate-forecasting/",
+  sourceType: "blog",
+  sourceUrl: "https://research.google/blog/timesfm-3-a-zero-shot-foundation-model-for-multivariate-forecasting/",
   codeUrl: "https://github.com/google-research/timesfm",
 } satisfies Paper;
 

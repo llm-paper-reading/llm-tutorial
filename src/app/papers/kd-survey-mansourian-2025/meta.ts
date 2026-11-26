@@ -26,7 +26,7 @@ const paper = {
   year: 2025,
   date: "2025-03",
   arxivUrl: "https://arxiv.org/abs/2503.12067",
-  pdfUrl: "https://arxiv.org/pdf/2503.12067",
+  sourceUrl: "https://arxiv.org/pdf/2503.12067",
 } satisfies Paper;
 
 export default paper;

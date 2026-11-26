@@ -14,7 +14,7 @@ const paper = {
   year: 2026,
   date: "2026-05",
   arxivUrl: "https://arxiv.org/abs/2407.13278",
-  pdfUrl: "https://arxiv.org/pdf/2407.13278",
+  sourceUrl: "https://arxiv.org/pdf/2407.13278",
   codeUrl: "https://github.com/thuml/Time-Series-Library",
 } satisfies Paper;
 

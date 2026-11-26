@@ -13,11 +13,20 @@ export default function PaperHeader({ slug }: { slug: string }) {
   const motivation = splitMotivation(p.motivation);
 
   const arxivId = getArxivId(p.arxivUrl);
+  const sourceType = p.sourceType ?? (p.arxivUrl ? "paper" : "report");
   const sourceLinks: { label: string; href: string; emoji: string }[] = [];
   const readingLinks: { label: string; href: string; emoji: string }[] = [];
 
-  if (p.arxivUrl) sourceLinks.push({ label: "arXiv", href: p.arxivUrl, emoji: "📄" });
-  sourceLinks.push({ label: "PDF", href: p.pdfUrl, emoji: "📑" });
+  if (p.arxivUrl) {
+    sourceLinks.push({ label: "arXiv", href: p.arxivUrl, emoji: "📄" });
+    sourceLinks.push({ label: "PDF", href: p.sourceUrl, emoji: "📑" });
+  } else if (sourceType === "paper") {
+    sourceLinks.push({ label: "PDF", href: p.sourceUrl, emoji: "📑" });
+  } else if (sourceType === "blog") {
+    sourceLinks.push({ label: "博客原文", href: p.sourceUrl, emoji: "📝" });
+  } else {
+    sourceLinks.push({ label: "报告原文", href: p.sourceUrl, emoji: "🔗" });
+  }
   if (p.codeUrl) sourceLinks.push({ label: "代码", href: p.codeUrl, emoji: "💻" });
   if (arxivId) {
     readingLinks.push({
@@ -74,7 +83,7 @@ export default function PaperHeader({ slug }: { slug: string }) {
         {readingLinks.map((l) => (
           <ExternalLink key={l.label} link={l} />
         ))}
-        <KimiPaperButton pdfUrl={p.pdfUrl} />
+        <KimiPaperButton sourceUrl={p.sourceUrl} sourceType={sourceType} />
       </div>
 
       {motivation && (

@@ -13,7 +13,7 @@ const paper = {
   venue: "NeurIPS",
   year: 2023,
   arxivUrl: "https://arxiv.org/abs/2302.11939",
-  pdfUrl: "https://arxiv.org/pdf/2302.11939",
+  sourceUrl: "https://arxiv.org/pdf/2302.11939",
   codeUrl: "https://github.com/DAMO-DI-ML/One_Fits_All",
 } satisfies Paper;
 

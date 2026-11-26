@@ -13,7 +13,7 @@ const paper = {
   venue: "ICML",
   year: 2024,
   arxivUrl: "https://arxiv.org/abs/2402.03885",
-  pdfUrl: "https://arxiv.org/pdf/2402.03885",
+  sourceUrl: "https://arxiv.org/pdf/2402.03885",
   codeUrl: "https://github.com/moment-timeseries-foundation-model/moment",
 } satisfies Paper;
 
