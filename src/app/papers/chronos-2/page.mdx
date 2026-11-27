@@ -1,0 +1,181 @@
+import paper from "./meta";
+import { paperMetadata } from "@/lib/papers";
+
+export const metadata = paperMetadata(paper);
+
+<PaperHeader slug={paper.slug} />
+
+# Chronos-2：从单变量走向通用预测
+
+时序基础模型已经证明「预训练一次、到处零样本预测」可行，但绝大多数模型只处理**单变量**：给一条序列的历史，预测它自己的未来<Cite n={2} />。真实的预测任务却很少这么干净——云平台的 CPU、内存、存储 I/O 会一起波动；零售销量受促销和节假日驱动；电价取决于负荷与风光出力<Cite n={1} />。把这些信息丢掉的模型，在工业管线里很难真正替代任务专用模型。
+
+Chronos-2 的出发点不是「把输入维度做大」，而是换一个共享信息的方式：**在同一个 batch 里，把需要互相参考的序列划分成「组」，用组注意力在组内交换信息**<Cite n={1} />。组可以是一条序列、一组相关序列、一个多变量序列的各个变量，也可以是目标加协变量。划分方式在推理时由 group ID 指定，模型本身不需要为单变量、多变量、协变量任务分别改结构。
+
+> 📌 前置：单变量版本见 [Chronos 原论文](https://arxiv.org/abs/2403.07815)；想看另一条「解码器 + 分位数」路线，可对照 [Moirai 2.0](/papers/moirai-2)；想补齐时序预测的整体地图，可先读 [时序综述与 TSLib](/papers/deep-ts-survey)。
+
+## 一、动机：单变量假设挡住了真实任务
+
+单变量预测把每条序列当作独立样本，训练和推理都简单，也让大规模预训练成为可能<Cite n={2} />。但它有两个直接代价。第一，**多变量任务被拆散**：同一个系统里的变量彼此耦合，逐条预测会丢掉联合动态。第二，**协变量无处安放**：促销、天气、负荷这些外生信号要么被忽略，要么只能靠特征工程硬塞进目标序列<Cite n={1} />。
+
+困难不只是架构。即便愿意做多变量预训练，高质量、带真实多变量依赖和有效协变量的公开语料也很少<Cite n={1} />。Chronos-2 的选择是：架构上把「关系」做成可配置的注意力掩码，数据上大量依赖**在单变量生成器上施加多变量结构的合成数据**。前者解决任务异构，后者解决数据稀缺。
+
+## 二、把任意任务写成「组」
+
+### 2.1 输入构造：目标与协变量拼成矩阵
+
+模型接收历史区间 $1{:}T$ 的目标 $\mathbf{Y}$ 与协变量 $\mathbf{X}$，把每个时间步的目标和协变量拼成向量 $\mathbf{v}_t\in\mathbb{R}^{D+M}$；未来区间 $T{+}1{:}T{+}H$ 同理构造 $\mathbf{w}_t$。对于已知未来值的协变量，$\mathbf{w}_t$ 填入真实值；目标与「仅历史可见」的协变量则填缺失值<Cite n={1} />。
+
+类别型协变量先转成实数：单变量目标用 target encoding，把类别映射为与目标相关的数值；多变量目标退化为 ordinal encoding<Cite n={1} />。
+
+### 2.2 稳健缩放：标准化之后再取反双曲正弦
+
+时序的尺度差异很大，Chronos-2 先对每个维度做标准化，再套一层反双曲正弦：
+
+$$
+\tilde v_{t,d}=\sinh^{-1}\!\left(\frac{v_{t,d}-\mu_d}{\sigma_d}\right),\qquad
+\tilde w_{t,d}=\sinh^{-1}\!\left(\frac{w_{t,d}-\mu_d}{\sigma_d}\right)
+$$
+
+其中 $\mu_d,\sigma_d$ 只由历史值计算，缺失值不参与统计<Cite n={1} />。$\sinh^{-1}$ 在 0 附近近似线性、在尾部近似对数，既压住离群点，又不会像 log 那样要求正值——这也是计量经济学和电价预测里处理极端值的常见做法<Cite n={1} />。预测结束后用 $\hat y=\mu_d+\sigma_d\sinh(\hat z)$ 反变换回去。
+
+### 2.3 元特征、patch 与嵌入
+
+每一维序列再拼上两个元特征：**时间索引** $\mathbf{j}=[-T/C,\ldots,0,\ldots,(H-1)/C]$ 告诉模型每个位置的相对时间；**掩码** $\mathbf{m}_d$ 标记该值是否被观测，同时用来区分「未来已知协变量」和「目标/仅历史协变量」<Cite n={1} />。缺失值在嵌入前统一置零。
+
+随后按长度 $P$ 做不重叠切分，把数值 patch、时间索引 patch、掩码 patch 拼起来，经残差网络映射到模型维度：
+
+$$
+\mathbf{h}_p=f^{\mathrm{in}}_{\phi}\big([\overline{\mathbf{u}}_p,\overline{\mathbf{j}}_p,\overline{\mathbf{m}}_p]\big)
+$$
+
+上下文与未来之间插入一个特殊的 `REG` token，既做分隔符，也充当 attention sink<Cite n={1} />。这个「patch + 元特征」的输入方式继承了 PatchTST 一类工作的经验<Cite n={7} />。
+
+<figure className="my-6">
+  <img src="./fig1-pipeline.svg" alt="Chronos-2 完整推理管线：目标与协变量先做稳健缩放，加入时间索引与掩码元特征，切 patch 后由残差网络嵌入；Transformer 堆栈交替使用时间注意力与组注意力，最后由分位数头一次输出多个未来 patch 的分位数，再反缩放" className="mx-auto h-auto w-full max-w-full rounded-lg border border-zinc-200 shadow-sm dark:border-zinc-800" />
+  <figcaption className="mt-2 text-center text-xs text-zinc-500 dark:text-zinc-400">
+    <span className="figure-caption-main">Chronos-2 完整管线：稳健缩放 → 元特征 → patch 嵌入 → 时间/组注意力交替 → 多 patch 分位数输出；下图放大展示了 tokenization 与两种注意力的分工</span>
+    <span className="figure-caption-source">图源：Ansari et al., <em>Chronos-2: From Univariate to Universal Forecasting</em>（arXiv:2510.15821）Figure 1</span>
+  </figcaption>
+</figure>
+
+## 三、交替注意力：时间轴看历史，组轴看关系
+
+Chronos-2 采用 T5 encoder 风格的编码器<Cite n={5} />，把 T5 的相对位置编码换成 RoPE<Cite n={6} />。每个 Transformer 块里交替放置两类注意力<Cite n={1} />：
+
+- **时间注意力（time attention）**：沿时间轴在**同一条序列的 patch 之间**做自注意力，负责局部动态与季节性。
+- **组注意力（group attention）**：在**同一 patch 位置、同一组内的不同序列之间**交换信息。组内序列没有天然顺序，因此这一层不加位置编码。
+
+组注意力的实现并不复杂：batch 里每条序列带一个 group ID $\mathbf{g}$，层内把 ID 展开成二维注意力掩码，只允许同组互相注意<Cite n={1} />。改变分组，就改变了任务：
+
+| 任务 | group ID | 未来输入 $\mathbf{W}$ |
+|---|---|---|
+| 单变量（3 条独立序列） | $(1,2,3)$ | 全缺失 |
+| 多变量（3 个变量） | $(1,1,1)$ | 全缺失 |
+| 带协变量（1 目标 + 1 历史协变量 + 2 已知协变量） | $(1,1,1,1)$ | 仅后两行填未来值 |
+
+这张表是理解 Chronos-2 的关键：**模型没有为每种任务设计不同的头，任务差异完全由分组和未来掩码表达**<Cite n={1} />。把所有条目都设为同一组，就得到论文所说的 full cross learning 模式——同批序列互相参考、联合预测。
+
+输出端是一个分位数头：未来 $D$ 个目标维度的 patch 嵌入经过残差块，直接给出 $\hat{\mathbf{Z}}\in\mathbb{R}^{H\times D\times|\mathcal{Q}|}$。分位数集合取 21 个水平 $\mathcal{Q}=\{0.01,0.05,0.1,\dots,0.9,0.95,0.99\}$，比常见的 9 分位网格更密，并显式覆盖 1% 与 99% 尾部，便于风险感知和异常检测<Cite n={1} />。训练目标是分位数（pinball）损失，只在目标维度上计算，已知协变量与缺失目标不参与<Cite n={1} />：
+
+$$
+\sum_{q\in\mathcal{Q}}\Big(q\cdot\max(z-\hat z^{q},0)+(1-q)\cdot\max(\hat z^{q}-z,0)\Big)
+$$
+
+## 四、训练：合成多变量结构，两阶段拉长上下文
+
+单变量语料来自 Chronos 与 GIFT-Eval 的预训练集，另外补两类合成数据：TSI 生成器随机组合趋势、季节与不规则项；TCM 从时序因果模型里采样因果图再自回归生成<Cite n={[1,3]} />。
+
+多变量与协变量任务则**全部依赖合成数据**。论文提出「multivariatizer」：先从单变量生成器（AR、ETS、TSI、KernelSynth）采样多条序列，再施加依赖结构<Cite n={1} />。两类变换分别对应两种真实结构：
+
+- **同期（cotemporaneous）**：在同一步上做线性或非线性变换，制造瞬时相关。
+- **时序（sequential）**：让一条序列的过去影响另一条，制造 lead–lag 与协整关系。
+
+生成的多变量序列既可做「所有变量都要预测」的多变量任务，也可随机挑一部分变量当已知协变量，构造协变量任务<Cite n={1} />。训练时一个 batch 混合单变量、多变量、带已知协变量三类任务，输出 patch 数也随机采样。
+
+训练分两阶段：先以 2048 的上下文长度预训练，再把上下文扩到 8192 继续训练，并增加最大输出 patch 数<Cite n={1} />。长上下文主要服务高频、长周期的序列；多 patch 输出让长 horizon 不必依赖滚动启发式。
+
+## 五、实验：三个 benchmark 全面领先
+
+Chronos-2 主模型 120M 参数，另有 28M 小模型。评估覆盖三个公开基准：fev-bench（100 个任务，含协变量）、GIFT-Eval（97 个任务、55 个数据集）和 Chronos Benchmark II（27 个任务，多数历史很短）<Cite n={[1,3,4]} />。
+
+在 fev-bench 上，Chronos-2 的平均胜率 90.7%、技能分 47.3%，中位运行时间 3.6 秒、零数据泄漏；第二名 TiRex 为 80.8% / 42.6%<Cite n={[1,4]} />。胜率与技能分分别等价于平均排名和相对 Seasonal Naive 的几何平均改进，数值越高越好<Cite n={1} />。
+
+| 模型 | 平均胜率（%） | 技能分（%） | 中位耗时（s） |
+|---|---|---|---|
+| **Chronos-2** | **90.7** | **47.3** | 3.6 |
+| TiRex | 80.8 | 42.6 | 1.4 |
+| TimesFM-2.5 | 75.9 | 42.3 | 16.9 |
+| Toto-1.0 | 66.6 | 40.7 | 90.7 |
+| Moirai-2.0 | 61.1 | 39.3 | 2.5 |
+| Chronos-Bolt | 60.3 | 38.9 | 1.0 |
+| AutoARIMA | 35.2 | 20.6 | 186.8 |
+
+论文还用成对 bootstrap 给出 95% 置信区间：Chronos-2 对任意基线的胜率区间都不含 50%，技能分区间都不含 0，说明领先不是单个任务的偶然<Cite n={1} />。
+
+<figure className="my-6">
+  <img src="./fig2-fev-winrates.svg" alt="fev-bench 前四名模型的成对胜率与技能分热力图：Chronos-2 对其余模型的胜率多在 70% 到 100% 之间，技能分也全面为正，括号内为 95% 置信区间" className="mx-auto h-auto w-full max-w-full rounded-lg border border-zinc-200 shadow-sm dark:border-zinc-800" />
+  <figcaption className="mt-2 text-center text-xs text-zinc-500 dark:text-zinc-400">
+    <span className="figure-caption-main">fev-bench 前四名的成对胜率（上）与技能分（下）：Chronos-2 对 TiRex、TimesFM-2.5、Toto-1.0 的胜率均显著高于 50%，技能分为正且置信区间不含 0</span>
+    <span className="figure-caption-source">图源：Ansari et al., <em>Chronos-2: From Univariate to Universal Forecasting</em>（arXiv:2510.15821）Figure 2</span>
+  </figcaption>
+</figure>
+
+GIFT-Eval 与 Chronos Benchmark II 上，Chronos-2 同样在 WQL 和 MASE 两种指标、胜率与技能分两个维度上均排第一<Cite n={[1,3]} />：
+
+| 基准 | 指标 | 胜率（%） | 技能分（%） | 次优模型 |
+|---|---|---|---|---|
+| GIFT-Eval | WQL | **81.9** | **51.4** | TimesFM-2.5（77.5 / 51.0） |
+| GIFT-Eval | MASE | **83.8** | **30.2** | TimesFM-2.5（77.7 / 29.5） |
+| Chronos Benchmark II | WQL | **79.8** | **46.6** | TiRex（70.4 / 41.7） |
+| Chronos Benchmark II | MASE | **81.5** | **26.5** | TimesFM-2.5（71.6 / 23.3） |
+
+### 5.1 上下文学习到底带来了什么
+
+把所有结果都开着 ICL 报会掩盖机制。论文把 fev-bench 拆成单变量（32 个任务）、多变量（26 个）和协变量（42 个）三个子集，对比「ICL 模式」与「逐条独立预测」<Cite n={1} />。
+
+- **协变量任务收益最大**：单变量模式会直接忽略协变量，ICL 模式则把目标和协变量放进同一组，提升幅度最大，也把同样支持协变量的 TabPFN-TS、COSMIC 拉开明显差距<Cite n={1} />。
+- **多变量任务只有温和提升**：有意思的是，单变量模式下的 Chronos-2 已经超过原生多变量模型 Toto-1.0。论文用 Takens 嵌入定理给出一种直觉——只要历史足够长，单变量延迟观测也能重构系统动态<Cite n={1} />。
+- **单变量任务也有增益**：把同批的相关序列放进一组做 cross learning，在短历史的 Chronos Benchmark II 上提升尤其明显<Cite n={1} />。
+
+<figure className="my-6">
+  <img src="./fig6-energy-icl.svg" alt="德国电价预测案例：最上方为单变量预测，第二行为使用 Ampirion 负荷与风光出力协变量的 ICL 预测，下方两条为协变量本身；ICL 预测更贴合真实电价的拐点" className="mx-auto h-auto w-full max-w-full rounded-lg border border-zinc-200 shadow-sm dark:border-zinc-800" />
+  <figcaption className="mt-2 text-center text-xs text-zinc-500 dark:text-zinc-400">
+    <span className="figure-caption-main">德国电价（EPF-DE）案例：单变量预测（第一行）与使用负荷、风光出力协变量的 ICL 预测（第二行）；阴影为 80% 预测区间，竖虚线为预测起点</span>
+    <span className="figure-caption-source">图源：Ansari et al., <em>Chronos-2: From Univariate to Universal Forecasting</em>（arXiv:2510.15821）Figure 6</span>
+  </figcaption>
+</figure>
+
+能源与零售两个领域的案例进一步说明协变量的价值。电价任务用历史电价、日前负荷预测和风光出力预测未来一天的电价；零售任务用历史销量、历史客流，以及已知的营业、促销、节假日信息预测 Rossmann 门店未来一个季度的周销量<Cite n={1} />。没有协变量时，预测要么不准，要么几乎是一条平坦的高不确定性带；接入协变量后，模型能跟上促销和节假日造成的拐点。
+
+### 5.2 消融：小模型、纯合成数据、长上下文
+
+- **模型大小**：28M 小模型在 GIFT-Eval 上技能分只比 120M 低约 1 个百分点，推理快近 2 倍，适合 CPU 或低资源场景<Cite n={1} />。
+- **纯合成数据**：只用合成数据训练的 Chronos-2-Synth 在 GIFT-Eval 和 Chronos Benchmark II 上只略低于混合真实数据的版本，在 fev-bench 上差距更大<Cite n={1} />。这支持了「多变量与协变量能力主要来自合成结构」的判断。
+- **长上下文后训练**：从 2048 扩到 8192 的上下文后训练，在含大量高频、长周期数据的 GIFT-Eval 上收益最明显<Cite n={1} />。
+
+效率上，120M 模型在单张 NVIDIA A10G 上可跑到每秒 300 条序列（batch 1024、上下文 2048、预测长度 64）<Cite n={1} />。
+
+## 六、局限与定位
+
+Chronos-2 的边界写得很清楚。它只支持**数值与类别协变量**，还不能接收文本、图像等模态；把预训练模型扩展到多模态输入是后续方向<Cite n={1} />。协变量任务的优势也依赖「未来值确实已知」这一前提，对于只能观测到历史的外部变量，模型仍要靠组内相关序列间接推断。
+
+放到时序基础模型的谱系里看，Chronos-2 与 [Moirai 2.0](/papers/moirai-2) 恰好代表两种取舍：前者用编码器和组注意力把多变量/协变量做进架构，代价是任务配置更复杂；后者用解码器、分位数和单变量假设换取极致的简单与效率，明确放弃多变量与协变量<Cite n={1} />。如果下游任务里协变量是决定性信息，Chronos-2 的路线更合适；如果只要一个轻量、快速、易部署的单序列预测器，Moirai 2.0 的取舍更划算。
+
+## 小结
+
+- **核心机制**：组注意力 + group ID，把单变量、多变量、协变量统一成「同组内跨序列共享信息」；时间注意力与组注意力交替，兼顾局部动态与跨序列关系。
+- **训练数据**：单变量来自真实语料与 TSI/TCM 合成；多变量与协变量能力完全来自 multivariatizer 合成的结构。
+- **效果**：fev-bench 胜率 90.7%、技能分 47.3；GIFT-Eval 与 Chronos Benchmark II 的 WQL/MASE 均第一；协变量任务提升最大。
+- **定位**：通用零样本预测器，把「哪些序列该一起看」从架构设计变成推理配置。
+
+## 参考资料
+
+<References>
+1. Abdul Fatir Ansari et al. (2025). *Chronos-2: From Univariate to Universal Forecasting*. arXiv: [2510.15821](https://arxiv.org/abs/2510.15821). —— 本文主报告，支撑组注意力、稳健缩放、合成多变量数据、三个基准数字与消融结论。
+2. Abdul Fatir Ansari et al. (2024). *Chronos: Learning the Language of Time Series*. arXiv: [2403.07815](https://arxiv.org/abs/2403.07815). —— Chronos-2 的单变量前身与预训练语料来源。
+3. Taha Aksu et al. (2024). *GIFT-Eval: A Benchmark For General Time Series Forecasting Model Evaluation*. arXiv: [2410.10393](https://arxiv.org/abs/2410.10393). —— GIFT-Eval 基准与预训练语料。
+4. Oleksandr Shchur et al. (2025). *fev-bench: A Realistic Benchmark for Time Series Forecasting*. arXiv: [2509.26468](https://arxiv.org/abs/2509.26468). —— fev-bench 任务构成、胜率/技能分口径与基线结果。
+5. Colin Raffel et al. (2020). *Exploring the Limits of Transfer Learning with a Unified Text-to-Text Transformer*. arXiv: [1910.10683](https://arxiv.org/abs/1910.10683). —— Chronos-2 编码器沿用的 T5 结构。
+6. Jianlin Su et al. (2024). *RoFormer: Enhanced Transformer with Rotary Position Embedding*. arXiv: [2104.09864](https://arxiv.org/abs/2104.09864). —— 时间注意力使用的 RoPE。
+7. Yuqi Nie et al. (2023). *A Time Series is Worth 64 Words: Long-term Forecasting with Transformers*. arXiv: [2211.14730](https://arxiv.org/abs/2211.14730). —— patch 化时序建模与 channel-independent 经验。
+</References>

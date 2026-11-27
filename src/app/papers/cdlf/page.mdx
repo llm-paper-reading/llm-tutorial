@@ -1,0 +1,259 @@
+import paper from "./meta";
+import { paperMetadata } from "@/lib/papers";
+
+export const metadata = paperMetadata(paper);
+
+<PaperHeader slug={paper.slug} />
+
+# CDLF：冷启动产品生命周期的条件扩散预测
+
+新产品的生命周期预测有一个尴尬的时间错位：真正重要的决策——备多少产能、铺多少库存、要不要 staged rollout——都发生在**需求模式还看不清**的时候<Cite n={1} />。上市前没有任何本品销售记录；上市初期只有几周噪声很大的数据，既不足以判断这是慢热型还是爆发型，也不足以拟合一条完整的生命周期曲线。
+
+传统时序方法假设有足够长的本品历史；跨产品迁移方法（相似产品、属性回归、贝叶斯池化）能借力，但往往被限制在已有曲线形状或分阶段模块化调整里<Cite n={[1,4]} />。CDLF 的出发点是：把「没有历史」和「只有一小段历史」统一成同一个条件生成问题——**给定当前可得的信息，生成整条未来生命周期的分布；信息增加时，不重新训练，只更新条件**<Cite n={1} />。
+
+> 📌 相关阅读：产品属性的 what-if 分析见 [CTVAE 产品线延伸](/papers/ctvae-product-line)；用 LLM 模拟消费者购买意愿见 [SSR 购买意愿](/papers/ssr-purchase-intent)。
+
+> 📌 术语提醒：这里的 diffusion 指机器学习的**扩散概率模型**（DDPM 一类），不是 Bass 等基于采纳过程的扩散模型<Cite n={1} />。两者中文都叫「扩散」，但机制完全不同。
+
+## 一、问题：三个阶段，两种冷启动
+
+论文把产品上市的信息阶段分成三段<Cite n={1} />：
+
+- **上市前（Pre-Launch）**：没有本品结果历史，只能靠静态属性与相似产品的历史轨迹。
+- **上市初期（Early Post-Launch）**：只有一小段短前缀，噪声大、形状不明，但已经开始携带本品信号。
+- **上市后期（Late Post-Launch）**：本品历史足够长，常规时序模型可以外推。
+
+CDLF 聚焦前两个阶段（阶段划分沿用 Lei et al. 的产品生命周期曲线设定<Cite n={7} />）。形式化地，设 $\mathbf{x}_t\in\mathbb{R}^D$ 为第 $t$ 期的观测结果向量，完整生命周期为 $\mathbf{x}_{1:T}$；静态属性为 $\mathbf{s}\in\mathbb{R}^p$；参考库为
+
+$$
+\mathcal{X}=\big\{(\mathbf{x}^{(1)}_{1:T},\mathbf{s}^{(1)}),\dots,(\mathbf{x}^{(K)}_{1:T},\mathbf{s}^{(K)})\big\}
+$$
+
+其中每条参考轨迹来自一个历史产品。信息集用滤子表示<Cite n={1} />：
+
+$$
+\mathcal{F}_0=\sigma(\mathcal{X},\mathbf{s}),\qquad
+\mathcal{F}_t=\sigma(\mathbf{x}_{1:t},\mathcal{X},\mathbf{s}),\quad t\ge 1
+$$
+
+上市前只有 $\mathcal{F}_0$；上市后每多观察一期，信息集就扩大一次。预测目标是给定预测起点 $t_0$ 的条件分布：
+
+$$
+q(\mathbf{x}_{t_0:T}\mid\mathcal{F}_{t_0-1})
+=\prod_{t=t_0}^{T}q(\mathbf{x}_t\mid\mathcal{F}_{t-1})
+$$
+
+这个写法把两个阶段收进同一个目标：$t_0=1$ 是上市前，模型只能用 $\mathbf{s}$ 与 $\mathcal{X}$；$t_0>1$ 是上市初期，模型还要用上前缀 $\mathbf{x}_{1:t_0-1}$。因此冷启动不只是「缺数据时的预测」，还是「数据逐步到达时的渐进适应」<Cite n={1} />。
+
+<figure className="my-6">
+  <img src="./fig1-lifecycle-phases.svg" alt="产品生命周期与信息阶段：Development、Introduction、Growth、Maturity、Decline 五段曲线下方标注 Phase 1 上市前、Phase 2 上市初期、Phase 3 上市后期，分别对应无历史、有限历史、丰富历史" className="mx-auto h-auto w-full max-w-full rounded-lg border border-zinc-200 shadow-sm dark:border-zinc-800" />
+  <figcaption className="mt-2 text-center text-xs text-zinc-500 dark:text-zinc-400">
+    <span className="figure-caption-main">生命周期阶段与可用信息：上市前没有任何本品观测，上市初期只有有限前缀，上市后期才有稳定历史；CDLF 覆盖前两个阶段</span>
+    <span className="figure-caption-source">图源：Zhou et al., <em>Cold-Start Forecasting of New Product Life-Cycles via Conditional Diffusion Models</em>（arXiv:2604.20370）Figure 1（改编自 Lei et al. 2023）</span>
+  </figcaption>
+</figure>
+
+## 二、方法：三路信息进一个条件状态
+
+CDLF 的核心不是「用了扩散模型」，而是**如何把三路异构信息压进一个随时间的隐状态**，再用它条件化每一步的去噪<Cite n={1} />。三路信息分别是：静态属性 $\mathbf{s}$、相似产品参考集 $\mathcal{X}$、本品已观测前缀 $\mathbf{x}_{1:t}$。
+
+### 2.1 选参考、算权重、聚合
+
+先按静态属性的欧氏距离选 top-$K$ 个历史产品，距离越小越相似；再把距离转成 softmax 权重：
+
+$$
+\omega_k=\frac{\exp(-\gamma\|\mathbf{s}^{(k)}-\mathbf{s}\|_2^2)}
+{\sum_{j=1}^{K}\exp(-\gamma\|\mathbf{s}^{(j)}-\mathbf{s}\|_2^2)}
+$$
+
+每条参考轨迹先用 RNN 编码成定长表示 $\mathbf{h}_k$。关键设计在这里：**不把 $\omega_k$ 乘到 $\mathbf{h}_k$ 上**，而是把权重当成一个特征拼进去，再经可学习投影：
+
+$$
+\tilde{\mathbf{h}}_k=\mathrm{ReLU}\big(\mathbf{W}_\omega[\mathbf{h}_k;\omega_k]+\mathbf{b}_\omega\big)
+$$
+
+最后用另一个 RNN 按权重降序聚合：
+
+$$
+\mathbf{h}_{\mathcal{X}}=\mathrm{RNN}_{\mathrm{ref}}\big(\{\tilde{\mathbf{h}}_1,\dots,\tilde{\mathbf{h}}_K\}\big)
+$$
+
+论文在附录 A 里专门比较了两种融合方式。乘法加权 $\omega_k\mathbf{h}_k$ 相当于对参考内容做全局衰减，当相似度有噪声或 softmax 过尖时，会把「中等相似但形状关键」的参考压掉；拼接加投影则把相似度当作条件特征，让网络学习非线性调节<Cite n={1} />。在 Intel 数据上，拼接版 1–8 周 MAE 为 14.52、9–16 周为 19.96，乘法版分别为 14.86 与 20.28，差距不大但方向一致。
+
+### 2.2 上下文状态：把静态信息带进每一步
+
+静态属性经前馈网络得到 $\mathbf{h}_s$。把两路上下文拼成 $\mathbf{c}=[\mathbf{h}_{\mathcal{X}};\mathbf{h}_s]$，用它初始化循环状态，并在每一步更新时持续输入<Cite n={1} />：
+
+$$
+\mathbf{h}_0=\mathbf{W}_0\mathbf{c}+\mathbf{b}_0,\qquad
+\mathbf{h}_t=f_\phi(\mathbf{h}_{t-1},\mathbf{x}_t,\mathbf{c})
+=\mathrm{RNN}_\phi\big([\mathbf{x}_t;\mathbf{c}],\mathbf{h}_{t-1}\big)
+$$
+
+这一步很重要。如果只在初始时刻注入静态信息，随着时间推移它的影响会被稀释；把 $\mathbf{c}$ 每步都拼进输入，静态属性与参考产品信息才能在整个生命周期里持续约束预测。实现上 $\mathrm{RNN}_\phi$ 用 GRU。
+
+### 2.3 条件扩散：每一步只生成下一期
+
+对每个预测步 $t$，CDLF 用 DDPM 生成下一期结果向量 $\mathbf{x}_t^0$，去噪网络条件化在 $\mathbf{h}_{t-1}$ 上<Cite n={[1,2,3]} />。前向过程是固定的高斯链：
+
+$$
+q(\mathbf{x}_t^n\mid\mathbf{x}_t^{n-1})
+=\mathcal{N}\big(\mathbf{x}_t^n;\sqrt{1-\beta_n}\,\mathbf{x}_t^{n-1},\beta_n\mathbf{I}\big)
+$$
+
+闭式边缘为 $\mathbf{x}_t^n=\sqrt{\bar\alpha_n}\mathbf{x}_t^0+\sqrt{1-\bar\alpha_n}\boldsymbol{\epsilon}$。反向均值由噪声预测网络 $s_\theta$ 参数化：
+
+$$
+\mu_\theta(\mathbf{x}_t^n,\mathbf{h}_{t-1},n)
+=\frac{1}{\sqrt{\alpha_n}}\left(\mathbf{x}_t^n-\frac{\beta_n}{\sqrt{1-\bar\alpha_n}}
+s_\theta(\mathbf{x}_t^n,\mathbf{h}_{t-1},n)\right)
+$$
+
+$s_\theta$ 是一维**膨胀因果卷积**网络，输入是局部窗口 $\mathbf{X}_t^n=[\mathbf{x}_{t-W+1}^n,\dots,\mathbf{x}_t^n]$、隐状态 $\mathbf{h}_{t-1}$ 和扩散步嵌入 $\mathbf{e}(n)$。因果卷积负责窗口内的局部时序结构，隐状态负责更长程的上下文与跨产品信息——两种信息源在架构上被明确分工<Cite n={1} />。
+
+训练目标是标准的噪声预测损失：
+
+$$
+\mathcal{L}_{\mathrm{train}}(\theta,\phi)
+=\mathbb{E}_{t,\mathbf{x}_t^0,n,\boldsymbol{\epsilon}}
+\big[\|s_\theta(\mathbf{x}_t^n,\mathbf{h}_{t-1},n)-\boldsymbol{\epsilon}\|^2\big]
+$$
+
+注意 $\mathbf{h}_{t-1}$ 是通过式（2）递推出来的，所以梯度会同时穿过去噪网络 $s_\theta$ 和循环编码器 $f_\phi$。这种**联合训练**是关键：隐状态不是独立预训练出来的，而是被优化成「对下游去噪最有用」的表示<Cite n={1} />。
+
+训练时随机采样预测起点 $t_0$：若 $t_0>1$，先用真实前缀递推出 $\mathbf{h}_{t_0-1}$，再对第 $t_0$ 步加噪、预测噪声、反传。推理时则从 $\mathbf{h}_{t-1}$ 出发跑完整反向链得到 $\mathbf{x}_t^0$，更新状态，再生成下一期，如此递归<Cite n={1} />。
+
+<figure className="my-6">
+  <img src="./fig2-diffusion-paradigm.svg" alt="图像扩散与 CDLF 的对比：左侧传统图像扩散只沿扩散步去噪；右侧 CDLF 在时间轴上递归，每个时间步的 RNN 把上下文状态 h 送入对应的条件去噪链，再更新到下一步" className="mx-auto h-auto w-full max-w-full rounded-lg border border-zinc-200 shadow-sm dark:border-zinc-800" />
+  <figcaption className="mt-2 text-center text-xs text-zinc-500 dark:text-zinc-400">
+    <span className="figure-caption-main">两种扩散范式的区别：图像扩散在单一去噪链上工作；CDLF 在时间轴上递归，每一步用 RNN 把静态属性、参考轨迹与已观测前缀压成的状态送入条件去噪链</span>
+    <span className="figure-caption-source">图源：Zhou et al., <em>Cold-Start Forecasting of New Product Life-Cycles via Conditional Diffusion Models</em>（arXiv:2604.20370）Figure 2</span>
+  </figcaption>
+</figure>
+
+## 三、理论：递归误差什么时候不会爆
+
+多步递归生成最怕误差累积。论文给出一个分布层面的误差界，用 1-Wasserstein 距离度量预测分布与「最优模型」分布的差异<Cite n={1} />。
+
+假设最优一步条件分布对隐状态是 $L_P$-Lipschitz，循环更新对状态是 $\rho$-压缩、对输入是 $L_x$-Lipschitz：
+
+$$
+W_1\big(p^\star(\cdot\mid\mathbf{h}),p^\star(\cdot\mid\mathbf{h}')\big)\le L_P\|\mathbf{h}-\mathbf{h}'\|,
+\qquad
+\|f_\phi(\mathbf{h},\mathbf{x})-f_\phi(\mathbf{h}',\mathbf{x}')\|\le\rho\|\mathbf{h}-\mathbf{h}'\|+L_x\|\mathbf{x}-\mathbf{x}'\|
+$$
+
+定义稳定裕度 $\kappa=\dfrac{L_P L_x}{1-\rho}$。若 $\kappa<1$，则整个预测区间上的最坏一步边际误差满足<Cite n={1} />：
+
+$$
+\overline{\Delta}
+\le\frac{1}{1-\kappa}\left(
+\varepsilon_{\mathrm{gen}}+\frac{L_P}{1-\rho}\varepsilon_f+L_P E_{t_0-1}
+\right)
+$$
+
+三项分别对应：生成误差 $\varepsilon_{\mathrm{gen}}$（学到的去噪分布与最优分布的差距）、转移误差 $\varepsilon_f$（学到的循环更新与最优更新的差距）、初始状态误差 $E_{t_0-1}$（预测起点处隐状态的偏差）。当模型容量与数据足够时，前两项趋于 0，剩下的误差由**预测起点处的状态匹配**决定——这正好解释了为什么早期观测越少，预测越难：不是模型不会外推，而是起点状态本身不可靠。
+
+$\kappa\ge1$ 时右边无界，多步误差没有有限保证。论文据此给出实践建议：把 $\kappa$ 控制在 $[0.5,0.8]$，兼顾稳定性与表达力；实现上用谱归一化、监控 rollout 上的经验压缩因子、超过阈值就重新初始化来逼近这些条件<Cite n={1} />。
+
+## 四、实验一：Intel CPU 生命周期
+
+第一个研究用 Intel 微处理器周销量数据：86 个 CPU SKU，每个最多 187 周；生命周期长度中位数 109 周、均值 86 周；周订单中位数 22,850、均值 43,370<Cite n={1} />。静态属性包括代际、核心数、主频、平均售价。预处理把每个 SKU 的周销量除以自身最大值，并把上市时间对齐到第 0 周。
+
+对照方法覆盖四类<Cite n={[1,4,5,6]} />：Bass 扩散模型、Guo 等人的 TiGo-ETS 模拟集成、Dew 与 Ansari 的贝叶斯非参数模型、Quantile Regression Forests（QRF，1000 棵树、pinball 损失）。评估 1–8 周与 9–16 周两个 horizon，指标是 MAE 与 MCRPS（99 个分位上的平均 pinball 损失近似 CRPS）。
+
+| 方法 | 1–8 周 MAE | 1–8 周 MCRPS | 9–16 周 MAE | 9–16 周 MCRPS |
+|---|---|---|---|---|
+| Bass | 30.82 | 27.05 | 35.12 | 31.96 |
+| TiGo-ETS | 17.16 | 13.67 | 23.61 | 19.03 |
+| Bayesian NP | 26.78 | 21.55 | 33.81 | 29.42 |
+| QRF | 21.02 | 17.51 | 26.98 | 23.84 |
+| **CDLF** | **14.52** | **10.16** | **19.96** | **15.12** |
+
+相对最强基线 TiGo-ETS，CDLF 把 1–8 周 MAE 从 17.16 降到 14.52，MCRPS 从 13.67 降到 10.16；9–16 周同样领先（23.61→19.96，19.03→15.12）<Cite n={1} />。优势随 horizon 延长没有消失，这与「静态属性 + 相似轨迹提供强先验、条件生成保留不确定性」的设计一致。逐分位的 pinball 损失也显示，CDLF 在大部分分位上都优于 TiGo-ETS 与 QRF，而不是只在某个中心统计量上赢<Cite n={1} />。
+
+## 五、实验二：Hugging Face 开源模型的采纳预测
+
+第二个研究更贴近论文动机：把 Hugging Face Hub 上开源 LLM 仓库的采纳动态当成平台介导的数字产品。数据来自公开的 trending 面板，筛选 `text-generation` 仓库后得到 12 个仓库、863 个 repo-day 观测（2023-07-29 至 2025-06-01）<Cite n={1} />。
+
+平台曝光是间歇性的，所以按连续 trending 片段切分：12 个仓库共 44 段，保留长度至少 10 天的 24 段。每段对齐到共同起点，目标定义为每日新增点赞的对数：
+
+$$
+\Delta_t=\mathrm{likes}_t-\mathrm{likes}_{t-1},\qquad x_t=\log(1+\Delta_t)
+$$
+
+静态属性刻意做得极简：$\mathbf{s}=(\mathrm{Org},\mathrm{ScaleBucket},\mathrm{Gated})$——机构命名空间、从仓库名解析出的规模档（7B/8B/70B/8x7B 等）、是否需要接受使用条款<Cite n={1} />。评估设定 $T=10$、$t_0=6$，即 5 天观测前缀 + 5 天预测 horizon；扩散模型每个测试窗口采样 100 条轨迹。
+
+| 模型 | MAE↓ | RMSE↓ | MCRPS↓ | DTW↓ | 峰值误差↓ | AUC 误差↓ |
+|---|---|---|---|---|---|---|
+| **CDLF** | **0.38** | **0.62** | **0.33** | **1.35** | **55** | **180** |
+| TiGo-ETS | 0.45 | 0.70 | 0.38 | 1.55 | 70 | 220 |
+| QRF | 0.49 | 0.76 | 0.41 | 1.70 | 78 | 240 |
+| Bayesian NP | 0.52 | 0.80 | 0.44 | 1.82 | 85 | 260 |
+| Bass | 0.58 | 0.88 | 0.47 | 2.05 | 95 | 300 |
+
+相对 TiGo-ETS，CDLF 的 MAE 降低 15.6%（0.45→0.38），MCRPS 从 0.38 降到 0.33，峰值强度误差降低 21.4%<Cite n={1} />。对短促、异质、常由曝光触发的采纳序列来说，峰值时机与幅度比平均误差更重要；CDLF 在 DTW、峰值误差、AUC 误差上都领先，说明它不只是把均值拉对。
+
+<figure className="my-6">
+  <img src="./fig4-forecast-bands.svg" alt="CDLF 在一个 Hugging Face 仓库采纳片段上的预测：实线为真实每日新增点赞，橙色与绿色虚线分别为上市前和上市初期预测的中位数，浅蓝与浅橙带为 P10–P90 区间，竖线标出 t0=6" className="mx-auto h-auto w-full max-w-full rounded-lg border border-zinc-200 shadow-sm dark:border-zinc-800" />
+  <figcaption className="mt-2 text-center text-xs text-zinc-500 dark:text-zinc-400">
+    <span className="figure-caption-main">代表性片段的预测与真实值：上市前预测（橙色）区间更宽，上市初期预测（绿色）在前缀之后收窄并更贴近真实拐点；竖虚线为 t₀=6</span>
+    <span className="figure-caption-source">图源：Zhou et al., <em>Cold-Start Forecasting of New Product Life-Cycles via Conditional Diffusion Models</em>（arXiv:2604.20370）Figure 4</span>
+  </figcaption>
+</figure>
+
+### 5.1 消融：参考集比静态属性更关键
+
+在相同评估协议下做单变量消融<Cite n={1} />：
+
+| 变体 | MAE↓ | RMSE↓ | MCRPS↓ | DTW↓ |
+|---|---|---|---|---|
+| 完整 CDLF | **0.38** | **0.62** | **0.33** | **1.35** |
+| 去掉参考集 $\mathcal{X}$ | 0.43（+13.2%） | 0.69（+11.3%） | 0.37（+12.1%） | 1.55（+14.8%） |
+| 去掉静态属性 $\mathbf{s}$ | 0.40（+5.3%） | 0.65（+4.8%） | 0.35（+6.1%） | 1.42（+5.2%） |
+
+去掉相似产品参考集的损失最大：当目标历史很短时，可迁移的生命周期先验主要来自其他产品。静态属性带来的收益较小，但作用不同——它改善参考产品的选择与校准，让「借谁的经验」更准确<Cite n={1} />。
+
+### 5.2 从预测分布到上市分层
+
+生成模型的价值不止于点预测。论文对每个仓库的预测分布取三个统计量<Cite n={1} />：
+
+- **典型采纳量**：P50 的累计 AUC；
+- **爆发潜力**：P90 的峰值强度；
+- **不确定性**：累计采纳的 P90–P10 带宽。
+
+把这三个量画成二维图，可以做成「潜力—风险」四象限<Cite n={1} />：
+
+| 象限 | 特征 | 建议动作 |
+|---|---|---|
+| 高潜力、高风险 | 上行空间大但不确定性高 | 重点保障产能、支持与爆发承接 |
+| 高潜力、低风险 | 上行空间大且稳定 | 广渠道分发、降低使用摩擦 |
+| 低潜力、高风险 | 上行有限且波动大 | 优先去风险，降低访问/部署门槛 |
+| 低潜力、低风险 | 平稳的小规模采纳 | 轻量 rollout、社区种子用户 |
+
+论文还用六家团队（Meta/Llama、DeepSeek、Google/Gemma、Microsoft/Phi、Mistral/Mixtral、Qwen/QwQ）的公开发布理由做三角验证：高曝光发布通常配套广渠道分发与分阶段 rollout，这和高潜力象限的动作一致；开放 vs gated 的访问摩擦也对应预测中位数与带宽的差异<Cite n={1} />。
+
+## 六、局限与边界
+
+论文自认的后续方向包括：接入营销动作、搜索趋势、平台曝光等更丰富的外生信号；从单结果扩展到多结果联合生成；把预测分布接到下游的产能、算力部署、支持资源配置等决策问题<Cite n={1} />。
+
+需要留意的是，两个研究的「冷启动」都是**用已有产品的截断历史模拟的**：Intel SKU 的历史被截短，HF 仓库的片段被对齐到共同起点。真正的全新产品可能有不同的早期动态。此外，参考集的质量直接决定上限——如果新品所属品类在历史上没有足够相似的产品，静态属性只能提供有限帮助<Cite n={1} />。
+
+## 小结
+
+- **统一两种冷启动**：上市前与上市初期共享同一个条件生成目标，区别只在信息集是否包含本品前缀；新数据到达时只需更新条件，不必重新训练。
+- **三路信息融合**：静态属性、相似产品参考轨迹、已观测前缀被压成一个持续输入的循环状态，再用条件扩散生成每一期结果。
+- **理论保证**：在压缩性与 Lipschitz 条件下，递归预测误差由生成误差、转移误差与初始状态误差共同界定；稳定裕度 $\kappa<1$ 是可控的前提。
+- **实证**：Intel CPU 上 1–8 周 MAE 14.52、MCRPS 10.16；HF 采纳预测 MAE 0.38、峰值误差降低 21.4%；参考集的贡献大于静态属性。
+
+## 参考资料
+
+<References>
+1. Ruihan Zhou et al. (2026). *Cold-Start Forecasting of New Product Life-Cycles via Conditional Diffusion Models*. arXiv: [2604.20370](https://arxiv.org/abs/2604.20370). —— 本文主报告，支撑问题形式化、三路信息编码、条件扩散、误差界、两个实证研究与消融。
+2. Kashif Rasul et al. (2021). *Autoregressive Denoising Diffusion Models for Multivariate Probabilistic Time Series Forecasting*. arXiv: [2101.12072](https://arxiv.org/abs/2101.12072). —— TimeGrad，CDLF 的递归条件扩散与训练目标来源。
+3. Jonathan Ho, Ajay Jain & Pieter Abbeel (2020). *Denoising Diffusion Probabilistic Models*. arXiv: [2006.11239](https://arxiv.org/abs/2006.11239). —— DDPM 的前向/反向过程与噪声预测目标。
+4. Xin Guo, Kenneth C. Lichtendahl & Yael Grushka-Cockayne (2025). *Bayesian Ensembles of Exponentially Smoothed Life-Cycle Forecasts*. —— TiGo-ETS 基线的方法来源（论文正文引用，未附公开链接）。
+5. Frank M. Bass (1969). *A New Product Growth for Model Consumer Durables*. Management Science, 15(5), 215–227. —— Bass 扩散基线；注意与本文的扩散概率模型不是同一概念。
+6. Nicolai Meinshausen (2006). *Quantile Regression Forests*. Journal of Machine Learning Research, 7, 983–999. —— QRF 基线。
+7. D. Lei et al. (2023). *New Product Life Cycle Curve Modeling and Forecasting with Product Attributes and Promotion: A Bayesian Functional Approach*. Production and Operations Management, 32(2), 655–673. —— 生命周期阶段划分图的原始来源。
+</References>

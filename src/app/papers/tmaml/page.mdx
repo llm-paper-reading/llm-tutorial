@@ -1,0 +1,204 @@
+import paper from "./meta";
+import { paperMetadata } from "@/lib/papers";
+
+export const metadata = paperMetadata(paper);
+
+<PaperHeader slug={paper.slug} />
+
+# TMAML：把 MAML 搬到冷启动时序预测
+
+冷启动预测的难点不是「模型不够大」，而是**训练目标不对**。全局预测模型（包括时序基础模型）在大量序列上共享参数，理论上能从相关序列借力；但它们通常用经验风险最小化（ERM）训练，优化的是训练集上的平均精度，从来没有被明确要求「在一条没见过的序列上，只给几段历史，也要快速适应」<Cite n={1} />。
+
+TMAML 的做法很直接：把冷启动写成 **K 窗口学习问题**，用时间上连续的 support–query 窗口构造元任务，再用一阶 MAML 学一个专门为「短历史快速适应」优化的初始化<Cite n={[1,3]} />。它不改变预测模型本身，只改变训练方式；论文把 TMAML 实例化在 Temporal Fusion Transformer（TFT）上，因为 TFT 原生支持静态协变量和变长输入<Cite n={2} />。
+
+> 📌 前置：TFT 的结构与静态协变量处理见 [TFT 原论文](https://arxiv.org/abs/1912.09363)；时序基础模型的通用背景可对照 [时序综述与 TSLib](/papers/deep-ts-survey) 和 [Moirai](/papers/moirai)。
+
+## 一、动机：ERM 为什么不够
+
+全局模型把一条数据集里的所有序列混在一起训练，学的是「平均而言怎么预测」。这在训练分布内没问题，但冷启动关心的是另一件事：**面对一条新序列，模型能不能只用很少的观测就调整过来**<Cite n={1} />。
+
+已有的两条路线各缺一半。检索式方法（按静态特征相似度、因果图或文本嵌入找相关序列）能借力，但每个应用都要手工定义「怎么算相关」，不够通用。全局模型能隐式学习共享结构，却大多不能有效接入静态协变量或处理变长输入——而冷启动序列的可用历史长度恰恰是从 0 开始逐段增长的<Cite n={1} />。
+
+TFT 是一个例外：它通过变量选择与静态富化机制处理静态协变量，用循环层加注意力编码历史，输入窗口长度可以任意，甚至为空<Cite n={2} />。架构上它已经适合冷启动，缺的是训练目标。MAML 正好补这一块：它学的是「一组容易快速微调的初始参数」，而不是某一批任务上的最优参数<Cite n={3} />。
+
+已有的时序 MAML 工作通常把任务定义在实体或数据集层面，每个任务包含多条相关序列，并假设测试时有完整历史<Cite n={1} />。TMAML 的区别是：**每个任务就是一条序列，适应必须从很短的初始历史开始**。
+
+## 二、问题定义：从 0 窗口到 K 窗口
+
+设有 $I$ 个实体（产品、客户等），实体 $i$ 带静态协变量 $\mathbf{s}_i$。每个时间步观测到目标 $y_{i,t}$、仅当期可见的观测输入 $\mathbf{z}_{i,t}$、以及未来也已知的已知输入 $\mathbf{x}_{i,t}$。在时刻 $t$，实体被分成两组：$\mathcal{I}^{\mathrm{obs}}$ 有历史，$\mathcal{I}^{\mathrm{cold}}$ 没有历史<Cite n={1} />。
+
+对有历史的实体，标准全局模型预测未来 $h$ 步：
+
+$$
+y_{i,t+h}=f_{\mathrm{obs}}\big(y_{i,t-k:t},\mathbf{z}_{i,t-k:t},\mathbf{x}_{i,t-k:t+h},\mathbf{s}_i\big)
+$$
+
+冷启动预测则按窗口逐步推进。设每个窗口长度为 $H$，0 窗口时没有本品历史，只能靠已知输入与静态属性：
+
+$$
+y_{i,t:t+H}=f_{\mathrm{obs}}\big(\mathbf{x}_{i,t:t+H},\mathbf{s}_i\big)
+$$
+
+每多积累一个窗口，就把这段历史加进输入，预测下一个窗口：
+
+$$
+y_{i,t+kH:t+(k+1)H}
+=f_{\mathrm{obs}}\big(y_{i,t:t+kH},\mathbf{z}_{i,t:t+kH},\mathbf{x}_{i,t:t+(k+1)H},\mathbf{s}_i\big),
+\quad k=1,2,\dots
+$$
+
+直到可用历史达到最大回看长度 $L$。这个「K 窗口」写法把冷启动从静态的「缺数据」变成了动态的「历史逐段增长」，也为元任务提供了天然的构造方式<Cite n={1} />。
+
+## 三、TMAML：把时间窗口做成元任务
+
+<figure className="my-6">
+  <img src="./fig1-framework.svg" alt="TMAML 框架：左侧元窗口在序列上滑动，前 K×H 为 support、最后 H 为 query；中间内层在 support 上做 M 步梯度更新、外层在 query 上更新元参数；右侧元测试在新序列上 support 微调后预测 query" className="mx-auto h-auto w-full max-w-full rounded-lg border border-zinc-200 shadow-sm dark:border-zinc-800" />
+  <figcaption className="mt-2 text-center text-xs text-zinc-500 dark:text-zinc-400">
+    <span className="figure-caption-main">TMAML 的元任务构造与训练/测试流程（图中以 K=2 为例）：元窗口前 K×H 段为 support、最后 H 段为 query；内层在 support 上适应，外层用 query 损失更新元参数</span>
+    <span className="figure-caption-source">图源：Janssens, Bogaert & Van den Poel, <em>TMAML: Temporal Model-Agnostic Meta-Learning for Cold-Start Time Series Forecasting</em>（arXiv:2610.04547）Figure 1</span>
+  </figcaption>
+</figure>
+
+### 3.1 元任务：一个窗口切两半
+
+每个训练元任务是一条序列上的连续 $((K+1)H)$ 个时间步，称为一个 **meta-window**。前 $KH$ 步是 support 区，最后 $H$ 步是 query horizon<Cite n={1} />。从同一个元窗口构造两个样本：
+
+**query 样本**用于外层。support 区整段作为输入，query horizon 作为目标：
+
+$$
+y_{i,t+KH:t+(K+1)H}
+=f_{\theta}\big(y_{i,t:t+KH},\mathbf{z}_{i,t:t+KH},\mathbf{x}_{i,t:t+(K+1)H},\mathbf{s}_i\big)
+$$
+
+**support 样本**用于内层。把 support 区的最后 $H$ 步留作目标，之前的全部作为输入——也就是比真正的 query horizon 早一个窗口：
+
+$$
+y_{i,t+(K-1)H:t+KH}
+=f_{\theta}\big(y_{i,t:t+(K-1)H},\mathbf{z}_{i,t:t+(K-1)H},\mathbf{x}_{i,t:t+KH},\mathbf{s}_i\big)
+$$
+
+这样构造的用意是让内层模拟「用已有历史预测下一段」的过程，而外层评估「适应之后能不能预测更远的 query」。$K=0$ 时 support 为空，没有内层目标，元任务退化为零样本预测<Cite n={1} />。
+
+### 3.2 训练：一阶 MAML
+
+对每个采样到的元任务，内层从元参数 $\theta$ 出发，在 support 损失上走 $M$ 步：
+
+$$
+\theta_{\mathrm{task}}\leftarrow\theta_{\mathrm{task}}
+-\alpha\nabla_{\theta_{\mathrm{task}}}\mathcal{L}_{\mathrm{support}}(\theta_{\mathrm{task}})
+$$
+
+元任务按 batch 分组，每个 meta-batch 从 $B$ 条**不同**序列采样，避免反复从同一条序列取任务。外层用每条任务适应后的参数在 query 上算损失，再平均更新元参数<Cite n={1} />：
+
+$$
+\theta\leftarrow\theta-\beta\nabla_\theta
+\frac{1}{B}\sum_{i=1}^{B}\mathcal{L}_{\mathrm{query}}^{(i)}\big(\theta_{\mathrm{task}}^{(i)}\big)
+$$
+
+这里用的是 **First-Order MAML（FOMAML）**：外层更新时把内层梯度轨迹当成常数，不展开二阶导。原版 MAML 要算二阶梯度，计算和显存开销都大；FOMAML 用一阶近似换效率，实践中通常够用<Cite n={[1,3]} />。
+
+### 3.3 测试：模拟真实部署
+
+元测试时，把元参数复制给任务参数，用**真实可用历史**构造 support 样本，做 $M$ 步适应，再预测紧随其后的 $H$ 步 query<Cite n={1} />。这个过程对每个 $K$ 独立重复：$K=0$ 不适应，$K=1$ 用一段历史适应，依此类推。
+
+一个重要的对照设计是：**ERM 基线也做同样的 $k$-shot 微调**。也就是说，两者的差别只在训练目标，不在测试时的适应机会。这样比较才能说明「元学习到的初始化」本身有没有价值，而不是「有没有微调」<Cite n={1} />。
+
+## 四、实验设置
+
+### 4.1 三个冷启动场景
+
+公开的冷启动数据集很少，论文从现有基准构造了三个场景，覆盖两个域、三种频率<Cite n={[1,4,5,6]} />：
+
+| 数据集 | 频率 | $H$ | 最大 $K$ | 最大回看 $L$ | 训练 / 验证 / 测试序列 |
+|---|---|---|---|---|---|
+| Favorita（单店） | 日 | 28 | 3 | 84 | 50 / 500 / 1000 |
+| M5（加州聚合） | 日 | 28 | 3 | 84 | 50 / 500 / 1000 |
+| UCI Electricity | 小时 | 24 | 7 | 168 | 20 / 85 / 200 |
+
+Favorita 限制到单店，使每个商品对应一条序列；M5 限制到加州并把各店聚合，同样使每个商品对应一条序列；Electricity 的 370 个客户本身就各是一条序列<Cite n={1} />。
+
+三个划分按序列不相交，且验证/测试窗口依次向前推一个 $H$。训练集刻意保持很小，用来模拟「全局模型难以泛化到新序列」的低数据场景。所有数据集都**不做逐实体归一化**——冷启动序列的历史太短，估计不出可靠的实体统计量；只对目标做 log 变换压缩尺度<Cite n={1} />。
+
+### 4.2 基线：信息对齐的朴素分位数
+
+除 ERM-TFT 外，论文还设了一个朴素基线：在每个 $K$，只用当前可得的 $K$ 段 support 历史，对每个分位 $\tau$ 取经验 $\tau$ 分位，并在整个 horizon 上重复<Cite n={1} />。$K=0$ 时没有本品历史，就用整个元训练集的池化目标值。这样它也有真正的预测分布，WQL 和 MACE 的比较才算公平。
+
+### 4.3 指标：准确度与校准分开看
+
+**WQL（加权分位数损失）**衡量整个预测分布的准确度。对分位 $\tau$，先算 pinball 损失，再按真实值绝对值之和归一化<Cite n={1} />：
+
+$$
+\mathrm{WQL}_{i,\tau}
+=\frac{2\sum_t \mathrm{QL}_\tau\big(\hat y_{i,t}^{(\tau)},y_{i,t}\big)}
+{\sum_t|y_{i,t}|},\qquad
+\mathrm{WQL}_i=\frac{1}{9}\sum_{\tau\in\mathcal{Q}}\mathrm{WQL}_{i,\tau}
+$$
+
+**MACE（平均绝对校准误差）**衡量分布可不可信，与准确度无关。对每个 $\tau$，统计真实值落在预测 $\tau$ 分位以下的经验覆盖率 $C_\tau$；校准良好的模型应满足 $C_\tau\approx\tau$<Cite n={1} />：
+
+$$
+C_\tau=\frac{1}{NH}\sum_{i,t}\mathbb{1}\big[y_{i,t}\le\hat y_{i,t}^{(\tau)}\big],
+\qquad
+\mathrm{MACE}=\frac{1}{9}\sum_{\tau\in\mathcal{Q}}|C_\tau-\tau|
+$$
+
+WQL 按序列等权平均，避免长序列主导；MACE 本质上是池化统计量，按所有序列与时间步汇总。显著性用配对 bootstrap（1000 次重采样、95% 置信区间）判断：区间不含 0 才算赢，否则算平局<Cite n={1} />。
+
+## 五、结果：对 ERM 稳定，对朴素基线混合
+
+<figure className="my-6">
+  <img src="./fig2-wql-mace.svg" alt="三个数据集上 WQL 与 MACE 随 K 变化的曲线：上排 WQL 越低越好，下排 MACE 越低越好；TMAML 在 Favorita 与 Electricity 上明显优于 ERM，在 M5 上与 ERM 接近，朴素基线在部分 WQL 点更优但校准较差" className="mx-auto h-auto w-full max-w-full rounded-lg border border-zinc-200 shadow-sm dark:border-zinc-800" />
+  <figcaption className="mt-2 text-center text-xs text-zinc-500 dark:text-zinc-400">
+    <span className="figure-caption-main">WQL（上）与 MACE（下）随 support 窗口数 K 的变化：左到右为 Favorita、M5、Electricity，阴影为 95% bootstrap 置信区间</span>
+    <span className="figure-caption-source">图源：Janssens, Bogaert & Van den Poel, <em>TMAML: Temporal Model-Agnostic Meta-Learning for Cold-Start Time Series Forecasting</em>（arXiv:2610.04547）Figure 2</span>
+  </figcaption>
+</figure>
+
+**Favorita。** TMAML 在每个 $K$ 都显著优于 ERM，WQL 低 25%–41%。但朴素基线在 $K=1,2,3$ 的 WQL 上更好；$K=0$ 时两者打平。校准图景部分反转：朴素基线只在 $K=0$ 校准最好，$K\ge1$ 后 TMAML 明显最好，且随 $K$ 增加持续改善（MACE 0.065→0.028→0.024）<Cite n={1} />。
+
+**M5。** TMAML 在 $K=0,2,3$ 显著优于 ERM，$K=1$ 打平；对朴素基线，$K=0$ 时 WQL 低 7.4%、$K=3$ 时低 1.3%，$K=1,2$ 打平。校准方面，$K=0$ 时 TMAML 显著更好，$K=2$ 时 ERM 更好，$K=1,3$ 打平；朴素基线在每个 $K$ 都是校准最差的<Cite n={1} />。
+
+**Electricity。** TMAML 在 $K=0,1,2,6$ 显著优于 ERM，$K=4,5,7$ 打平，只在 $K=3$ 落后。朴素基线对 TMAML 的 WQL 优势只在 $K=1$ 显著，其余都是平局。校准时 TMAML 明显优于 ERM，与朴素基线的差异很小、置信区间重叠<Cite n={1} />。
+
+汇总起来：在 16 个 $K$ 比较中，TMAML 对 ERM **11 个显著更好、1 个更差、4 个打平**；对朴素基线则是 2 胜、4 负、10 平<Cite n={1} />。换句话说，元学习确实改善了 ERM 的训练目标，但没有稳定压倒「直接用最近历史的分位数」这个强基线。
+
+## 六、为什么对朴素基线没有全胜
+
+论文给出四点解释<Cite n={1} />：
+
+1. **可迁移结构不同。** Favorita 的商品组合异质，除了本品历史外很难学到更多；M5 的聚合品类和 Electricity 的普遍用电周期提供更多共享结构。
+2. **静态协变量太少。** Electricity 完全没有静态协变量；Favorita 与 M5 也只有少量类别属性。TMAML 能利用的关系结构有限，朴素基线只靠本地历史反而够用。
+3. **没有归一化。** 不做逐实体归一化时，TMAML 必须同时适应「尺度」和「时间结构」，任务更难。
+4. **内外层窗口错配。** 内层的上下文窗口比外层的 query 上下文短，训练时存在分布错配，可能让元训练不稳定。
+
+这也解释了为什么「更复杂的元学习」不一定赢过朴素基线：当相关序列提供不了额外信息时，「最近一段历史的分位数」本身就是很强的预测器。TMAML 的价值主要体现在**相对 ERM 的系统性提升**和**更好的校准**上。
+
+## 七、局限
+
+论文自认这是初步研究，限制包括<Cite n={1} />：
+
+- 三个场景都是**截断已有基准序列**模拟冷启动，不是真正的新实体；真实新品或新客户的早期动态可能不同。
+- 静态协变量覆盖有限，TMAML 没有足够关系结构可借。
+- 未做逐实体归一化，尺度适应与结构适应混在一起。
+- 每个（数据集、模型、$K$）只训练一次，且每条序列只用一个最终 query 窗口评分，不是滚动起点评估。
+- 只验证了 TFT 一种架构、三个场景，泛化性有限。
+
+后续方向包括：使用真正的新实体、设计适合冷启动的归一化、每条序列采多个 support 样本以降低内层方差、扩大元训练总体、测试更长 horizon，以及把 TMAML 接到 TFT 之外的架构上<Cite n={1} />。
+
+## 小结
+
+- **问题重写**：冷启动不是静态的「缺数据」，而是「历史逐窗口增长」；TMAML 用 K 窗口定义把这一点写进任务构造。
+- **训练目标**：用时间上连续的 support–query 元窗口 + FOMAML，学一个「从短历史快速适应」的初始化；测试时与 ERM 基线享有同样的微调机会。
+- **效果**：对 ERM-TFT 在 16 个比较中 11 胜 1 负；对信息对齐的朴素分位数基线则是 2 胜 4 负 10 平，主要优势在 WQL 的稳定改善与更好的校准。
+- **启示**：元学习能修正 ERM 的目标错配，但它不能凭空创造相关序列里不存在的信息——静态协变量与可迁移结构才是冷启动的上限。
+
+## 参考资料
+
+<References>
+1. Wannes Janssens, Matthias Bogaert & Dirk Van den Poel (2026). *TMAML: Temporal Model-Agnostic Meta-Learning for Cold-Start Time Series Forecasting*. arXiv: [2610.04547](https://arxiv.org/abs/2610.04547). —— 本文主报告，支撑问题定义、元任务构造、FOMAML、三个数据集实验与全部结果数字。
+2. Bryan Lim et al. (2021). *Temporal Fusion Transformers for Interpretable Multi-horizon Time Series Forecasting*. arXiv: [1912.09363](https://arxiv.org/abs/1912.09363). —— TFT 的静态协变量处理、变长输入与分位数输出，是 TMAML 的实例化底座。
+3. Chelsea Finn, Pieter Abbeel & Sergey Levine (2017). *Model-Agnostic Meta-Learning for Fast Adaptation of Deep Networks*. arXiv: [1703.03400](https://arxiv.org/abs/1703.03400). —— MAML 的双层优化与一阶近似来源。
+4. Corporación Favorita (2017). *Favorita Grocery Sales Forecasting*. Kaggle. [kaggle.com/c/favorita-grocery-sales-forecasting](https://www.kaggle.com/c/favorita-grocery-sales-forecasting). —— Favorita 零售销量数据。
+5. Walmart (2020). *M5 Forecasting — Accuracy and Uncertainty*. Kaggle. [kaggle.com/c/m5-forecasting-accuracy](https://www.kaggle.com/c/m5-forecasting-accuracy). —— M5 零售销量数据。
+6. Artur Trindade (2014). *Electricity Load Diagrams 2011–2014*. UCI Machine Learning Repository. [archive.ics.uci.edu/dataset/321](https://archive.ics.uci.edu/dataset/321/electricityloaddiagrams20112014). —— UCI Electricity 小时级用电数据。
+</References>

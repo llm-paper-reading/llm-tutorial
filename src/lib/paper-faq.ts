@@ -54,6 +54,11 @@ import uiTars2FAQ from "@/app/papers/ui-tars-2/faq";
 import oneFitsAllFAQ from "@/app/papers/one-fits-all/faq";
 import timeLlmFAQ from "@/app/papers/time-llm/faq";
 import timehf20FAQ from "@/app/papers/timehf-2-0/faq";
+import chronos2FAQ from "@/app/papers/chronos-2/faq";
+import moirai2FAQ from "@/app/papers/moirai-2/faq";
+import mallesFAQ from "@/app/papers/malles/faq";
+import cdlfFAQ from "@/app/papers/cdlf/faq";
+import tmamlFAQ from "@/app/papers/tmaml/faq";
 
 export interface PaperFAQItem {
   id: string;
@@ -122,6 +127,11 @@ const paperFAQBySlug: Partial<Record<string, PaperFAQ>> = {
   "one-fits-all": oneFitsAllFAQ,
   "time-llm": timeLlmFAQ,
   "timehf-2-0": timehf20FAQ,
+  "chronos-2": chronos2FAQ,
+  "moirai-2": moirai2FAQ,
+  "malles": mallesFAQ,
+  "cdlf": cdlfFAQ,
+  "tmaml": tmamlFAQ,
 };
 
 export function getPaperFAQ(slug: string): PaperFAQ {

@@ -1,0 +1,178 @@
+import paper from "./meta";
+import { paperMetadata } from "@/lib/papers";
+
+export const metadata = paperMetadata(paper);
+
+<PaperHeader slug={paper.slug} />
+
+# MALLES：消费者偏好对齐的多智能体经济沙盘
+
+用 LLM 模拟消费者，最直接的做法是给模型一段用户画像和商品描述，让它回答「买不买、买多少」。但真实零售决策不是语义判断题：价格、折扣、库存周转、品类差异都会改变答案，而单个品类的交易记录往往稀疏到覆盖不了商品特征的组合空间<Cite n={1} />。已有的 LLM 经济智能体（EconAgent、ABIDES-Economist、FinCon、LLM Economist 等）擅长宏观语义推演，却普遍对价格弹性这类**数值信号**不敏感，也很少用真实成交数据做对齐<Cite n={[1,2,3,4,5]} />。
+
+MALLES 的动机可以拆成三件事：**跨品类后训练**解决单品类数据稀疏；**多智能体讨论**把高维商品信息拆给不同角色、分担单个模型的注意力瓶颈；**平均场与分布校准**把个体决策的偏差拉回到总体分布<Cite n={1} />。三者分别对应「学得会价格」「看得完商品」「稳得住总体」。
+
+> 📌 相关阅读：如果关心「怎么问出可信的购买意愿」，见 [LLM 模拟消费者与 Likert 购买意愿](/papers/ssr-purchase-intent)；如果关心「用生成模型做产品线 what-if」，见 [CTVAE 产品线延伸](/papers/ctvae-product-line)。
+
+## 一、问题：三个瓶颈叠在一起
+
+论文把零售/批发模拟的困难归为三层<Cite n={1} />：
+
+1. **品类级数据稀疏**：某个品类的交易记录无法覆盖价格、规格、品牌、促销的组合空间，单品类训练很容易过拟合。
+2. **分布外泛化差**：新品、长尾品类、未见过的品牌没有历史数据，模型只能靠先验猜。
+3. **商品特征高维且多模态**：文本描述、图片、价格、销量序列混在一起，传统模型需要固定长度输入和人工特征工程。
+
+传统规则系统、混合选择模型、深度学习需求分析各有局限；LLM 的上下文学习本应缓解高维与多模态问题，但现有工作大多直接使用预训练模型，没有用真实交易数据对齐，也缺少对数值敏感性的显式约束<Cite n={1} />。
+
+MALLES 把模拟写成决策函数。真实消费者 $i$ 的行为是
+
+$$
+a_i=\mathcal{D}\big(X_i^{\mathrm{obs}},X_i^{\mathrm{hid}},\rho_i\big)
+$$
+
+其中 $X^{\mathrm{obs}}$ 是可观测输入，$X^{\mathrm{hid}}$ 是隐藏因素，$\rho_i$ 是个性/偏好/行为风格。模拟器用构造出的画像摘要 $Z_i$ 近似隐藏因素，用可调风格参数 $\hat\rho_i$ 近似个性，再最小化模拟决策与真实决策的期望损失<Cite n={1} />：
+
+$$
+\hat a_i=\hat{\mathcal{D}}\big(X_i^{\mathrm{obs}},Z_i,\hat\rho_i;\theta\big),\qquad
+\mathcal{E}=\mathbb{E}_i\big[\ell(a_i,\hat a_i)\big]
+$$
+
+离散选择用分类误差，连续购买量用平方误差，批发场景还可以直接用利润差。这个统一写法让零售与批发共享同一套对齐目标，只是决策变量和损失不同。
+
+## 二、数据与框架：从真实交易到结构化 prompt
+
+MALLES 的数据来自真实工业销售记录，覆盖 **119,252 名消费者、3,361 个品类**<Cite n={1} />。虽然单个客户或单个品类的数据可能很稀疏，但跨品类聚合后能覆盖足够多的决策模式。
+
+每条样本被构造成一个结构化 prompt，包含：竞争商品信息与价格、历史购买记录与成交价、市场购买趋势、评论评分、促销信息；输出是购买选择与购买数量<Cite n={1} />。商品信息里还包含图片嵌入，用于多模态对齐。
+
+<figure className="my-6">
+  <img src="./fig1-dataset.png" alt="MALLES 数据集构建流程：原始出货数据经过特征工程与画像构建，生成客户画像库、商品信息库、商品候选与历史成交商品，再组装成 prompt 模板和标准答案，形成真实经济消费者偏好反馈数据集" className="mx-auto h-auto w-full max-w-full rounded-lg border border-zinc-200 shadow-sm dark:border-zinc-800" />
+  <figcaption className="mt-2 text-center text-xs text-zinc-500 dark:text-zinc-400">
+    <span className="figure-caption-main">MALLES 的数据构建：原始出货数据 → 客户画像 / 商品信息 / 候选商品 / 历史成交 → prompt 输入与标准答案输出，最终形成消费者偏好反馈数据集</span>
+    <span className="figure-caption-source">图源：Wu, Liu & Deng, <em>MALLES: A Multi-agent LLMs-based Economic Sandbox with Consumer Preference Alignment</em>（arXiv:2603.17694）Figure 1</span>
+  </figcaption>
+</figure>
+
+框架按层级决策组织：上层设定战略目标与约束，下层把它分解为可执行的子目标；子目标在沙盘里验证，成功方案被采纳，瓶颈则触发递归反馈<Cite n={1} />。零售与批发被区分对待：
+
+- **零售客户**关注需求满足与价格比较，决策是「买不买（$b_r\in\{0,1\}$）」和「买多少（$q_r$）」。
+- **批发客户**关注利润、库存周转与清仓机制，决策是「选哪个商品（$s_w$）」和「采购多少（$q_w$）」。
+
+### 2.1 零售：跨品类后训练 + 注意力控制
+
+零售模型的核心是让 LLM 具备「货币意识」。训练数据是跨品类的商品—购买记录，输入包含需求 $d$、候选商品 $p$（多模态特征）和折扣 $c$，输出购买意图与数量<Cite n={1} />。
+
+为了让模型对价格、折扣等数值因素保持敏感，MALLES 在 prompt 结构里加入注意力先验，并用一个注意力匹配损失约束实际注意力分布 $A_i$ 靠近强调经济特征的先验 $A_i^*$<Cite n={1} />：
+
+$$
+\mathcal{L}_{\mathrm{attn}}=\mathbb{E}_i\big[\mathrm{KL}(A_i\,\|\,A_i^*)\big]
+$$
+
+针对部分可观测性，模型还用画像摘要 $Z_i$ 补全隐藏因素：历史购买模式、品类偏好、促销敏感度、品牌亲和、沟通风格等<Cite n={1} />。当单个客户数据不足时，训练目标从「拟合总体平均行为」转向「从上下文预测个体风格」。
+
+### 2.2 批发：三角色多轮讨论 + 符号回归
+
+批发决策金额大、依赖库存周转和清仓，单智能体容易陷入局部最优。MALLES 设置三个角色：**批发商（dealer）、营销/客服（service）、制造商（manufacturer）**，按轮次对话<Cite n={1} />：
+
+- 第 1 轮，dealer 基于背景与历史给出竞争态势、历史表现、目标分析；
+- 第 2 轮，service 回应 dealer 的关切，补充促销方案；
+- 第 3 轮，manufacturer 说明产能约束、供应与合作伙伴；
+- 中间轮次迭代讨论，最后一轮由 dealer 汇总；
+- 解析函数 $\phi_{\mathrm{wholesale}}$ 从对话历史 $h_n$ 中抽出采购选择与数量。
+
+对话历史按轮次累积：$h_t=h_{t-1}\cup\{(\text{role}_t,a_t)\}$。论文还在多智能体框架里接入**符号回归**，让智能体围绕经济因素及其关系给出可读的数学表达式，兼顾可解释性与数值拟合<Cite n={1} />。
+
+### 2.3 稳定与校准：风格参数、平均场、分布匹配
+
+即便做了输入增强，人工智能体与真人的思维方式仍有差异。MALLES 用三类机制收窄：
+
+**风格参数与认知架构。** 行为经济学模块把折扣敏感、损失厌恶等商业洞察注入 $\rho_i$；混合认知架构把 ACT-R 一类认知系统与 LLM 结合，由认知核心生成候选策略集合，再由 LLM 语义打分<Cite n={1} />。
+
+**一致性正则。** 对同一输入施加微小扰动 $\epsilon$（例如小幅改价），要求输出稳定<Cite n={1} />：
+
+$$
+\mathcal{L}_{\mathrm{cons}}=\mathbb{E}_i\mathbb{E}_{\epsilon\sim\mathcal{N}(0,\sigma)}
+\Big[\big|\hat a_i(X_i^{\mathrm{obs}}+\epsilon,Z_i,\rho_i)-\hat a_i(X_i^{\mathrm{obs}},Z_i,\rho_i)\big|^2\Big]
+$$
+
+**平均场交替更新。** 个体误差会累积成总体偏差。MALLES 维护一个宏观响应变量 $\mu_t$，它影响智能体的输入（市场背景），智能体输出又汇总成 $\mu_{t+1}$，如此交替，让模拟分布逐步逼近真实分布<Cite n={1} />。最后再用映射 $f$ 或重加权 $w(X,Z)$ 做分布校准：
+
+$$
+\min_f D_{\mathrm{KL}}\big(P_{\mathrm{real}}(a\mid X,Z)\,\|\,f(P_{\mathrm{sim}}(a\mid X,Z))\big)
+$$
+
+若利润率、库存成本、销量分布等关键指标偏离历史模式超过阈值 $\delta$，反馈信号会触发上层目标、风格参数或价格约束的再调整<Cite n={1} />。
+
+<figure className="my-6">
+  <img src="./fig2-simulation.png" alt="MALLES 仿真主流程：真实经济消费者偏好反馈数据集划分训练集与测试集，基础模型微调后依次经过平均场评估与多模型讨论，最终用于评估" className="mx-auto h-auto w-full max-w-full rounded-lg border border-zinc-200 shadow-sm dark:border-zinc-800" />
+  <figcaption className="mt-2 text-center text-xs text-zinc-500 dark:text-zinc-400">
+    <span className="figure-caption-main">MALLES 仿真主流程：训练集微调基础模型，测试集分别做直接评估、平均场评估与多模型讨论评估</span>
+    <span className="figure-caption-source">图源：Wu, Liu & Deng, <em>MALLES: A Multi-agent LLMs-based Economic Sandbox with Consumer Preference Alignment</em>（arXiv:2603.17694）Figure 2</span>
+  </figcaption>
+</figure>
+
+### 2.4 理论保证：跨品类为什么有帮助
+
+论文给出一个泛化增益下界。设目标品类 $c_t$ 数据量为 $|\mathcal{D}_{c_t}|$，全品类数据量为 $|\mathcal{D}_{\mathrm{full}}|\gg|\mathcal{D}_{c_t}|$，模型复杂度为 $d_{\mathrm{model}}$，则跨品类训练相对单品类训练的泛化改进满足<Cite n={1} />：
+
+$$
+\Delta\mathrm{Gen}\;\ge\;
+\sqrt{\frac{d_{\mathrm{model}}}{|\mathcal{D}_{c_t}|}}
+-\sqrt{\frac{d_{\mathrm{model}}}{|\mathcal{D}_{\mathrm{full}}|}}
++\lambda\cdot R_{\mathrm{transfer}}
+$$
+
+前两项来自标准泛化界的样本量差异；$R_{\mathrm{transfer}}$ 表示语义相近品类提供的互补信息带来的正则化效应，$\lambda$ 控制其权重。这个界解释了一个直觉：**目标品类越稀疏，跨品类聚合的收益越大**。证明只给了思路，完整论证依赖信息论工具。
+
+## 三、实验：命中率、数量误差与稳定性
+
+实验用 1,000 条客户—商品—数量实例，候选订单随机打乱以消除位置偏差。推理时从四个模型 GPT5.2、Gemini3、DeepSeek-V2、Llama-4（70B）中随机选一个生成结果；标量输出取解析后分数的平均<Cite n={1} />。评估三个维度<Cite n={1} />：
+
+1. 对价格与折扣变化的响应：SKU 选择命中率、购买数量一致性；
+2. 分布外泛化：未见品牌或商品；
+3. 稳定性：多次采样的购买量方差。
+
+零售主结果里，MALLES 的基础版本购买决策命中率 **0.700**，加入平均场后 **0.775**<Cite n={1} />。FinCon 的命中率略高（0.800），但购买量误差高达 **1.325**，说明它偏向「选对商品」而数值预测系统性偏倚；ABIDES-Economist 一类基线误差可控但命中率有限<Cite n={1} />。MALLES 的定位是**命中率与数量误差的平衡**，同时靠注意力控制与一致性正则把输出方差压下来。
+
+### 3.1 消融：后训练、多智能体、平均场各自值多少
+
+**后训练对齐。** 未对齐的基础模型在工业数据上的选择命中率只有约 **0.2**；随着训练轮次增加，命中率上升、数量误差下降，说明模型确实学到了价格弹性与折扣敏感性<Cite n={1} />。在 OOD 品类上，后训练模型同样有提升，支持「跨品类训练得到可迁移偏好表示」的判断。
+
+**跨品类数据配比。** 论文比较五种训练数据：alpaca 背景数据、单品类历史、混合数据、相似品类数据、全品类数据<Cite n={1} />。以三个测试品类为例：
+
+| 测试品类 | 指标 | 背景 | 单品类 | 混合 | 相似品类 | 全品类 |
+|---|---|---|---|---|---|---|
+| Paper Wipes | 命中率 | 0.25 | **0.56** | 0.32 | 0.50 | 0.48 |
+| Paper Wipes | 数量误差 | 0.962 | **0.240** | 0.473 | 0.399 | 0.425 |
+| Home Cleaning | 命中率 | 0.24 | **0.60** | 0.49 | 0.57 | 0.55 |
+| Home Cleaning | 数量误差 | 0.988 | **0.482** | 0.581 | 0.527 | 0.539 |
+| Laundry Detergent | 命中率 | 0.15 | **0.61** | 0.42 | 0.55 | 0.53 |
+| Laundry Detergent | 数量误差 | 0.993 | **0.492** | 0.467 | 0.597 | 0.561 |
+
+单品类训练在数据充足时仍然最好；但全品类或相似品类训练能接近它，并且在**目标品类数据稀疏**时明显优于背景数据与简单混合。论文据此建议分层数据策略：数据丰富的品类用品类内微调，数据稀缺的品类用全品类/近品类泛化模型<Cite n={1} />。命中率的提升普遍大于数量误差的下降，说明 LLM 对文本信息的敏感度仍高于数值信号。
+
+**单智能体 vs 多智能体。** 在同等算力预算下，3–4 个角色的多智能体讨论能提升决策质量，但收益随讨论轮数递减、成本线性增长<Cite n={1} />。轮数少时优势有限；轮数多时更能整合产能、促销、竞争等不同视角，避免单智能体局部最优。购买量预测的提升较小，论文认为数值精度还需要针对性训练。结论是：**复杂批发场景适合多智能体，效率敏感的零售场景单智能体更划算**<Cite n={1} />。
+
+**平均场。** 用移动窗口的历史市场响应统计作为 prompt 中的环境背景，可以同时改善决策命中率、数量误差和输出方差；中等长度窗口已能拿到大部分收益，继续加长收益递减。相比直接塞入零散历史样本，平均场提供的是更有代表性的市场背景，对价格敏感决策尤其有效<Cite n={1} />。
+
+## 四、局限与伦理
+
+论文自认的开放问题包括：视觉、文本、数值三种模态还没有真正统一进一个经济决策表示；微观个体决策与宏观市场动态之间的耦合仍偏弱，平均场只是初步连接，网络效应与供应链依赖需要更细的多尺度建模<Cite n={1} />。
+
+伦理上，训练数据必须严格匿名化与聚合，防止再识别；准确预测消费者行为也带来被用于设计操纵性策略的风险，需要制度约束，避免过度个性化损害消费者自主性<Cite n={1} />。这一点与所有合成消费者工作共享：模拟越逼真，越需要明确「用来理解需求」还是「用来利用弱点」的边界。
+
+## 小结
+
+- **跨品类后训练**把价格弹性、折扣敏感学进 LLM，缓解单品类数据稀疏；理论上，目标品类越稀疏，跨品类聚合的泛化增益越大。
+- **多智能体讨论**通过角色分工压缩高维商品上下文，适合批发这类多因素决策；收益随轮数递减，成本线性增长。
+- **平均场与分布校准**把个体决策汇总成更接近真实的总体分布，同时降低采样方差。
+- **结果**：零售命中率 0.700 / 0.775，数量误差与稳定性优于现有 LLM 经济模拟基线；全品类训练在数据稀缺时接近单品类专训。
+
+## 参考资料
+
+<References>
+1. Yusen Wu, Yiran Liu & Xiaotie Deng (2026). *MALLES: A Multi-agent LLMs-based Economic Sandbox with Consumer Preference Alignment*. arXiv: [2603.17694](https://arxiv.org/abs/2603.17694). —— 本文主报告，支撑框架、公式、数据集规模、实验结果、消融与伦理讨论。
+2. Nian Li et al. (2024). *EconAgent: Large Language Model-Empowered Agents for Simulating Macroeconomic Activities*. arXiv: [2310.10436](https://arxiv.org/abs/2310.10436). —— LLM 经济智能体的感知—记忆—行动框架，MALLES 的对照与延伸起点。
+3. Yangyang Yu et al. (2024). *FinCon: A Synthesized LLM Multi-Agent System with Conceptual Verbal Reinforcement for Enhanced Financial Decision Making*. arXiv: [2407.06567](https://arxiv.org/abs/2407.06567). —— 金融多智能体架构与风险控制，实验中的对照基线。
+4. Abhishek Dwarakanath et al. (2024). *ABIDES-Economist: Agent-Based Simulator of Economic Systems with Learning Agents*. arXiv: [2402.09563](https://arxiv.org/abs/2402.09563). —— 多智能体强化学习经济模拟器，实验中的对照基线。
+5. John J. Horton (2023). *Large Language Models as Simulated Economic Agents: What Can We Learn from Homo Silicus?*. NBER Working Paper, 2023. —— 用 LLM 模拟经济主体的早期讨论，支撑「LLM 经济沙盘」的研究背景。
+</References>

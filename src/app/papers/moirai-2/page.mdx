@@ -1,0 +1,178 @@
+import paper from "./meta";
+import { paperMetadata } from "@/lib/papers";
+
+export const metadata = paperMetadata(paper);
+
+<PaperHeader slug={paper.slug} />
+
+# Moirai 2.0：更少即更多
+
+时序基础模型正在重复语言模型的故事：更多参数、更多数据、更多任务。Salesforce 的 Moirai 1.0 就是这条路线上的早期代表——用 masked encoder 同时建模任意变量数，用多 patch size 适配不同频率，用混合分布刻画不确定性<Cite n={2} />。但到了第二代，作者做了一个相反的选择：**把架构、输入粒度和输出分布都简化，只保留 decoder-only + 单 patch + 分位数损失**<Cite n={1} />。
+
+这个「减法」不是妥协。Moirai 2.0 只有 11.4M 参数，在 GIFT-Eval 上 MASE 0.728、CRPS 0.516，排名分别第 5 和第 6；相比 Moirai-Large，它小约 30 倍、快约 2 倍，精度还更高<Cite n={[1,3]} />。更反直觉的是，继续把参数从 11.4M 扩到 305M，指标反而变差——这给「时序基础模型也需要 scaling」的直觉泼了一盆冷水。
+
+> 📌 前置：Moirai 1.0 的架构细节见 [Moirai](/papers/moirai)；想对比「编码器 + 组注意力」的另一条通用预测路线，可读 [Chronos-2](/papers/chronos-2)。
+
+## 一、动机：Moirai 1.0 的三处低效
+
+Moirai 1.0 的三个设计各有明确目标，但都在实践中暴露出代价<Cite n={1} />。
+
+**masked encoder 的数据利用率低。** 训练时随机遮住一部分 patch，只对被遮住的位置算损失；按 15% 的遮罩率，一次前向只有 15% 的 token 参与学习，而且一对 context/horizon 配置只产生一个损失值<Cite n={2} />。
+
+**多 patch size 让跨频率学习变复杂。** 为不同频率准备不同的 patch 投影，能照顾周期尺度差异，但模型要同时学会多套输入输出映射，训练和推理都更繁琐<Cite n={2} />。
+
+**混合分布难训且尾部不稳。** 输出混合分布的参数、再从分布里采样，理论上很灵活；实践中分布参数容易方差塌缩或爆炸，负对数似然在离群点上也不如分位数损失稳<Cite n={1} />。
+
+Moirai 2.0 的判断是：这些复杂度没有换来相称的收益。与其继续加组件，不如把问题收敛到「单变量 + 分位数」这个最干净的设定，把省下的容量和工程复杂度投入到数据与训练策略上。
+
+## 二、架构：decoder-only、单 patch、分位数
+
+<figure className="my-6">
+  <img src="./fig1-architecture.svg" alt="Moirai 2.0 架构总览：左上为 patch 输入经 Transformer 堆栈输出分位数；右上为分位数损失、patch 级随机遮罩与自回归多分位数解码四个面板" className="mx-auto h-auto w-full max-w-full rounded-lg border border-zinc-200 shadow-sm dark:border-zinc-800" />
+  <figcaption className="mt-2 text-center text-xs text-zinc-500 dark:text-zinc-400">
+    <span className="figure-caption-main">Moirai 2.0 的四个设计面板：端到端分位数预测管线、分位数损失、patch 级随机遮罩、以及深度 2 的自回归多分位数解码</span>
+    <span className="figure-caption-source">图源：Liu et al., <em>Moirai 2.0: When Less Is More for Time Series Forecasting</em>（arXiv:2511.11698）Figure 1</span>
+  </figcaption>
+</figure>
+
+### 2.1 输入：实例归一化 + 缺失指示
+
+Moirai 2.0 只处理单变量序列；多变量数据被拆成多条独立单变量序列，这与 PatchTST 观察到的 channel-independent 经验一致<Cite n={[1,5]} />。每条序列先做实例归一化，再切成不重叠的 patch。每个时间步额外拼一个二值缺失指示 $\mathbf{m}_i$，得到 $\hat{\mathbf{x}}_i=\mathbf{x}_i\,\|\,\mathbf{m}_i$，经残差块投影成 token<Cite n={1} />：
+
+$$
+\mathbf{z}_i=\mathrm{PatchEmbed}(\hat{\mathbf{x}}_i)=\mathrm{SiLU}\big(\mathbf{W}\hat{\mathbf{x}}_i+\mathbf{b}\big)+\hat{\mathbf{x}}_i
+$$
+
+这里有一个容易被忽略的细节：在 decoder-only 模型里，如果归一化统计量用了整条序列，就会把未来信息泄漏进因果预测。Moirai 2.0 只用**前 30%** 的序列计算归一化统计量，后 70% 留给因果预训练<Cite n={1} />。
+
+### 2.2 主干与输出：因果注意力 + 多 token 预测
+
+主干是标准的 decoder-only Transformer：每个块由因果多头自注意力和前馈网络组成，残差连接加层归一化。因果掩码保证当前位置只能看到之前的 token<Cite n={1} />。
+
+输出投影把每个 token 映射到 $n_{\text{token}}\times n_q\times p$ 维：一次前向同时给出多个未来 patch 的 $n_q$ 个分位数。多 token 预测有两个好处——长 horizon 下减少自回归步数，从而降低误差累积；同时提升推理效率<Cite n={1} />。
+
+训练目标是分位数（pinball）损失。模型输出 $n_q=9$ 个分位水平 $\mathcal{Q}=\{0.1,0.2,\dots,0.9\}$，每个水平单独算损失再平均<Cite n={1} />：
+
+$$
+\mathcal{L}_{Q}=\frac{1}{H|\mathcal{Q}|}\sum_{t=1}^{H}\sum_{q\in\mathcal{Q}}
+\Big[q\max\big(y_t-\hat y_t^{(q)},0\big)+(1-q)\max\big(\hat y_t^{(q)}-y_t,0\big)\Big]
+$$
+
+与分布 NLL 相比，分位数损失的优点是直接优化业务关心的分位（例如容量规划用 $q=0.9$）、天然处理非对称惩罚、对极端尾部更稳健<Cite n={1} />。代价是它只给固定网格上的分位，不像连续分布那样能解析地算任意分位。
+
+### 2.3 训练：遮罩、过滤与超参
+
+训练时对 50% 的输入 patch 做随机遮罩，迫使模型在缺失片段下也能学到稳健表示<Cite n={1} />。由于归一化只用前 30%，后 70% 的分布漂移可能让训练不稳定；论文用 z-score 异常检测过滤掉后段与前段统计差异过大的样本<Cite n={1} />。
+
+优化配置：100,000 步、batch size 256、AdamW（学习率 $1\times10^{-3}$、weight decay $0.1$、$\beta_1=0.9$、$\beta_2=0.98$），前 10,000 步线性 warmup 后余弦退火，bf16 混合精度<Cite n={1} />。
+
+## 三、推理：深度 2 的多分位数解码
+
+分位数预测带来一个自回归解码的麻烦：普通自回归每一步只回填一个值，输入输出维度一致；但分位数模型每步输出 9 个值，全部回填会维度不匹配，只取中位数又会丢掉不确定性<Cite n={1} />。
+
+Moirai 2.0 的解法是 **autoregressive multi-quantile decoding**，本质上是一次深度为 2 的 beam search<Cite n={1} />：
+
+1. 第一步正常预测 9 个分位数，回填上下文。
+2. 之后每一步，先把上一步的 9 个分位数分别当作历史，扩展出 $9\times9=81$ 个候选。
+3. 再把这 81 个候选按分位数重新折叠成 9 个水平，作为当前步的预测。
+
+用公式表示，第 $t+1$ 步的候选集合与折叠结果是：
+
+$$
+\mathcal{S}_{t+1}=\big\{\hat y_{t+1}^{(q_1,q_2)}:q_1,q_2\in\mathcal{Q}\big\},\qquad
+\hat y_{t+1}^{(q)}=\mathrm{Quantile}_q(\mathcal{S}_{t+1})
+$$
+
+展开相当于采样多条可能的未来，折叠则是把这些样本重新压回一组一致的分位数。这样既保留了不确定性，又没有让推理复杂度爆炸。实际实现中模型一次输出多个 patch token，伪代码为清晰起见按单值展示<Cite n={1} />。
+
+decoder-only 还带来一个工程收益：KV cache。第一次前向把上下文的 key/value 缓存下来，后续解码直接复用；对于「先预测几步、再逐步延长」的交互式场景，省掉重复计算。论文的案例研究显示，上下文约 10K、预测长度 1K 时约有 4 倍加速，预测长度扩到 10K 时可达 17 倍<Cite n={1} />。Moirai 1.0 的 masked encoder 则每次都要从头重算。
+
+## 四、预训练语料：36M 序列、295B 观测
+
+新语料由五部分组成，合计约 36M 条序列、2950 亿个观测<Cite n={1} />：
+
+| 来源 | 规模 | 说明 |
+|---|---|---|
+| GIFT-Eval Pretrain | 3.25M 序列 / 230B 观测 | 防泄漏的公开预训练集 |
+| GIFT-Eval TrainTest（train） | 144K 序列 | 基准的训练划分 |
+| Chronos-Mixup | 30M 序列 / 63B 观测 | 多条序列的凸组合，$K\le4$、长度 128–4096 |
+| KernelSynth | 1M 序列 / 1.02B 观测 | 高斯过程核组合生成 |
+| Salesforce 内部遥测 | 2.15M 序列 / 1.48B 观测 | 日粒度 CloudOps 数据，2024-01 起约一年 |
+
+Chronos-Mixup 的做法是随机采样 $k$ 条序列做凸组合，能造出比原始数据更长、更复杂的形态；KernelSynth 则从趋势、局部变化、季节性的核库中采样并做 $+$ 或 $\times$ 组合<Cite n={[1,4]} />。内部遥测数据是唯一的大规模真实工业来源，覆盖云运维场景。
+
+## 五、结果：前五，且效率极高
+
+在 GIFT-Eval 的 97 个任务、55 个数据集上，论文比较了 30 个有可复现代码、无测试集泄漏的基础模型。Moirai 2.0 的归一化 MASE 排第 5、CRPS 排第 6<Cite n={[1,3]} />。
+
+<figure className="my-6">
+  <img src="./fig2-gift-mase.svg" alt="GIFT-Eval 归一化 MASE 与 CRPS 条形图：Chronos-2、TimesFM-2.5、TiRex 居前，Moirai 2.0 以黄色标出，位于前五/前六，明显优于 Moirai-Large" className="mx-auto h-auto w-full max-w-full rounded-lg border border-zinc-200 shadow-sm dark:border-zinc-800" />
+  <figcaption className="mt-2 text-center text-xs text-zinc-500 dark:text-zinc-400">
+    <span className="figure-caption-main">GIFT-Eval 上的归一化 MASE（左）与 CRPS（右）：Moirai 2.0 位于第一梯队，且显著优于参数更多的 Moirai-Large；虚线标记存在数据泄漏的模型</span>
+    <span className="figure-caption-source">图源：Liu et al., <em>Moirai 2.0: When Less Is More for Time Series Forecasting</em>（arXiv:2511.11698）Figure 2</span>
+  </figcaption>
+</figure>
+
+效率是另一半卖点。Moirai 2.0 比 Moirai-Large 小约 30 倍、快约 2 倍，精度还更好<Cite n={1} />。在速度—参数—精度的三维比较里，它处在帕累托前沿附近：Kairos-50M 更快，但参数多近 5 倍且精度更低；Granite-FlowState-R1 精度更高、模型更小，但推理慢约 3 倍<Cite n={1} />。
+
+<figure className="my-6">
+  <img src="./fig5-speed-size.svg" alt="速度—参数量—精度散点图：横轴为 GPU 推理时间（对数），纵轴为参数量，点旁标注 MASE 或 CRPS 排名；Moirai 2.0 在低参数、低延迟区域，精度排名靠前" className="mx-auto h-auto w-full max-w-full rounded-lg border border-zinc-200 shadow-sm dark:border-zinc-800" />
+  <figcaption className="mt-2 text-center text-xs text-zinc-500 dark:text-zinc-400">
+    <span className="figure-caption-main">速度—参数量—精度权衡：每点标注该模型的 MASE 排名（左）与 CRPS 排名（右），越靠左下且排名数字越小越好；Moirai 2.0 位于低参数、低延迟、高排名的区域</span>
+    <span className="figure-caption-source">图源：Liu et al., <em>Moirai 2.0: When Less Is More for Time Series Forecasting</em>（arXiv:2511.11698）Figure 5</span>
+  </figcaption>
+</figure>
+
+### 5.1 规模越大反而越差
+
+论文训练了三个规模：small 11.4M、base 87.1M（约 8 倍）、large 305M（约 30 倍）。结果与 scaling law 的直觉相反<Cite n={1} />：
+
+| 模型 | 参数量（M） | MASE | CRPS |
+|---|---|---|---|
+| **Moirai 2.0 small** | 11.4 | **0.728** | **0.516** |
+| Moirai 2.0 base | 87.1 | 0.732 | 0.525 |
+| Moirai 2.0 large | 305 | 0.743 | 0.530 |
+
+小模型已经足以吃透现有预训练数据；继续加参数，只会让模型容量与数据规模失配。论文的假设是：**参数扩张必须与数据规模、多样性同步**，否则不会自动换来收益<Cite n={1} />。这与 GIFT-Eval 论文观察到的「跨模型家族 scaling 不稳定」一致，也与其他研究报告的「参数更多有收益」形成对照<Cite n={[1,3]} />。
+
+分领域看，Moirai 2.0 在大多数领域都进入前 10，唯一明显掉队的是 Nature 类任务，说明预训练语料对自然/环境时序覆盖不足<Cite n={1} />。按预测长度拆分，它在短、中、长 horizon 上分别排第 4、第 6、第 8——**horizon 越长，相对优势越弱**<Cite n={1} />。
+
+### 5.2 消融：每一步各贡献多少
+
+论文把从 Moirai 1.0 到 2.0 的改动拆成增量版本，逐步替换组件<Cite n={1} />：
+
+| 版本 | 预训练数据 | 损失 | 架构 | 额外策略 | MASE | CRPS |
+|---|---|---|---|---|---|---|
+| Moirai 1.0 small | GIFT-Eval Pretrain | 分布 NLL | encoder-only | — | 0.946 | 0.650 |
+| v0 | GIFT-Eval Pretrain | 分布 NLL | decoder-only | — | 0.9288 | 0.6469 |
+| v1 | 新语料 | 分布 NLL | decoder-only | — | 0.850 | 0.580 |
+| v2 | 新语料 | 分位数 | decoder-only | — | 0.744 | 0.553 |
+| v3 | 新语料 | 分位数 | decoder-only | 多分位数解码 | 0.736 | 0.533 |
+| v4 | 新语料 | 分位数 | decoder-only | + 随机遮罩 | 0.772 | 0.560 |
+| v5 | 新语料 | 分位数 | decoder-only | + 多 token 预测 | 0.739 | 0.527 |
+| **Moirai 2.0** | 新语料 | 分位数 | decoder-only | + 残差输出块 | **0.728** | **0.516** |
+
+两个结论值得注意。第一，**换数据（v1）和换损失（v2）贡献最大**，单是分位数损失就把 MASE 从 0.850 拉到 0.744。第二，**随机遮罩单独用会掉点（v4）**，只有和多 token 预测组合（v5）时才转为正收益；最终把线性输出头换成残差块，再小幅改善到 0.728 / 0.516<Cite n={1} />。
+
+## 六、局限：主动放弃多变量与协变量
+
+Moirai 2.0 明确不支持多变量预测和协变量，理由不是做不到，而是高质量的多变量/协变量语料太少，收益不足以抵消复杂度<Cite n={1} />。这与 [Chronos-2](/papers/chronos-2) 的选择正好相反：后者用合成数据把多变量与协变量做进架构，代价是任务配置更复杂<Cite n={4} />。
+
+另外两个限制也被作者点名：参数 scaling 失效，说明架构与数据之间存在错配；长 horizon 性能下降，说明自回归误差累积仍是问题<Cite n={1} />。后续方向包括与模型容量匹配的数据扩张、长 horizon 架构改进，以及结合 LLM 推理能力的 agentic 时序分析。
+
+## 小结
+
+- **减法路线**：decoder-only 替 masked encoder，单 patch 替多 patch，分位数损失替混合分布；每一步都更简单，但组合起来更强。
+- **数据效率**：因果训练让每个 patch 都参与损失，配合 36M 序列 / 295B 观测的新语料，11.4M 参数就够用。
+- **推理策略**：深度 2 的展开—折叠多分位数解码，解决「每步输出多个分位数如何回填」的维度错配；KV cache 在长上下文、长 horizon 下可带来数倍到十余倍加速。
+- **反直觉发现**：参数从 11.4M 扩到 305M，GIFT-Eval 指标反而变差；时序基础模型的瓶颈可能先在数据，而不是模型大小。
+
+## 参考资料
+
+<References>
+1. Chenghao Liu et al. (2025). *Moirai 2.0: When Less Is More for Time Series Forecasting*. arXiv: [2511.11698](https://arxiv.org/abs/2511.11698). —— 本文主报告，支撑架构、训练/推理策略、36M 语料、GIFT-Eval 数字、scaling 与消融结果。
+2. Gerald Woo et al. (2024). *Unified Training of Universal Time Series Forecasting Transformers*. arXiv: [2402.02592](https://arxiv.org/abs/2402.02592). —— Moirai 1.0 的 masked encoder、多 patch 与混合分布设计，是本文消融的起点。
+3. Taha Aksu et al. (2024). *GIFT-Eval: A Benchmark For General Time Series Forecasting Model Evaluation*. arXiv: [2410.10393](https://arxiv.org/abs/2410.10393). —— GIFT-Eval 基准、排行榜口径与跨模型 scaling 观察。
+4. Abdul Fatir Ansari et al. (2025). *Chronos-2: From Univariate to Universal Forecasting*. arXiv: [2510.15821](https://arxiv.org/abs/2510.15821). —— Chronos-Mixup / KernelSynth 数据来源，以及多变量路线的对照。
+5. Yuqi Nie et al. (2023). *A Time Series is Worth 64 Words: Long-term Forecasting with Transformers*. arXiv: [2211.14730](https://arxiv.org/abs/2211.14730). —— channel-independent 与 patch 化建模经验。
+</References>

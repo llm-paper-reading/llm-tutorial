@@ -61,6 +61,11 @@ import minimaxM3 from "@/app/papers/minimax-m3/meta";
 import oneFitsAll from "@/app/papers/one-fits-all/meta";
 import timeLlm from "@/app/papers/time-llm/meta";
 import timehf20 from "@/app/papers/timehf-2-0/meta";
+import chronos2 from "@/app/papers/chronos-2/meta";
+import moirai2 from "@/app/papers/moirai-2/meta";
+import malles from "@/app/papers/malles/meta";
+import cdlf from "@/app/papers/cdlf/meta";
+import tmaml from "@/app/papers/tmaml/meta";
 
 export interface Paper {
   slug: string;
@@ -152,6 +157,11 @@ export const papers: Paper[] = [
   oneFitsAll,
   timeLlm,
   timehf20,
+  chronos2,
+  moirai2,
+  malles,
+  cdlf,
+  tmaml,
 ];
 
 /** 所有出现过的 keyword（保持注册表中的出现顺序）。 */
