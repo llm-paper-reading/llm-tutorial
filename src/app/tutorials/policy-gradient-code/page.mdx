@@ -10,7 +10,7 @@ export const metadata = tutorialMetadata("policy-gradient-code");
 
 ## 三份实现对照
 
-前面各节的 CodeRunner 都是为教学手写的玩具，这一节换一个视角：**到真实项目的代码里，看策略梯度定理、GAE、PPO 裁剪落地后长什么样**。挑三份有代表性的实现——OpenAI Spinning Up 的 VPG/PPO（官方教学标杆，代码极简）、CleanRL 的单文件 PPO（「一个文件读懂整个算法」的典范，注释与配套实验文档极全）、Stable-Baselines3 的 PPO（生产库，向量化环境/回调/日志全家桶）。三份代码定位不同，但内核完全同构：**采集整批轨迹 → GAE 算优势 → 优势归一化 → 裁剪目标多 epoch 小批量更新**——正是「[策略梯度定理](/tutorials/policy-gradient) → [Actor-Critic](/tutorials/actor-critic) → GAE → [PPO](/tutorials/ppo)」这条推导链的工程化身。<Cite n={[1,3,4]} />
+前面各节的 CodeRunner 都是为教学手写的玩具，这一节换一个视角：**到真实项目的代码里，看策略梯度定理、GAE、PPO 裁剪落地后长什么样**。挑三份有代表性的实现——OpenAI Spinning Up 的 VPG/PPO（官方教学标杆，代码极简）、CleanRL 的单文件 PPO（「一个文件读懂整个算法」的典范，注释与配套实验文档极全）、Stable-Baselines3 的 PPO（生产库，向量化环境/回调/日志全家桶）。三份代码定位不同，但内核完全同构：**采集整批轨迹 → GAE 算优势 → 优势归一化 → 裁剪目标多 epoch 小批量更新**——正是「[策略梯度定理](/tutorials/policy-gradient) → [Actor-Critic](/tutorials/actor-critic) → GAE → [PPO](/tutorials/ppo)」这条推导链的工程化身<Cite n={[1,3,4]} />。
 
 | 实现 | 定位 | 篇幅 | 适合谁读 |
 |---|---|---|---|
@@ -20,7 +20,7 @@ export const metadata = tutorialMetadata("policy-gradient-code");
 
 ### VPG 损失：对数导数技巧的最终代码形态
 
-先看 Spinning Up 的 VPG（vanilla policy gradient）——它就是 REINFORCE + GAE 优势 + Actor/Critic 分开优化的完整版。整份文件的心脏只有这几行：<Cite n={1} />
+先看 Spinning Up 的 VPG（vanilla policy gradient）——它就是 REINFORCE + GAE 优势 + Actor/Critic 分开优化的完整版。整份文件的心脏只有这几行<Cite n={1} />：
 
 ```python
 # spinup/algos/pytorch/vpg/vpg.py（节选，注释为本站所加）
@@ -49,7 +49,7 @@ export const metadata = tutorialMetadata("policy-gradient-code");
 
 ### GAE：CleanRL 的前向递推
 
-GAE 小节给出的定义是求和形式 $\hat A_t^{\mathrm{GAE}}=\sum_{l\ge0}(\gamma\lambda)^l\delta_{t+l}$，实现里没人真的存下所有 $\delta$ 再加权求和——统一写成**从轨迹末尾倒着走的递推**。CleanRL 的版本连 `dones`（episode 边界切断自举）都一并处理了：<Cite n={3} />
+GAE 小节给出的定义是求和形式 $\hat A_t^{\mathrm{GAE}}=\sum_{l\ge0}(\gamma\lambda)^l\delta_{t+l}$，实现里没人真的存下所有 $\delta$ 再加权求和——统一写成**从轨迹末尾倒着走的递推**。CleanRL 的版本连 `dones`（episode 边界切断自举）都一并处理了<Cite n={3} />：
 
 ```python
 # cleanrl/ppo.py（节选，注释为本站所加）
@@ -86,7 +86,7 @@ GAE 小节给出的定义是求和形式 $\hat A_t^{\mathrm{GAE}}=\sum_{l\ge0}(\
 
 ### PPO 裁剪目标：三份实现，同一行公式
 
-PPO 小节的核心公式 $L^{\text{CLIP}}=\min(rA,\text{clip}(r,1-\varepsilon,1+\varepsilon)A)$，在 CleanRL 里是这样（注意它把取负号搬到了每一支上，用 `max` 而非 `min`）：<Cite n={[2,3]} />
+PPO 小节的核心公式 $L^{\text{CLIP}}=\min(rA,\text{clip}(r,1-\varepsilon,1+\varepsilon)A)$，在 CleanRL 里是这样（注意它把取负号搬到了每一支上，用 `max` 而非 `min`）<Cite n={[2,3]} />：
 
 ```python
 # cleanrl/ppo.py（节选，注释为本站所加）
@@ -114,9 +114,9 @@ PPO 小节的核心公式 $L^{\text{CLIP}}=\min(rA,\text{clip}(r,1-\varepsilon,1
                 pg_loss = torch.max(pg_loss1, pg_loss2).mean()
 ```
 
-对照 Spinning Up 的同一段（`spinup/algos/pytorch/ppo/ppo.py` 的 `compute_loss_pi`），公式一个字符不差，只是写法取向不同：Spinning Up 存正目标取 `min` 再加负号，CleanRL 两支先取负再取 `max`——数学上完全等价。而「KL 早停」小节里那个 `target_kl` 熔断，两份实现也都原样保留：CleanRL 在每个 epoch 结束后检查 `approx_kl > args.target_kl` 即 `break`，Spinning Up 则放在每步梯度之前并留了 1.5 倍余量（`kl > 1.5 * target_kl` 才停）。<Cite n={1} />
+对照 Spinning Up 的同一段（`spinup/algos/pytorch/ppo/ppo.py` 的 `compute_loss_pi`），公式一个字符不差，只是写法取向不同：Spinning Up 存正目标取 `min` 再加负号，CleanRL 两支先取负再取 `max`——数学上完全等价。而「KL 早停」小节里那个 `target_kl` 熔断，两份实现也都原样保留：CleanRL 在每个 epoch 结束后检查 `approx_kl > args.target_kl` 即 `break`，Spinning Up 则放在每步梯度之前并留了 1.5 倍余量（`kl > 1.5 * target_kl` 才停）<Cite n={1} />。
 
-真正把「生产库」与「教学实现」区分开的，是 CleanRL 与 SB3 都默认带上、而教程伪代码省略的那些工程加固：**价值损失裁剪**（把 $V_\theta$ 的新预测也拴在旧值附近，CleanRL 的 `clip_vloss=True`）、**梯度范数裁剪**（`max_grad_norm=0.5`，防离群批量把参数推飞）、**正交初始化**（`layer_init`，actor 输出层 `std=0.01` 让初始策略接近均匀）、**学习率退火**（`anneal_lr` 随进度线性衰减）。SB3 的 `PPO.train()` 里还能看到 `clip_range` 支持传函数（随训练进度动态调整 $\varepsilon$）、`clip_range_vf` 可选开启价值裁剪、`target_kl` 早停同样在列——每一项都对应 [PPO 教程的工程超参数表](/tutorials/ppo#工程超参数表) 里的一行，只是生产库把它们做成了可配置项而非硬编码。<Cite n={4} />
+真正把「生产库」与「教学实现」区分开的，是 CleanRL 与 SB3 都默认带上、而教程伪代码省略的那些工程加固：**价值损失裁剪**（把 $V_\theta$ 的新预测也拴在旧值附近，CleanRL 的 `clip_vloss=True`）、**梯度范数裁剪**（`max_grad_norm=0.5`，防离群批量把参数推飞）、**正交初始化**（`layer_init`，actor 输出层 `std=0.01` 让初始策略接近均匀）、**学习率退火**（`anneal_lr` 随进度线性衰减）。SB3 的 `PPO.train()` 里还能看到 `clip_range` 支持传函数（随训练进度动态调整 $\varepsilon$）、`clip_range_vf` 可选开启价值裁剪、`target_kl` 早停同样在列——每一项都对应 [PPO 教程的工程超参数表](/tutorials/ppo#工程超参数表) 里的一行，只是生产库把它们做成了可配置项而非硬编码<Cite n={4} />。
 
 > 💡 **三份实现怎么选着读**：先读 Spinning Up 的 `vpg.py`（350 行看懂「定理 → 一行损失」），再读 CleanRL 的 `ppo.py`（把 GAE 递推、裁剪、多 epoch 小批量、工程加固串成完整闭环，配套文档逐行给实验结果），最后翻 SB3（看同一算法如何被包进向量化环境、回调与日志体系变成生产件）。顺带一提：PPO 精读页的[源码走读](/papers/ppo-schulman)从 SB3 与 TRL 两个实现再走了一遍裁剪目标，并延伸到 RLHF 场景下的 token 级 GAE 与 KL 惩罚奖励，可与本节对照。
 

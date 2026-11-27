@@ -36,7 +36,7 @@ BC 的诱惑在于**极简**：不用环境模型、不用奖励、不用 RL 的
 
 但 BC 有个教科书级的失败模式。监督学习有个隐含假设：训练数据和测试数据**同分布**。可模仿学习里这假设**直接被打破**。专家轨迹是「专家访问的状态」分布，但学习器部署时跑的是「**自己**访问的状态」分布——只要学习器在某一步稍有偏差，落到一个专家没去过的状态，它就在**没见过**的状态上做决策，更容易出错，于是偏离更远，撞进更陌生的状态……错误像雪崩一样**级联（cascading）**。
 
-这就是 **协变量偏移（covariate shift）**：训练分布（专家状态）与部署分布（学习器状态）不匹配，$P_\text{train}(s) \neq P_\text{deploy}(s)$，而策略 $\pi(a\mid s)$ 只在 $P_\text{train}$ 上被校正过。<Cite n={1} />
+这就是 **协变量偏移（covariate shift）**：训练分布（专家状态）与部署分布（学习器状态）不匹配，$P_\text{train}(s) \neq P_\text{deploy}(s)$，而策略 $\pi(a\mid s)$ 只在 $P_\text{train}$ 上被校正过<Cite n={1} />。
 
 > ⚠️ **直观比喻**：照着导航开车，导航假设你「一直在主路上」。可一旦你错过一个路口偏到小路，导航的后续指令全是在「它没料到你会去的路口」上给的，越走越偏，再也回不来。BC 的级联误差正是这个——专家示范是「主路剧本」，学习器一偏轨就失灵。
 
@@ -79,7 +79,7 @@ print("这就是 BC 的协变量偏移:训练(专家分布)≠ 部署(学习者�
 
 ### 级联误差的正式界：为什么 BC 的代价是 $O(\epsilon T^2)$
 
-上面的演示给了直觉：偏差滚雪球。但 BC 的失败**不止是经验现象，它有正式的最坏情况界**。Ross, Gordon, Bagnell 2011 [1] 给出了 BC 次优性的上界，把「级联」量化成 $T$ 的**二次**函数。<Cite n={1} />
+上面的演示给了直觉：偏差滚雪球。但 BC 的失败**不止是经验现象，它有正式的最坏情况界**。Ross, Gordon, Bagnell 2011 [1] 给出了 BC 次优性的上界，把「级联」量化成 $T$ 的**二次**函数<Cite n={1} />。
 
 **设定**：专家策略 $\pi^*$，BC 学到的策略 $\hat\pi$ 满足——在**专家诱导的状态分布**下，每步选错动作的概率不超过 $\epsilon$（即监督学习的错误率）。视野 $T$，每步代价上限 $C_{\max}$。
 
@@ -187,7 +187,7 @@ print("     DAgger 把 O(eps*T^2) 级联压回 O(eps*T) 线性的实证")
 
 ## DAgger：边走边问，用学习者分布纠偏
 
-**DAgger（Dataset Aggregation, Ross, Gordon, Bagnell 2011 [1]）** 直击协变量偏移的根：**既然问题是训练分布≠部署分布，那就让训练分布逼近部署分布**。<Cite n={1} />做法朴素到离谱——**边跑边问**：
+**DAgger（Dataset Aggregation, Ross, Gordon, Bagnell 2011 [1]）** 直击协变量偏移的根：**既然问题是训练分布≠部署分布，那就让训练分布逼近部署分布**<Cite n={1} />。做法朴素到离谱——**边跑边问**：
 
 1. 初始化数据集 $\mathcal D_0$（可空，或用少量专家示范）；
 2. 第 $i$ 轮：用当前策略 $\pi_i$ **自己跑**采集轨迹（注意：是学习者自己跑，不是专家跑！）；
@@ -201,7 +201,7 @@ print("     DAgger 把 O(eps*T^2) 级联压回 O(eps*T) 线性的实证")
 
 ### 理论保证：no-regret 在线学习
 
-DAgger 不只是「经验上管用」，它有**正式保证**。Ross et al. 把模仿学习规约成**在线学习（no-regret online learning）**：每一轮对应一个在线学习步，损失是分类器的代理损失（如 0-1 损失或 hinge 损失），用任何 no-regret 算法（如 Follow-the-Leader、在线梯度下降）就能保证**平均遗憾趋于零**[1]。<Cite n={1} />结论是学习器策略的期望成本随轮数 $T$ 增长**逼近专家成本**，次优性 $O(1/T)$：
+DAgger 不只是「经验上管用」，它有**正式保证**。Ross et al. 把模仿学习规约成**在线学习（no-regret online learning）**：每一轮对应一个在线学习步，损失是分类器的代理损失（如 0-1 损失或 hinge 损失），用任何 no-regret 算法（如 Follow-the-Leader、在线梯度下降）就能保证**平均遗憾趋于零**[1]<Cite n={1} />。结论是学习器策略的期望成本随轮数 $T$ 增长**逼近专家成本**，次优性 $O(1/T)$：
 
 $$
 \mathbb E\big[\text{cost}(\pi_\text{learned})\big] \;\le\; \mathbb E\big[\text{cost}(\pi_\text{expert})\big] \;+\; O\!\left(\tfrac{1}{T}\right)
@@ -342,13 +342,13 @@ print(f"   这就是'边走边问'的理论红利: BC O(eps*T^2) 级联 -> DAgge
 
 BC / DAgger 都在**直接学策略**。另一条路更「深」：**先反推专家在优化什么奖励，再用这个奖励跑普通 RL**。这叫**逆向强化学习（inverse reinforcement learning, IRL）**——把 RL 的方向反过来：RL 是「给定奖励，求最优策略」，IRL 是「给定（近最优）策略/示范，求奖励」。
 
-**问题陈述**（Russell 1998）：给定环境模型、专家的观测行为，找出专家正在优化的奖励函数 $r$。Ng & Russell （2000） 给出了 IRL 的奠基性算法 [2]。<Cite n={2} />
+**问题陈述**（Russell 1998）：给定环境模型、专家的观测行为，找出专家正在优化的奖励函数 $r$。Ng & Russell （2000） 给出了 IRL 的奠基性算法 [2]<Cite n={2} />。
 
 ### 难题：奖励不唯一
 
 IRL 有个根本性困难：**同一个最优策略可以被无穷多个奖励函数解释**。设想一个空房间，专家站着不动。这可以是因为「站着给 +1、动给 0」，也可以是「站着给 0、动给 -100」，也可以是任何「站着比动好」的奖励——都解释得通。**奖励的不唯一性（non-uniqueness）** 让「恢复真奖励」变得不适定。
 
-**Ng & Russell （2000） 的 max-margin 思路**[2]：既然不能唯一恢复奖励，那就找一个让专家**严格最优**的奖励——让专家的期望回报比任何其他策略都高出至少一个间隔。<Cite n={2} />形式化地，在有限状态空间里，求奖励权重 $w$ 使：
+**Ng & Russell （2000） 的 max-margin 思路**[2]：既然不能唯一恢复奖励，那就找一个让专家**严格最优**的奖励——让专家的期望回报比任何其他策略都高出至少一个间隔<Cite n={2} />。形式化地，在有限状态空间里，求奖励权重 $w$ 使：
 
 $$
 \max_{w}\;\min_{\pi\in\Pi\setminus\{\pi_E\}}\Bigl\{\,\mathbb E_{\pi_E}\!\Bigl[\sum_{t}\gamma^{t} r(s_t)\Bigr]\;-\;\mathbb E_{\pi}\!\Bigl[\sum_{t}\gamma^{t} r(s_t)\Bigr]\,\Bigr\}
@@ -358,13 +358,13 @@ $$
 
 ### 特征匹配学徒学习（Abbeel & Ng 2004）
 
-Abbeel & Ng 2004 [3] 给了个更聪明的绕法：**不恢复完整奖励，只匹配特征**。<Cite n={3} />假设奖励是状态特征的线性组合 $r(s) = w^\top \phi(s)$（如「到目标距离」「速度」「危险度」等特征），那么一条轨迹的期望回报是 $\mathbb E[\sum_t\gamma^t\,w^\top\phi(s_t)]=w^\top\,\mu$，其中
+Abbeel & Ng 2004 [3] 给了个更聪明的绕法：**不恢复完整奖励，只匹配特征**<Cite n={3} />。假设奖励是状态特征的线性组合 $r(s) = w^\top \phi(s)$（如「到目标距离」「速度」「危险度」等特征），那么一条轨迹的期望回报是 $\mathbb E[\sum_t\gamma^t\,w^\top\phi(s_t)]=w^\top\,\mu$，其中
 
 $$
 \mu \;=\; \mathbb E_{\pi}\!\Bigl[\sum_{t}\gamma^{t}\phi(s_t)\Bigr]
 $$
 
-叫**特征期望（feature expectation）**——一条策略访问到的特征向量的折扣累计。关键洞察：只要学习者的 $\mu_\pi$ 和专家的 $\mu_E$ 一致，它在**任何**线性奖励 $w^\top\phi$ 下的期望回报就和专家一致。<Cite n={3} />于是 IRL 退化成「找策略使 $\lVert\mu_E-\mu_\pi\rVert$ 最小」。
+叫**特征期望（feature expectation）**——一条策略访问到的特征向量的折扣累计。关键洞察：只要学习者的 $\mu_\pi$ 和专家的 $\mu_E$ 一致，它在**任何**线性奖励 $w^\top\phi$ 下的期望回报就和专家一致<Cite n={3} />。于是 IRL 退化成「找策略使 $\lVert\mu_E-\mu_\pi\rVert$ 最小」。
 
 **投影算法**：权重 $w$ 朝「特征差」方向更新，让学习者下次跑 RL 时偏好专家偏好的特征：
 
@@ -413,7 +413,7 @@ print("   核心: 不恢复完整奖励, 只匹配特征期望 -> 任何线性�
 
 ### 最大熵 IRL(Ziebart et al. 2008)：用熵消歧
 
-特征匹配仍有多解（满足 $\mu_\pi=\mu_E$ 的策略很多）。**MaxEnt IRL（Ziebart, Maas, Bagnell, Degen 2008 [4]）** 加了个 principled 的偏好：在所有能解释专家行为的奖励里，选让专家轨迹**概率最大**、且对未建模因素**最不武断**（最大熵）的那个。<Cite n={4} />形式化地，在奖励 $r_w(s)=w^\top\phi(s)$ 下，用最大熵分布对轨迹建模 $P(\tau\mid w)\propto\exp\bigl(\sum_t\gamma^t r_w(s_t)\bigr)/Z(w)$，然后最大化专家示范轨迹的对数似然：
+特征匹配仍有多解（满足 $\mu_\pi=\mu_E$ 的策略很多）。**MaxEnt IRL（Ziebart, Maas, Bagnell, Degen 2008 [4]）** 加了个 principled 的偏好：在所有能解释专家行为的奖励里，选让专家轨迹**概率最大**、且对未建模因素**最不武断**（最大熵）的那个<Cite n={4} />。形式化地，在奖励 $r_w(s)=w^\top\phi(s)$ 下，用最大熵分布对轨迹建模 $P(\tau\mid w)\propto\exp\bigl(\sum_t\gamma^t r_w(s_t)\bigr)/Z(w)$，然后最大化专家示范轨迹的对数似然：
 
 $$
 \max_{w}\;\sum_{\tau\in\mathcal D_E}\log P(\tau\mid w)\;=\;\max_{w}\;\Bigl\{\,\mathbb E_{\tau\sim\pi_E}\Bigl[\sum_t\gamma^t\,w^\top\phi(s_t)\Bigr]\;-\;\log Z(w)\,\Bigr\}
@@ -423,7 +423,7 @@ $$
 
 ### $\log Z(w)$ 的真身：它就是 soft value（RL-as-inference 视角）
 
-上面把 $\log Z(w)$ 仅当成「昂贵的归一化常数」，但 Levine 的 **control-as-inference**（又称 RL-as-inference）视角 [5] 揭示了一个深刻的等价：**$\log Z(w)$ 本身就是初始状态的 soft value $V(s_1)$**。<Cite n={5} />这一视角把 MaxEnt IRL、最大熵 RL、乃至现代的 SAC 全部统一在同一套 soft Bellman 方程下。
+上面把 $\log Z(w)$ 仅当成「昂贵的归一化常数」，但 Levine 的 **control-as-inference**（又称 RL-as-inference）视角 [5] 揭示了一个深刻的等价：**$\log Z(w)$ 本身就是初始状态的 soft value $V(s_1)$**<Cite n={5} />。这一视角把 MaxEnt IRL、最大熵 RL、乃至现代的 SAC 全部统一在同一套 soft Bellman 方程下。
 
 **核心等式**（Ziebart [4] 的配分函数 ↔ Levine [5] 的 soft value）：
 
@@ -565,7 +565,7 @@ print("    MaxEnt IRL 用它反推 w, SAC 用它学 Q + 最大熵策略.")
 
 ## GAIL：把模仿学习映射到 GAN
 
-**GAIL（Generative Adversarial Imitation Learning, Ho & Ermon 2016 [6]）** 带来范式转换：**别再显式恢复奖励了**。<Cite n={6} />它的洞见是 IRL+RL 两阶段流水线在数学上**等价于一个 GAN（生成对抗网络）**，可以把奖励「隐式」地藏进一个判别器里，一步学完。
+**GAIL（Generative Adversarial Imitation Learning, Ho & Ermon 2016 [6]）** 带来范式转换：**别再显式恢复奖励了**<Cite n={6} />。它的洞见是 IRL+RL 两阶段流水线在数学上**等价于一个 GAN（生成对抗网络）**，可以把奖励「隐式」地藏进一个判别器里，一步学完。
 
 ### IRL ↔ GAN 的同构
 
@@ -602,7 +602,7 @@ $$
 
 它度量策略 $\pi$ 在稳态运行时实际访问每个 $(s,a)$ 的折扣频率。**两个策略产生相同的专家行为，当且仅当它们的占用度量相等**——于是「模仿专家」可以严格写成「把 $\rho_\pi$ 拉向 $\rho_{\pi_E}$」的分布匹配问题。
 
-**命题 3.2（核心定理）**[6]:<Cite n={6} />
+**命题 3.2（核心定理）**[6]<Cite n={6} />:
 
 $$
 \mathrm{RL}\circ\mathrm{IRL}_\psi(\pi_E) \;=\; \operatorname*{arg\,min}_{\pi\in\Pi}\;-\,H(\pi)\;+\;\psi^*\!\big(\rho_\pi-\rho_{\pi_E}\big)
@@ -616,7 +616,7 @@ $$
 \psi_\text{GA}^*\!\big(\rho_\pi-\rho_{\pi_E}\big) \;=\; \max_{D\in(0,1)}\;\mathbb E_\pi\!\big[\log D(s,a)\big] + \mathbb E_{\pi_E}\!\big[\log(1-D(s,a))\big]
 $$
 
-右边正是 GAN 判别器的对数损失，它在**常数意义上等于** $\rho_\pi$ 与 $\rho_{\pi_E}$ 的 Jensen-Shannon 散度 $D_\text{JS}(\rho_\pi,\rho_{\pi_E})$。<Cite n={6} />于是 GAIL 的最终目标（原文 Eq. 15）可写成：
+右边正是 GAN 判别器的对数损失，它在**常数意义上等于** $\rho_\pi$ 与 $\rho_{\pi_E}$ 的 Jensen-Shannon 散度 $D_\text{JS}(\rho_\pi,\rho_{\pi_E})$<Cite n={6} />。于是 GAIL 的最终目标（原文 Eq. 15）可写成：
 
 $$
 \operatorname*{minimize}_\pi\;D_\text{JS}\!\big(\rho_\pi,\rho_{\pi_E}\big) \;-\; \lambda\,H(\pi)
@@ -786,7 +786,7 @@ GAIL 把模仿学习映射到 GAN，解决了「不恢复显式奖励」的问�
 
 ### SQIL：把模仿学习变成「奖励=1 vs 0」的软 Q 学习
 
-**核心想法**（Reddy, Dragan, Levine, 2019）[7]：与其像 GAIL 那样学一个复杂的判别器当隐式奖励，不如给一个**最朴素的二值奖励**——专家示范的 $(s,a)$ 给奖励 $1$，智能体自己采样的 $(s,a)$ 给奖励 $0$，然后跑标准 soft Q-learning。<Cite n={7} />这把模仿学习**规约成 RL**：无需判别器、无需对抗优化、无需嵌套 IRL，直接套用现成的 Q-learning/SAC 实现。
+**核心想法**（Reddy, Dragan, Levine, 2019）[7]：与其像 GAIL 那样学一个复杂的判别器当隐式奖励，不如给一个**最朴素的二值奖励**——专家示范的 $(s,a)$ 给奖励 $1$，智能体自己采样的 $(s,a)$ 给奖励 $0$，然后跑标准 soft Q-learning<Cite n={7} />。这把模仿学习**规约成 RL**：无需判别器、无需对抗优化、无需嵌套 IRL，直接套用现成的 Q-learning/SAC 实现。
 
 - **奖励设计**：对专家数据集 $\mathcal D_E$ 里的转移 $(s,a,r,s')$ 标 $r=1$,对智能体在线交互收集的 $\mathcal D_L$ 里同样的转移格式标 $r=0$;两个池混合成训练集.
 - **soft Q-learning 更新**：$Q(s,a)\leftarrow r+\gamma\,\mathbb E_{s'}\!\big[\log\sum_{a'}\exp Q(s',a')\big]$,即标准 soft Bellman 备份（与 [SAC](/tutorials/continuous-control) 的最大熵目标同源）.
@@ -846,13 +846,13 @@ print("            且因 softmax 保留多模态(不像 MSE 回归会平均), �
 
 ### Diffusion Policy：用扩散模型建模多模态动作分布
 
-**核心想法**（Chi et al., RSS 2023）[8]：BC 的失败不只是协变量偏移——当专家数据本身是**多模态**的（比如「向左绕障」和「向右绕障」两种策略都合理），用 MSE 回归动作的 BC 会把两个模式**平均**成一个都不对的中间动作（模式平均，mode averaging）。<Cite n={8} />GAIL 的判别器虽能隐式处理多模态，但对抗训练不稳。**Diffusion Policy** 用去噪扩散模型（denoising diffusion）直接建模动作序列的条件分布 $p(\mathbf a_{t:t+H}\mid \mathbf o_t)$，天然支持多模态，且训练是稳定的去噪 MSE（非对抗）。
+**核心想法**（Chi et al., RSS 2023）[8]：BC 的失败不只是协变量偏移——当专家数据本身是**多模态**的（比如「向左绕障」和「向右绕障」两种策略都合理），用 MSE 回归动作的 BC 会把两个模式**平均**成一个都不对的中间动作（模式平均，mode averaging）<Cite n={8} />。GAIL 的判别器虽能隐式处理多模态，但对抗训练不稳。**Diffusion Policy** 用去噪扩散模型（denoising diffusion）直接建模动作序列的条件分布 $p(\mathbf a_{t:t+H}\mid \mathbf o_t)$，天然支持多模态，且训练是稳定的去噪 MSE（非对抗）。
 
 - **扩散模型回顾**：生成模型,前向过程逐步给数据加高斯噪声 $\mathbf x_T\sim\mathcal N(0,I)$,反向过程学一个网络 $\epsilon_\theta(\mathbf x_k,k,\mathbf c)$ 从噪声里逐步去噪还原数据;条件生成时把观测 $\mathbf c$ 注入网络.训练目标是去噪 MSE $\mathbb E\|\epsilon-\epsilon_\theta(\mathbf x_k,k,\mathbf c)\|^2$,稳定且无对抗.
 - **用到模仿学习**：把「动作序列 $\mathbf a_{t:t+H}$」当扩散对象,「观测 $\mathbf o_t$」当条件.训练时从专家轨迹采样 $(\mathbf o_t,\mathbf a_{t:t+H})$,对动作序列加噪、让网络学去噪;部署时从纯噪声出发、以观测为条件逐步去噪生成一段动作序列.
 - **为什么能处理多模态**：扩散模型学的是**分布** $p(\mathbf a\mid\mathbf o)$ 而非点估计.若数据里「左绕」和「右绕」都出现,反向扩散在两个模式间保留概率质量（从一个噪声样本出发的去噪轨迹会随机落到其中一个模式）,不会像 MSE 那样平均.这是相对 BC/MSE 回归的根本优势.
 - **receding horizon 控制**：每次生成 $H$ 步动作序列,只执行前几步,然后重新观测、重新生成——滚动时域,既利用序列内一致性（避免单步动作的抖动）,又能在新观测到来时及时修正（缓解协变量偏移的累积）.
-- **实测**：Chi et al. 在 12 个任务上相比 BC 平均提升 46.9%,在 PushT（方块推孔）等强多模态任务上把成功率从 BC 的 ~60% 提到 >95%.<Cite n={8} />
+- **实测**：Chi et al. 在 12 个任务上相比 BC 平均提升 46.9%,在 PushT（方块推孔）等强多模态任务上把成功率从 BC 的 ~60% 提到 >95%<Cite n={8} />.
 
 下面这个玩具对比 MSE 回归（模式平均）与「从分布采样」（保留多模态）在双模态数据上的表现。
 

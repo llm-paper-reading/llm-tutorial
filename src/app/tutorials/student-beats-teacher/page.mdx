@@ -27,7 +27,7 @@ export const metadata = tutorialMetadata("student-beats-teacher");
 - **数据完全相同**——排除「student 见得更多」的干扰；
 - 唯一区别：student 的损失里混入了 teacher 的软输出。
 
-在这个设定下，student 赢了 teacher，而且**可以迭代**：teacher → BAN-1 → BAN-2 → BAN-3，每一代用上一代当老师。CIFAR-100 上 DenseNet-80-80 的测试误差逐代下降到 15.50%（当时同规模最优），但看曲线的形状：<Cite n={1} />
+在这个设定下，student 赢了 teacher，而且**可以迭代**：teacher → BAN-1 → BAN-2 → BAN-3，每一代用上一代当老师。CIFAR-100 上 DenseNet-80-80 的测试误差逐代下降到 15.50%（当时同规模最优），但看曲线的形状<Cite n={1} />：
 
 <BornAgainCurve />
 
@@ -35,7 +35,7 @@ export const metadata = tutorialMetadata("student-beats-teacher");
 
 1. **第一代增益最大**（约 0.9–1.6 个百分点），之后逐代递减、最终饱和甚至回升——「有限度的正则化」的签名：如果蒸馏真在搬运「知识」，同架构同数据下没有新知识可搬，增益应该为零；如果它是纯粹的正则化，那正则化也有吃满的一天。
 2. **多代集成（BANE，平均各代预测）持续增益**且始终更低——集成才是可累积的部分，呼应 [集成学习](/tutorials/ensemble-learning) 篇的方差分解。
-3. CIFAR-10 上有反例（Wide-ResNet-28-10 蒸馏后 3.77 → 3.86 变差）：**超越 teacher 是统计趋势，不是定律**——teacher 已充分正则化时，红利就没了。<Cite n={1} />
+3. CIFAR-10 上有反例（Wide-ResNet-28-10 蒸馏后 3.77 → 3.86 变差）：**超越 teacher 是统计趋势，不是定律**——teacher 已充分正则化时，红利就没了<Cite n={1} />。
 
 ### 反直觉实验一：DKPP——把「暗知识」打乱，增益不掉
 
@@ -46,7 +46,7 @@ export const metadata = tutorialMetadata("student-beats-teacher");
 
 另一个消融 **CWTM**(Confidence-Weighted by Teacher Max)：完全丢掉概率分布，只用 teacher 的最大置信度 $p^*$ 加权标签损失——4 个模型中 3 个仍优于 teacher。
 
-**结论**：类间相似度（dark knowledge 的经典定义）对「超越 teacher」**不是必需品**。增益另有来源——输出分布中**对排列不变的高阶结构 + 置信度隐式重加权**。Hinton 的叙事只讲对了一半。<Cite n={[1,2]} />
+**结论**：类间相似度（dark knowledge 的经典定义）对「超越 teacher」**不是必需品**。增益另有来源——输出分布中**对排列不变的高阶结构 + 置信度隐式重加权**。Hinton 的叙事只讲对了一半<Cite n={[1,2]} />。
 
 ### 隐式样本重加权：增益的第一个来源
 
@@ -60,7 +60,7 @@ $$
 
 <ConfidenceReweightViz />
 
-teacher 不确定的样本（难样本、疑似错标、噪声）梯度被自动压低；teacher 自信的样本正常学。这就是 CWTM 单独就能涨点的原因——**蒸馏天然是一台按 teacher 置信度加权的样本过滤器**。<Cite n={1} />
+teacher 不确定的样本（难样本、疑似错标、噪声）梯度被自动压低；teacher 自信的样本正常学。这就是 CWTM 单独就能涨点的原因——**蒸馏天然是一台按 teacher 置信度加权的样本过滤器**<Cite n={1} />。
 
 ---
 
@@ -68,8 +68,8 @@ teacher 不确定的样本（难样本、疑似错标、噪声）梯度被自动
 
 再进一步：**连 teacher 都不要了**。
 
-- **Be Your Own Teacher**(Zhang et al.，CVPR 2019，[arXiv:1905.08094](https://arxiv.org/abs/1905.08094))：把一个网络按深度分段，深层输出作为浅层的软目标（深层监督浅层），一个网络同时当 teacher 和 student。平均精度 +2.65%（ResNeXt +0.61% 至 VGG19 +4.07%）。<Cite n={4} />
-- **Deep Mutual Learning**(Zhang, Xiang, Hospedales, Lu,CVPR 2018，[arXiv:1706.00384](https://arxiv.org/abs/1706.00384))：两个网络**互为老师**，各自以对方预测为软目标（$\mathcal{L}_{\Theta_1} = \mathcal{L}_{C_1} + D_{KL}(p_2 \parallel p_1)$）。CIFAR-100 上两个 MobileNet 互学到 76.21%，而用其中一个当**静态** teacher 蒸馏另一个（Market-1501）只得 45.16 mAP——**比独立训练（46.07）还差**。互学时高熵的软目标（平均熵 1.71 vs 独立训练 0.26）引导学生收敛到更平坦的极小值。<Cite n={3} />
+- **Be Your Own Teacher**(Zhang et al.，CVPR 2019，[arXiv:1905.08094](https://arxiv.org/abs/1905.08094))：把一个网络按深度分段，深层输出作为浅层的软目标（深层监督浅层），一个网络同时当 teacher 和 student。平均精度 +2.65%（ResNeXt +0.61% 至 VGG19 +4.07%）<Cite n={4} />。
+- **Deep Mutual Learning**(Zhang, Xiang, Hospedales, Lu,CVPR 2018，[arXiv:1706.00384](https://arxiv.org/abs/1706.00384))：两个网络**互为老师**，各自以对方预测为软目标（$\mathcal{L}_{\Theta_1} = \mathcal{L}_{C_1} + D_{KL}(p_2 \parallel p_1)$）。CIFAR-100 上两个 MobileNet 互学到 76.21%，而用其中一个当**静态** teacher 蒸馏另一个（Market-1501）只得 45.16 mAP——**比独立训练（46.07）还差**。互学时高熵的软目标（平均熵 1.71 vs 独立训练 0.26）引导学生收敛到更平坦的极小值<Cite n={3} />。
 
 如果蒸馏是「知识搬运」，自蒸馏就是**从自己搬给自己**——零信息增量，却涨点。这说明增益必然来自**训练目标本身的性质**，而不是搬运的内容。
 
@@ -82,7 +82,7 @@ f^{(0)} = \arg\min_f \sum_i (f(x_i) - y_i)^2 + \lambda \|f\|^2, \qquad
 f^{(t)} = \arg\min_f \sum_i (f(x_i) - f^{(t-1)}(x_i))^2 + \lambda \|f\|^2
 $$
 
-核心定理：自蒸馏迭代**逐步限制解可用的基函数数量**——等效于逐轮收紧 ℓ2 正则化，像对拟合问题做**谱截断**：砍掉最容易过拟合的高频成分。<Cite n={5} />
+核心定理：自蒸馏迭代**逐步限制解可用的基函数数量**——等效于逐轮收紧 ℓ2 正则化，像对拟合问题做**谱截断**：砍掉最容易过拟合的高频成分<Cite n={5} />。
 
 - **少轮**：减过拟合,student 赢 teacher;
 - **多轮**：欠拟合,性能反降.
@@ -95,7 +95,7 @@ $$
 
 1. 仅随机种子不同的同构网络，**集成可证明提升测试精度**（各网络覆盖不同视图）；
 2. 单模型拟合 ensemble 输出（而非真实标签）即可**继承这种提升**——dark knowledge 确实藏在 ensemble 输出里；
-3. **自蒸馏 = 隐式结合 ensemble 与蒸馏**——一轮自蒸馏 ≈ 用一个隐式 ensemble 的输出再训练。<Cite n={6} />
+3. **自蒸馏 = 隐式结合 ensemble 与蒸馏**——一轮自蒸馏 ≈ 用一个隐式 ensemble 的输出再训练<Cite n={6} />。
 
 两个理论互补：Mobahi 说「截断过拟合成分」，Allen-Zhu & Li 说「平均出更好的目标」。真实深度网络里两个效应都存在。
 
@@ -113,7 +113,7 @@ $$
 
 **但对蒸馏是灾难**。MNIST 上：dropout teacher 蒸出的 student 错误率 0.74%；而**更准的** LS teacher（自身错误率 0.59%）蒸出的 student 反而 0.91%。teacher 更准 ≠ 蒸馏更好。
 
-**机制**：LS 迫使每个样本到**所有**错误类模板**等距**——可视化显示相似类的簇被压成极紧的球、类间连续渐变消失，互信息只剩约 $\log 2$（除「属于哪类」这一比特外，输入信息全被丢弃）。**label smoothing 定向销毁了蒸馏所需的类间结构**。<Cite n={7} />
+**机制**：LS 迫使每个样本到**所有**错误类模板**等距**——可视化显示相似类的簇被压成极紧的球、类间连续渐变消失，互信息只剩约 $\log 2$（除「属于哪类」这一比特外，输入信息全被丢弃）。**label smoothing 定向销毁了蒸馏所需的类间结构**<Cite n={7} />。
 
 把 BAN 的 DKPP 和这里的 LS 对比着看，才能看清「蒸馏增益」的真实成分：
 
@@ -122,7 +122,7 @@ $$
 | DKPP（打乱非 argmax 维） | ❌ 破坏 | ✅ 保留 | **不掉** |
 | LS teacher | ❌ 销毁 + 改变簇几何 | ❌ 压平（全部趋同） | **大跌** |
 
-结论：「label smoothing 式正则化」和「类间相似度信息」是**两种可分离的成分**——Tang et al.（[arXiv:2002.03532](https://arxiv.org/abs/2002.03532)）把它们加上「样本重加权」系统分解为 universe/domain/instance 三层知识。蒸馏的收益是这三层的组合，而不是单一的「暗知识」。<Cite n={8} />
+结论：「label smoothing 式正则化」和「类间相似度信息」是**两种可分离的成分**——Tang et al.（[arXiv:2002.03532](https://arxiv.org/abs/2002.03532)）把它们加上「样本重加权」系统分解为 universe/domain/instance 三层知识。蒸馏的收益是这三层的组合，而不是单一的「暗知识」<Cite n={8} />。
 
 ---
 
@@ -136,7 +136,7 @@ $$
 
 于是得到本篇最重要的结论：
 
-> **自蒸馏中 student 超越 teacher，恰恰是因为 student 没能匹配 teacher。** 增益来自正则化/优化效应，而非知识转移。最佳泛化增强与最佳保真度增强**不一致**——但最高保真度的 student 总是**校准最好**的。<Cite n={9} />
+> **自蒸馏中 student 超越 teacher，恰恰是因为 student 没能匹配 teacher。** 增益来自正则化/优化效应，而非知识转移。最佳泛化增强与最佳保真度增强**不一致**——但最高保真度的 student 总是**校准最好**的<Cite n={9} />。
 
 蒸馏「有效」的很大一部分真相是：**逼 student 去解一个极难的优化问题，这件事本身就是正则化**。
 
@@ -154,7 +154,7 @@ $$
 
 - **naive 微调下，强学生普遍超越弱老师**（PGR 几乎全为正）——学生的预训练先验自带泛化能力，弱标签只是个「锚」；
 - **失败模式是 bias amplification**：学生模仿并**放大**弱老师的系统性错误.NLP 任务能恢复约 50% 差距,ChatGPT reward modeling 上 PGR 几乎不超 20%;
-- **辅助 confidence loss** 让学生用自己的置信度给弱标签「纠偏」，恢复比例推到约 80%。<Cite n={10} />
+- **辅助 confidence loss** 让学生用自己的置信度给弱标签「纠偏」，恢复比例推到约 80%<Cite n={10} />。
 
 ### 理论：增益 = misfit
 
@@ -164,7 +164,7 @@ $$
 \text{强误差} \le \text{弱误差} - \text{misfit}
 $$
 
-misfit 是**学生对弱标签的拟合误差**——学生「学不动」老师错误的程度。翻译：**学生越是拟合不了老师的错误，越能超越老师**。这从数学上解释了 W2S 何时成立：任务特征在学生预训练中显著、老师的错误与学生先验冲突时，增益最大。它还给出了**挑弱老师**的准则：选 misfit 大的。<Cite n={11} />
+misfit 是**学生对弱标签的拟合误差**——学生「学不动」老师错误的程度。翻译：**学生越是拟合不了老师的错误，越能超越老师**。这从数学上解释了 W2S 何时成立：任务特征在学生预训练中显著、老师的错误与学生先验冲突时，增益最大。它还给出了**挑弱老师**的准则：选 misfit 大的<Cite n={11} />。
 
 ### W2S in Reasoning：两阶段方案
 
@@ -173,14 +173,14 @@ misfit 是**学生对弱标签的拟合误差**——学生「学不动」老师
 1. **精选 SFT**：只在弱师生成的数据中挑小规模高质量 CoT 做 SFT（不是全量喂）；
 2. **偏好优化**：学生用**自身置信度**自选正误样本做对比学习（ORPO）——**从错误中学习，而非模仿错误**.
 
-效果：Gemma-2b 监督 Llama2-70b,GSM8K 比全量弱微调高 26.99 分，偏好优化再 +8.49；MATH 难度 4–5 级上**超过强上限**（gold SFT）。<Cite n={12} />
+效果：Gemma-2b 监督 Llama2-70b,GSM8K 比全量弱微调高 26.99 分，偏好优化再 +8.49；MATH 难度 4–5 级上**超过强上限**（gold SFT）<Cite n={12} />。
 
 ### 工业证据：小模型超越「老师」已是常态
 
-- **Qwen3**([arXiv:2505.09388](https://arxiv.org/abs/2505.09388))：小模型走 strong-to-weak 蒸馏——off-policy 蒸馏 + **on-policy logit 对齐**（KL 到 Qwen3-32B/235B）。Table 21：Qwen3-8B off-policy 蒸馏 AIME'24 55.0 → on-policy 蒸馏 **74.4**（1800 GPU 时），比「蒸馏+RL」（67.6,17920 GPU 时）又好又省；<Cite n={13} />
-- **DeepSeek-R1**([arXiv:2501.12948](https://arxiv.org/abs/2501.12948))：80 万样本蒸馏到 Qwen2.5/Llama(1.5B–70B)，R1-Distill 系列的 1.5B 在数学上超过 GPT-4o 级非推理基线；<Cite n={14} />
+- **Qwen3**([arXiv:2505.09388](https://arxiv.org/abs/2505.09388))：小模型走 strong-to-weak 蒸馏——off-policy 蒸馏 + **on-policy logit 对齐**（KL 到 Qwen3-32B/235B）。Table 21：Qwen3-8B off-policy 蒸馏 AIME'24 55.0 → on-policy 蒸馏 **74.4**（1800 GPU 时），比「蒸馏+RL」（67.6,17920 GPU 时）又好又省<Cite n={13} />；
+- **DeepSeek-R1**([arXiv:2501.12948](https://arxiv.org/abs/2501.12948))：80 万样本蒸馏到 Qwen2.5/Llama(1.5B–70B)，R1-Distill 系列的 1.5B 在数学上超过 GPT-4o 级非推理基线<Cite n={14} />；
 - **Phi-4**([arXiv:2412.08905](https://arxiv.org/abs/2412.08905))：14B 模型凭合成数据 + 后训练，在 STEM QA 上「substantially surpasses its teacher (GPT-4)」；
-- **On-Policy Distillation**(Thinking Machines Lab,2025，[blog](https://thinkingmachines.ai/blog/on-policy-distillation/))：学生 rollout、teacher 逐 token 反向 KL 打分，Qwen3-8B-Base 的 AIME'24 从 SFT 的 60% 提到 70%，约 150 步、比 SFT 便宜 9–30×（详见[在线蒸馏](/tutorials/on-policy-distillation)篇）。<Cite n={15} />
+- **On-Policy Distillation**(Thinking Machines Lab,2025，[blog](https://thinkingmachines.ai/blog/on-policy-distillation/))：学生 rollout、teacher 逐 token 反向 KL 打分，Qwen3-8B-Base 的 AIME'24 从 SFT 的 60% 提到 70%，约 150 步、比 SFT 便宜 9–30×（详见[在线蒸馏](/tutorials/on-policy-distillation)篇）<Cite n={15} />。
 
 注意这些案例的共同结构：**蒸馏 + 学生自己的东西**（自身置信度、自身 rollout、自身先验）。纯模仿不行，模仿打底 + 学生超越才是模式。
 
@@ -190,8 +190,8 @@ misfit 是**学生对弱标签的拟合误差**——学生「学不动」老师
 
 最朴素的一条：student 的训练条件**优于** teacher 当年。
 
-- **Ba & Caruana 2014**(**Do Deep Nets Really Need to Be Deep?**，[arXiv:1312.6184](https://arxiv.org/abs/1312.6184))：蒸馏的先声——把 ensemble 蒸进单模型，浅层 student 匹配深层 ensemble;<Cite n={17} />
-- **蒸馏 scaling laws**(Busbridge et al.，Apple,2025，[arXiv:2412.13198](https://arxiv.org/abs/2412.13198))：给定算力预算，**student 数据量比 teacher 精度更重要**——student 看的数据可以远超 teacher 训练时的量，此时 student 超越 teacher 是配置问题，不是机制问题；<Cite n={16} />
+- **Ba & Caruana 2014**(**Do Deep Nets Really Need to Be Deep?**，[arXiv:1312.6184](https://arxiv.org/abs/1312.6184))：蒸馏的先声——把 ensemble 蒸进单模型，浅层 student 匹配深层 ensemble<Cite n={17} />;
+- **蒸馏 scaling laws**(Busbridge et al.，Apple,2025，[arXiv:2412.13198](https://arxiv.org/abs/2412.13198))：给定算力预算，**student 数据量比 teacher 精度更重要**——student 看的数据可以远超 teacher 训练时的量，此时 student 超越 teacher 是配置问题，不是机制问题<Cite n={16} />；
 - **合成数据**：Phi 系列（「Textbooks Are All You Need」）证明 student 在 teacher 生成的海量精选数据上训练,可超越 teacher 同尺寸版本——「教材」比「老师本人」更值钱.
 
 ---

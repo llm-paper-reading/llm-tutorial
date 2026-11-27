@@ -7,7 +7,7 @@ export const metadata = paperMetadata(paper);
 
 # FlashAttention：IO 感知的精确注意力
 
-2022 年 5 月，Stanford 的 Tri Dao 等人发布 FlashAttention<Cite n={1} />——一篇不改注意力数学、只重组计算顺序的系统论文，后来成为现代 LLM 栈事实上的默认注意力实现。它回答了一个被近似注意力研究长期忽视的问题：<Cite n={1} />**GPU 上的注意力为什么慢**？答案不在 FLOPs，而在 IO：标准实现把 $N \times N$ 的中间矩阵写进显存（HBM）再读回来，而 HBM 带宽只有片上 SRAM 的约 1/10。FlashAttention 用 tiling + 在线 softmax + 反向重算三个手段，把 HBM 访问从 $\Theta(Nd + N^2)$ 压到 $\Theta(N^2d^2M^{-1})$，注意力部分最高提速 **7.6×**，内存随序列长度**线性**增长——并顺手证明了这是精确注意力的 IO 下界。
+2022 年 5 月，Stanford 的 Tri Dao 等人发布 FlashAttention<Cite n={1} />——一篇不改注意力数学、只重组计算顺序的系统论文，后来成为现代 LLM 栈事实上的默认注意力实现。它回答了一个被近似注意力研究长期忽视的问题<Cite n={1} />：**GPU 上的注意力为什么慢**？答案不在 FLOPs，而在 IO：标准实现把 $N \times N$ 的中间矩阵写进显存（HBM）再读回来，而 HBM 带宽只有片上 SRAM 的约 1/10。FlashAttention 用 tiling + 在线 softmax + 反向重算三个手段，把 HBM 访问从 $\Theta(Nd + N^2)$ 压到 $\Theta(N^2d^2M^{-1})$，注意力部分最高提速 **7.6×**，内存随序列长度**线性**增长——并顺手证明了这是精确注意力的 IO 下界。
 
 > 📌 前置：建议先读 [Attention Is All You Need](/papers/attention-transformer)（注意力公式本体）；GQA / KV cache 的背景见 [Qwen2](/papers/qwen2) 与 [vLLM](/papers/vllm)；站内 [Llama 3](/papers/llama3) 的训练效率部分直接建立在它之上。
 

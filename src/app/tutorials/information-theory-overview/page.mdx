@@ -6,7 +6,7 @@ export const metadata = tutorialMetadata("information-theory-overview");
 
 信息论这组教程的目标不是把香农理论完整讲完，而是把机器学习里最常用的一条链路打通：**不确定性怎么量化、错误分布要付多少代价、为什么交叉熵就是训练分类器和语言模型的损失、KL 的方向为什么会改变模型行为。**
 
-香农把信息量和熵形式化为通信系统中的不确定性度量；Cover 与 Thomas 的教材则系统整理了熵、相对熵（KL 散度）、互信息等核心概念。<Cite n={[1,2]} /> 机器学习里，它们几乎无处不在：分类损失、语言模型 NLL、变分推断、RLHF 的 KL 约束、知识蒸馏的 teacher-student 匹配，背后都在操作概率分布。
+香农把信息量和熵形式化为通信系统中的不确定性度量；Cover 与 Thomas 的教材则系统整理了熵、相对熵（KL 散度）、互信息等核心概念<Cite n={[1,2]} />。 机器学习里，它们几乎无处不在：分类损失、语言模型 NLL、变分推断、RLHF 的 KL 约束、知识蒸馏的 teacher-student 匹配，背后都在操作概率分布。
 
 <figure className="my-6">
   <img src="/tutorials/information-theory-overview/information-theory-map.svg" alt="信息论学习路径图：从自信息和熵开始，进入交叉熵与 KL 散度，再解释 one-hot 标签下交叉熵、KL 与 NLL 的恒等关系，最后比较前向 KL 与反向 KL，并落到分类和语言模型损失" className="mx-auto h-auto max-w-full rounded-lg border border-zinc-200 shadow-sm dark:border-zinc-800" />
@@ -53,7 +53,7 @@ $$
 -\log p_\theta(y_t\mid y_{<t})
 $$
 
-整段文本的损失是所有 token NLL 的平均，困惑度（perplexity）则是平均 NLL 的指数。也就是说，语言模型的预训练目标本质上就是“在每个位置做一个超大词表分类”，损失就是交叉熵 / NLL。<Cite n={3} />
+整段文本的损失是所有 token NLL 的平均，困惑度（perplexity）则是平均 NLL 的指数。也就是说，语言模型的预训练目标本质上就是“在每个位置做一个超大词表分类”，损失就是交叉熵 / NLL<Cite n={3} />。
 
 这也是信息论系列和后面内容的连接点：
 

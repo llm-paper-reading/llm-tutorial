@@ -6,15 +6,15 @@ export const metadata = tutorialMetadata("hierarchical-rl");
 
 前面所有方法——[DQN](/tutorials/dqn) 的 1-step 贝尔曼、[策略梯度](/tutorials/policy-gradient) 的逐时刻更新、[model-based RL](/tutorials/model-based-rl) 的 n 步规划——都默认一个时间尺度：**智能体每个时刻做一个决策**。这在网格世界里没问题，可现实任务的时间跨度极大：机器人「去厨房把杯子拿来」要跨几百个低层电机指令，星际争霸要跨上万帧。如果每个时刻都从头做一次贝尔曼备份或策略梯度，奖励信号从终点逐时刻反传到起点，在路上就被折扣因子 $\gamma$ 衰减殆尽——这是 **长程信用分配（credit assignment）** 的根本痛点。
 
-**分层强化学习（Hierarchical RL, HRL）** 的核心思路是**时间抽象**：把「去厨房」「开门」「抓杯子」这种跨多步的子目标打包成一个**时间上延伸的动作**，在上面学一套高层策略，低层再去执行。<Cite n={1} />这样高层每决策一次就跨越了很多个低层时刻，奖励不必逐格传递——**有效视野（effective horizon）被缩短了**。
+**分层强化学习（Hierarchical RL, HRL）** 的核心思路是**时间抽象**：把「去厨房」「开门」「抓杯子」这种跨多步的子目标打包成一个**时间上延伸的动作**，在上面学一套高层策略，低层再去执行<Cite n={1} />。这样高层每决策一次就跨越了很多个低层时刻，奖励不必逐格传递——**有效视野（effective horizon）被缩短了**。
 
-HRL 的形式化地基是 Sutton, Precup & Singh （1999） 提出的 **选项框架（options framework）** [1]，它把「时间上延伸的动作」严格定义为一个三元组，并把 MDP 升级为**半马尔可夫决策过程（Semi-MDP, SMDP）**。<Cite n={1} />本篇就围绕这条主线展开：选项 → SMDP 贝尔曼 → 四大经典框架 → 端到端学习选项 → 选项发现。
+HRL 的形式化地基是 Sutton, Precup & Singh （1999） 提出的 **选项框架（options framework）** [1]，它把「时间上延伸的动作」严格定义为一个三元组，并把 MDP 升级为**半马尔可夫决策过程（Semi-MDP, SMDP）**<Cite n={1} />。本篇就围绕这条主线展开：选项 → SMDP 贝尔曼 → 四大经典框架 → 端到端学习选项 → 选项发现。
 
 ## 从原语到选项：把多步打包成一个动作
 
 ### 选项的定义
 
-一个**选项（option）** $o$ 是一个三元组：<Cite n={1} />
+一个**选项（option）** $o$ 是一个三元组<Cite n={1} />：
 
 $$
 o = \langle \mathcal I_o,\ \pi_o,\ \beta_o\rangle
@@ -28,13 +28,13 @@ $$
 
 ### SMDP：动作时长不再固定
 
-普通 MDP 假设每个动作耗时 1 步。<Cite n={2} />但选项一跑就是 $k$ 步，$k$ 是随机的（取决于 $\beta_o$ 在哪触发）。这种「动作时长可变」的过程叫**半马尔可夫决策过程（Semi-MDP, SMDP）**：下一个状态只取决于当前状态与所选选项（马尔可夫性还在），但**转移要附带一个时长 $k$**。
+普通 MDP 假设每个动作耗时 1 步<Cite n={2} />。但选项一跑就是 $k$ 步，$k$ 是随机的（取决于 $\beta_o$ 在哪触发）。这种「动作时长可变」的过程叫**半马尔可夫决策过程（Semi-MDP, SMDP）**：下一个状态只取决于当前状态与所选选项（马尔可夫性还在），但**转移要附带一个时长 $k$**。
 
 > 💡 为什么是「半」马尔可夫？状态转移本身仍是马尔可夫的（只看当前状态 + 选项），但奖励与时长构成一个联合分布，$k$ 是随机变量。决策时刻仍构成马尔可夫链，只是相邻决策时刻之间隔了随机步数。
 
 ### SMDP 贝尔曼方程：用 $\gamma^k$ 替代 $\gamma$
 
-在 SMDP 视角下，选项 $o$ 从 $s$ 出发，跑 $k$ 步累计奖励 $R$，在 $s'$ 终止。其动作-价值函数的贝尔曼方程是 [1,2]:<Cite n={[1,2]} />
+在 SMDP 视角下，选项 $o$ 从 $s$ 出发，跑 $k$ 步累计奖励 $R$，在 $s'$ 终止。其动作-价值函数的贝尔曼方程是 [1,2]<Cite n={[1,2]} />:
 
 $$
 Q(s,o) = \mathbb E\!\left[R + \gamma^{k}\,Q(s',o')\right]
@@ -106,7 +106,7 @@ print(f"更新减少倍数: {up_p/up_o:.1f}x  (同样的最优路径,选项用�
 
 ### MAXQ：任务图分解
 
-**MAXQ**(Dietterich, 2000) [3] 把一个任务递归分解成一张**任务图（task graph）**：根任务是「解决整个 MDP」，子任务是「到达某子目标」，叶节点是原语动作。<Cite n={3} />每个子任务对应一个子策略，价值函数 $Q(i,s)$ 被分解为**完成子任务的期望奖励** $V(i,s)$ + **子任务完成后剩余的奖励** $C(i,s)$：
+**MAXQ**(Dietterich, 2000) [3] 把一个任务递归分解成一张**任务图（task graph）**：根任务是「解决整个 MDP」，子任务是「到达某子目标」，叶节点是原语动作<Cite n={3} />。每个子任务对应一个子策略，价值函数 $Q(i,s)$ 被分解为**完成子任务的期望奖励** $V(i,s)$ + **子任务完成后剩余的奖励** $C(i,s)$：
 
 $$
 Q(i,s) = V(i,s) + C(i,s)
@@ -116,15 +116,15 @@ $$
 
 ### Feudal RL：封建层级
 
-**Feudal RL**(Dayan & Hinton, 1993) [4] 借用封建制度比喻：manager（高层）下达**目标方向**（如「往东」），worker（低层）在原语层执行满足该目标。<Cite n={4} />关键机制是**hindsight（事后）目标转移**：manager 不知道 worker 实际怎么走，但事后看 worker 到达了哪个状态，就把它当作「目标已满足」。这启发了后来的 [HER](/tutorials/dqn)（把失败 episode 的目标重标为实际到达的状态）。
+**Feudal RL**(Dayan & Hinton, 1993) [4] 借用封建制度比喻：manager（高层）下达**目标方向**（如「往东」），worker（低层）在原语层执行满足该目标<Cite n={4} />。关键机制是**hindsight（事后）目标转移**：manager 不知道 worker 实际怎么走，但事后看 worker 到达了哪个状态，就把它当作「目标已满足」。这启发了后来的 [HER](/tutorials/dqn)（把失败 episode 的目标重标为实际到达的状态）。
 
 ### HAM：抽象机器
 
-**HAM**(Hierarchical Abstract Machines, Parr & Russell, 1997) [5] 把策略约束在一个**抽象状态机**里：开发者写一个有限状态机定义「允许的子程序调用顺序」，RL 只在机器留下的自由度上学习。<Cite n={5} />比 MAXQ 更灵活（允许非确定性的机器转移），但仍需人工设计机器结构。
+**HAM**(Hierarchical Abstract Machines, Parr & Russell, 1997) [5] 把策略约束在一个**抽象状态机**里：开发者写一个有限状态机定义「允许的子程序调用顺序」，RL 只在机器留下的自由度上学习<Cite n={5} />。比 MAXQ 更灵活（允许非确定性的机器转移），但仍需人工设计机器结构。
 
 ### FeUdal Networks：可微的 manager-worker
 
-**FeUdal Networks(FuN)**(Vezhnevets et al., 2017) [6] 把 Feudal RL 的思想做成**端到端可微**的神经网络：一个**Manager** 网络在低时间分辨率上输出**潜在目标向量**（latent goal embedding），一个**Worker** 网络在每个时刻把目标向量作为条件、输出原语动作。<Cite n={6} />两者用**不同的时间分辨率**（Manager 每 $k$ 步更新一次，$k$ 常取 10）和**不同的梯度传播路径**（Worker 的目标来自 Manager 的输出但用 directional 预测目标训 Manager）联合训练。FuN 在 Atari 上展现了**长时程信用分配**的能力——Manager 跨越很多帧把奖励传回，远超 1-step 的 $\gamma$ 衰减能覆盖的范围。
+**FeUdal Networks(FuN)**(Vezhnevets et al., 2017) [6] 把 Feudal RL 的思想做成**端到端可微**的神经网络：一个**Manager** 网络在低时间分辨率上输出**潜在目标向量**（latent goal embedding），一个**Worker** 网络在每个时刻把目标向量作为条件、输出原语动作<Cite n={6} />。两者用**不同的时间分辨率**（Manager 每 $k$ 步更新一次，$k$ 常取 10）和**不同的梯度传播路径**（Worker 的目标来自 Manager 的输出但用 directional 预测目标训 Manager）联合训练。FuN 在 Atari 上展现了**长时程信用分配**的能力——Manager 跨越很多帧把奖励传回，远超 1-step 的 $\gamma$ 衰减能覆盖的范围。
 
 FuN 论文 Figure 1 画出了整套架构：感知模块（卷积 + LSTM）产出状态表征，Manager（上）以 $c$ 步为周期输出方向性潜在目标 $g_t$，Worker（下）把 $g_t$ 与状态拼接后每步输出原语动作，方向余弦内在奖励把两层连起来：
 
@@ -138,7 +138,7 @@ FuN 论文 Figure 1 画出了整套架构：感知模块（卷积 + LSTM）产�
 
 #### FuN 的关键设计：方向性目标 + 余弦内在奖励
 
-FuN 有一个容易被忽略却至关重要的设计：**Manager 下达的是「方向」而非「绝对目标状态」**。设 Manager 在时刻 $t$ 输出潜在目标 $g_t\in\mathbb R^d$（一个方向向量，归一化到单位球面），Worker 的内在奖励是它在潜在空间里的实际位移方向与目标方向的**余弦相似度**，在 Manager 的时间窗 $c$ 内平均[6]:<Cite n={6} />
+FuN 有一个容易被忽略却至关重要的设计：**Manager 下达的是「方向」而非「绝对目标状态」**。设 Manager 在时刻 $t$ 输出潜在目标 $g_t\in\mathbb R^d$（一个方向向量，归一化到单位球面），Worker 的内在奖励是它在潜在空间里的实际位移方向与目标方向的**余弦相似度**，在 Manager 的时间窗 $c$ 内平均[6]<Cite n={6} />:
 
 $$
 r^i_t \;=\; \frac{1}{c}\sum_{i=1}^{c} d_{\cos}\!\big(s_t - s_{t-i},\; g_{t-i}\big),\qquad d_{\cos}(u,v)=\frac{u^\top v}{\lVert u\rVert\,\lVert v\rVert}
@@ -154,7 +154,7 @@ $$
 
 ### h-DQN：目标分层
 
-**h-DQN**(Kulkarni et al., 2016) [7] 是另一条端到端路线：一个**meta-controller**（高层）在**目标空间**上选 intrinsic goal，一个**controller**（低层）在**原语动作空间**上选动作去满足该 goal。<Cite n={7} />两层各有自己的 Q 函数：$Q_1(s,g)$（选哪个目标）与 $Q_2(s,a;g)$（给定目标选哪个动作）。meta-controller 每隔若干步（等 controller 完成或超时）更新一次，低层每步更新。**intrinsic reward** 由 meta-controller 发给 controller（达到目标即给正奖励），把外部稀疏奖励分解成内部稠密奖励序列。h-DQN 在 *Montezuma's Revenge* 这种稀疏奖励游戏上展现了分层探索的威力。
+**h-DQN**(Kulkarni et al., 2016) [7] 是另一条端到端路线：一个**meta-controller**（高层）在**目标空间**上选 intrinsic goal，一个**controller**（低层）在**原语动作空间**上选动作去满足该 goal<Cite n={7} />。两层各有自己的 Q 函数：$Q_1(s,g)$（选哪个目标）与 $Q_2(s,a;g)$（给定目标选哪个动作）。meta-controller 每隔若干步（等 controller 完成或超时）更新一次，低层每步更新。**intrinsic reward** 由 meta-controller 发给 controller（达到目标即给正奖励），把外部稀疏奖励分解成内部稠密奖励序列。h-DQN 在 *Montezuma's Revenge* 这种稀疏奖励游戏上展现了分层探索的威力。
 
 下面把 h-DQN 跑在 8×8 稀疏奖励 gridworld 上（起点 （0,0）、终点 G=(7,7)，只有到达 G 才给 +1、每步 −0.01），直观对比「纯 Q-learning vs h-DQN 分层」的早期学习速度，并看 meta-controller 的 $Q_1$ 学到了什么：
 
@@ -333,11 +333,11 @@ print("- h-DQN 真实版: meta/controller 都是 DQN, 在 Montezuma's Revenge �
 
 ## 端到端学习选项：option-critic
 
-前面四大框架里，选项（或子任务）的边界大多是**人工预设**的——MAXQ 的任务图、HAM 的状态机、h-DQN 的目标集合。但理想情况下，**选项本身也该从数据里学出来**。这正是 **option-critic 架构**（Bacon, Harb & Precup, 2017） [8] 解决的问题：它在选项框架内推导出**两条策略梯度定理**——intra-option 策略梯度与终止函数梯度——让选项的内部策略 $\pi_o$、终止函数 $\beta_o$、以及高层策略 over options **端到端联合学习**，无需任何外部奖励或预设子目标。<Cite n={8} />下面把这两条定理完整展开。
+前面四大框架里，选项（或子任务）的边界大多是**人工预设**的——MAXQ 的任务图、HAM 的状态机、h-DQN 的目标集合。但理想情况下，**选项本身也该从数据里学出来**。这正是 **option-critic 架构**（Bacon, Harb & Precup, 2017） [8] 解决的问题：它在选项框架内推导出**两条策略梯度定理**——intra-option 策略梯度与终止函数梯度——让选项的内部策略 $\pi_o$、终止函数 $\beta_o$、以及高层策略 over options **端到端联合学习**，无需任何外部奖励或预设子目标<Cite n={8} />。下面把这两条定理完整展开。
 
 ### 三个价值函数： $Q_U$、$Q_\Omega$、$U$
 
-option-critic 的全部推导围绕三个紧密关联的价值函数（原文记号 [8]）：设当前在状态 $s$、运行选项 $\omega$、<Cite n={8} />
+option-critic 的全部推导围绕三个紧密关联的价值函数（原文记号 [8]）<Cite n={8} />：设当前在状态 $s$、运行选项 $\omega$、
 
 - **选项-动作价值** $Q_U(s,\omega,a)$：在 $s$ 执行动作 $a$（仍在选项 $\omega$ 内）、之后按 $\omega$ 跑到终止的期望回报。它是**最底层的动作价值**，直接被动作梯度使用：
 
@@ -363,7 +363,7 @@ $$
 
 **目标**：对**内部策略参数** $\theta$ 求期望折扣回报 $J(\theta)$ 的梯度。直觉和标准策略梯度定理一样——把「策略稍微变一点会让回报怎么变」表达成「在状态分布上加权的、策略对参数的导数」。
 
-设 $\mu_\Omega(s,\omega\mid s_0,\omega_0)=\sum_{t\ge0}\gamma^t\,P(s_t=s,\omega_t=\omega\mid s_0,\omega_0)$ 是从初始状态-选项对出发的**折扣状态-选项占用**（沿轨迹的折扣访问频次）。Bacon et al. 2017 定理 1 给出 [8]:<Cite n={8} />
+设 $\mu_\Omega(s,\omega\mid s_0,\omega_0)=\sum_{t\ge0}\gamma^t\,P(s_t=s,\omega_t=\omega\mid s_0,\omega_0)$ 是从初始状态-选项对出发的**折扣状态-选项占用**（沿轨迹的折扣访问频次）。Bacon et al. 2017 定理 1 给出 [8]<Cite n={8} />:
 
 $$
 \nabla_\theta J \;=\; \sum_{s,\omega} \mu_\Omega(s,\omega\mid s_0,\omega_0)\, \sum_a \nabla_\theta \pi_{\omega,\theta}(a\mid s)\, Q_U(s,\omega,a)
@@ -381,7 +381,7 @@ $$
 
 **目标**：对**终止函数参数** $\vartheta$ 求回报梯度。这是 option-critic 最关键、也最反直觉的一条——它告诉我们「选项**何时该交还控制权**」也能从回报梯度里学出来。
 
-设 $\mu_\Omega(s',\omega\mid s_1,\omega_0)$ 是从到达状态 $s_1$、选项 $\omega_0$ 出发的折扣占用。Bacon et al. 2017 定理 2 给出 [8]:<Cite n={8} />
+设 $\mu_\Omega(s',\omega\mid s_1,\omega_0)$ 是从到达状态 $s_1$、选项 $\omega_0$ 出发的折扣占用。Bacon et al. 2017 定理 2 给出 [8]<Cite n={8} />:
 
 $$
 \nabla_\vartheta J \;=\; -\sum_{s',\omega} \mu_\Omega(s',\omega\mid s_1,\omega_0)\, \nabla_\vartheta \beta_{\omega,\vartheta}(s')\, \underbrace{\bigl(Q_\Omega(s',\omega) - V_\Omega(s')\bigr)}_{A_\Omega(s',\omega):\ \text{选项优势}}
@@ -411,7 +411,7 @@ $$
 
 ### intra-option Q-learning：critic 怎么估 $Q_U$
 
-两个梯度定理都需要 $Q_U$ 与 $Q_\Omega$ 的估计。option-critic 用一个**intra-option Q-learning** 当 critic——它是普通 Q-learning 在「动作跑在选项内、bootstrap 要考虑终止」时的推广。到达 $s'$、选项 $\omega$ 还在跑时，TD 目标是「继续」与「终止」两分支的 $\beta$ 加权混合 [8]:<Cite n={8} />
+两个梯度定理都需要 $Q_U$ 与 $Q_\Omega$ 的估计。option-critic 用一个**intra-option Q-learning** 当 critic——它是普通 Q-learning 在「动作跑在选项内、bootstrap 要考虑终止」时的推广。到达 $s'$、选项 $\omega$ 还在跑时，TD 目标是「继续」与「终止」两分支的 $\beta$ 加权混合 [8]<Cite n={8} />:
 
 $$
 g^{(1)} \;=\; r + \gamma\Bigl[(1-\beta_{\omega,\vartheta}(s'))\,\underbrace{\sum_a \pi_{\omega,\theta}(a\mid s')\, Q_U(s',\omega,a)}_{\text{继续:按 }\pi_{\omega,\theta}\text{ 走}} \;+\; \beta_{\omega,\vartheta}(s')\,\underbrace{\max_{\omega'} \sum_a \pi_{\omega',\theta}(a\mid s')\, Q_U(s',\omega',a)}_{\text{终止:重选最优选项}}\Bigr]
@@ -564,7 +564,7 @@ print("   三件套共享同一份在线数据同步更新, 终止边界从回�
 
 ### 瓶颈状态 / betweenness
 
-**Simsek, Wolfe & Barto (2005)** [9]：把状态转移图当成图论里的图，找**图论意义上的瓶颈（bottleneck）**——很多短路径都经过的「咽喉」状态。<Cite n={9} />用**介数中心性（betweenness centrality）** 度量：状态 $s$ 的介数
+**Simsek, Wolfe & Barto (2005)** [9]：把状态转移图当成图论里的图，找**图论意义上的瓶颈（bottleneck）**——很多短路径都经过的「咽喉」状态<Cite n={9} />。用**介数中心性（betweenness centrality）** 度量：状态 $s$ 的介数
 
 $$
 C_B(s) \;=\; \sum_{u\neq s\neq v}\frac{\sigma_{uv}(s)}{\sigma_{uv}}
@@ -574,7 +574,7 @@ $$
 
 ### Eigenoptions：从拉普拉斯特征向量找选项
 
-**Machado, Bellemare & Bowling (2017)** [10] 给出一条**谱图论 → 选项**的数学路径：把状态图的**拉普拉斯矩阵（Laplacian）**的特征向量拿来当选项的伪奖励。<Cite n={10} />这条路的每一步都对应一个明确的图论概念，下面完整展开。
+**Machado, Bellemare & Bowling (2017)** [10] 给出一条**谱图论 → 选项**的数学路径：把状态图的**拉普拉斯矩阵（Laplacian）**的特征向量拿来当选项的伪奖励<Cite n={10} />。这条路的每一步都对应一个明确的图论概念，下面完整展开。
 
 #### 第 1 步：从状态图到拉普拉斯矩阵
 
@@ -619,7 +619,7 @@ $$
 
 #### 第 4 步：与 successor representation 的连接
 
-直接对状态转移图建 $L$ 需要知道环境的精确拓扑（无模型设定下未必可得）。Machado et al. 2017 的关键贡献是用 **successor representation(SR)** 替代：SR $M^\pi=\mathbb E[\sum_t\gamma^t\mathbf e_{s_t}\mid s_0]$ 把「从 $s$ 出发未来会访问哪些状态多少次」编码成一个矩阵，可从交互数据在线估计（与 [TD](/tutorials/temporal-difference) 同源的贝尔曼式更新）。**对 SR 的拉普拉斯 $L_{SR}$ 做特征分解**，得到的特征向量与对转移图拉普拉斯做分解高度一致，却完全无模型、可在线学。<Cite n={10} />这条连接让 eigenoptions 从「需要环境模型」变成「从数据里端到端学出」，是它能在深度 RL 里落地的关键。（SR 的更多机制见 [DQN 篇的 UVF/SF 小节](/tutorials/dqn)。）
+直接对状态转移图建 $L$ 需要知道环境的精确拓扑（无模型设定下未必可得）。Machado et al. 2017 的关键贡献是用 **successor representation(SR)** 替代：SR $M^\pi=\mathbb E[\sum_t\gamma^t\mathbf e_{s_t}\mid s_0]$ 把「从 $s$ 出发未来会访问哪些状态多少次」编码成一个矩阵，可从交互数据在线估计（与 [TD](/tutorials/temporal-difference) 同源的贝尔曼式更新）。**对 SR 的拉普拉斯 $L_{SR}$ 做特征分解**，得到的特征向量与对转移图拉普拉斯做分解高度一致，却完全无模型、可在线学<Cite n={10} />。这条连接让 eigenoptions 从「需要环境模型」变成「从数据里端到端学出」，是它能在深度 RL 里落地的关键。（SR 的更多机制见 [DQN 篇的 UVF/SF 小节](/tutorials/dqn)。）
 
 #### 玩具：4 房间网格的 Fiedler 向量
 
@@ -692,7 +692,7 @@ print("   (门道处 v1≈0, 是正负区域的零等值线/截断边界)")
 
 ### DIAYN：无奖励学技能——信息论派的选项发现
 
-瓶颈与 eigenoptions 都从**环境拓扑**找子目标，option-critic 从**任务回报**学选项边界。Eysenbach, Gupta, Ibarz & Levine （2019） 在 *Diversity is All You Need: Learning Skills without a Reward Function* [11] 里提出第三条路——**不从环境也不从回报，而从信息论**：$N$ 个技能 $\pi(a\mid s,z)$（$z$ 是技能标识）应当**彼此可区分**（不同技能访问不同状态），让"看到状态就能猜出是哪个技能走的"。<Cite n={11} />
+瓶颈与 eigenoptions 都从**环境拓扑**找子目标，option-critic 从**任务回报**学选项边界。Eysenbach, Gupta, Ibarz & Levine （2019） 在 *Diversity is All You Need: Learning Skills without a Reward Function* [11] 里提出第三条路——**不从环境也不从回报，而从信息论**：$N$ 个技能 $\pi(a\mid s,z)$（$z$ 是技能标识）应当**彼此可区分**（不同技能访问不同状态），让"看到状态就能猜出是哪个技能走的"<Cite n={11} />。
 
 形式化地，DIAYN 最大化技能 $Z$ 与状态 $S$ 的**互信息**：
 

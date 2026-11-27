@@ -7,23 +7,23 @@ export const metadata = paperMetadata(paper);
 
 # TimeXer：给 Transformer 接上外生变量
 
-很多预测任务真正关心的只是一个目标序列：明天的电价、下周的销量、某地的温度。但只看这条序列的历史往往不够——电价受供需和燃料价格影响，销量受促销和天气影响，温度受气压和风场影响。这些外部因素就是 **外生变量**：它们提供信息，但不需要被预测。<Cite n={1} />
+很多预测任务真正关心的只是一个目标序列：明天的电价、下周的销量、某地的温度。但只看这条序列的历史往往不够——电价受供需和燃料价格影响，销量受促销和天气影响，温度受气压和风场影响。这些外部因素就是 **外生变量**：它们提供信息，但不需要被预测<Cite n={1} />。
 
-现有多变量模型把所有变量平等对待，单变量模型又完全忽略外生信息。TimeXer 走中间路线：**内生变量用 patch 级 token 做精细时序建模，外生变量用 variate 级 token 做粗粒度变量建模，再用一个可学习的全局 token 把两者桥接起来。**<Cite n={1} />它不修改 Transformer 的任何组件，只通过 embedding 和 attention 的组织方式，让外生信息有选择地流入内生 patch。论文在 5 个电价市场和 7 个长程预测数据集上验证了这套设计。<Cite n={1} />
+现有多变量模型把所有变量平等对待，单变量模型又完全忽略外生信息。TimeXer 走中间路线：**内生变量用 patch 级 token 做精细时序建模，外生变量用 variate 级 token 做粗粒度变量建模，再用一个可学习的全局 token 把两者桥接起来。**<Cite n={1} />它不修改 Transformer 的任何组件，只通过 embedding 和 attention 的组织方式，让外生信息有选择地流入内生 patch。论文在 5 个电价市场和 7 个长程预测数据集上验证了这套设计<Cite n={1} />。
 
 > 📌 前置：建议先读 [时序综述与 TSLib](/papers/deep-ts-survey)、[TimesFM](/papers/timesfm) 和 [Time-LLM](/papers/time-llm)。TimeXer 属于“专用小模型”路线：不借 LLM，而是把 Transformer 的 patch/variate 两种粒度用对。
 
 ## 一、动机：内生要预测，外生只提供信息
 
-TimeXer 的问题设定是：给定内生序列 $x_{1:T}$ 和多条外生序列 $z_{1:T_{\text{ex}}}$，预测未来 $S$ 步内生值：<Cite n={1} />
+TimeXer 的问题设定是：给定内生序列 $x_{1:T}$ 和多条外生序列 $z_{1:T_{\text{ex}}}$，预测未来 $S$ 步内生值<Cite n={1} />：
 
 $$
 \hat x_{T+1:T+S}=F_\theta\left(x_{1:T},\,z_{1:T_{\text{ex}}}\right).
 $$
 
-注意外生的 lookback $T_{\text{ex}}$ 不必等于内生的 $T$。这一点很重要：真实场景里外生序列经常缺失、时间错位、频率不同、长度不同，强行对齐会引入额外噪声。<Cite n={1} />
+注意外生的 lookback $T_{\text{ex}}$ 不必等于内生的 $T$。这一点很重要：真实场景里外生序列经常缺失、时间错位、频率不同、长度不同，强行对齐会引入额外噪声<Cite n={1} />。
 
-与三条已有路线相比：<Cite n={1} />
+与三条已有路线相比<Cite n={1} />：
 
 | 范式 | 做法 | 问题 |
 |---|---|---|
@@ -31,7 +31,7 @@ $$
 | 多变量预测 | 所有变量平等输入 | 引入不必要的内生→外生交互，计算量大 |
 | 协变量预测 | 把外生拼到内生特征上 | 通常要求内外生时间对齐，难以处理不规则外生 |
 
-统计方法里的 ARIMAX/SARIMAX、深度模型里的 TFT、NBEATSx、TiDE 都尝试引入协变量，但多数做法仍然把外生特征按时间点拼接，要求内外生对齐；TFT 侧重变量选择，NBEATSx/TiDE 则假设可以访问未来的外生值。<Cite n={[6,7,8]} />TimeXer 的出发点是：**外生变量只需要在变量级别提供信息，不必强行对齐到每个时间点。**
+统计方法里的 ARIMAX/SARIMAX、深度模型里的 TFT、NBEATSx、TiDE 都尝试引入协变量，但多数做法仍然把外生特征按时间点拼接，要求内外生对齐；TFT 侧重变量选择，NBEATSx/TiDE 则假设可以访问未来的外生值<Cite n={[6,7,8]} />。TimeXer 的出发点是：**外生变量只需要在变量级别提供信息，不必强行对齐到每个时间点。**
 
 <figure className="my-6">
   <img src="./fig1-problem.svg" alt="外生变量预测场景：左侧内生变量 x(1) 与多条外生变量 z(1)…z(C) 一起输入 forecaster；中间展示缺失值、频率不匹配、时间错位、长度不一致四类现实问题；右侧为 TimeXer 与基线在五个电价市场上的表现" className="mx-auto h-auto max-w-full rounded-lg border border-zinc-200 shadow-sm dark:border-zinc-800" />
@@ -45,34 +45,34 @@ $$
 
 ### 2.1 内生 embedding：patch + 全局 token
 
-内生序列先切成不重叠的 patch，每个 patch 线性投影成一个 temporal token，并加位置编码：<Cite n={1} />
+内生序列先切成不重叠的 patch，每个 patch 线性投影成一个 temporal token，并加位置编码<Cite n={1} />：
 
 $$
 \{s_1,\dots,s_N\}=\mathrm{Patchify}(x),\qquad
 P_{\text{en}}=\mathrm{PatchEmbed}(s_1,\dots,s_N).
 $$
 
-此外，每个内生变量还有一个可学习的全局 token $G_{\text{en}}$，代表整条序列的宏观信息：<Cite n={1} />
+此外，每个内生变量还有一个可学习的全局 token $G_{\text{en}}$，代表整条序列的宏观信息<Cite n={1} />：
 
 $$
 G_{\text{en}}=\mathrm{Learnable}(x).
 $$
 
-这个全局 token 很关键：patch token 是局部时间片，外生 variate token 是整条变量的粗粒度表示，两者粒度不同，不能直接拼接。全局 token 充当中间层，让外生信息先汇聚到“整条内生序列”的表示，再分配给各个 patch。<Cite n={1} />
+这个全局 token 很关键：patch token 是局部时间片，外生 variate token 是整条变量的粗粒度表示，两者粒度不同，不能直接拼接。全局 token 充当中间层，让外生信息先汇聚到“整条内生序列”的表示，再分配给各个 patch<Cite n={1} />。
 
 ### 2.2 外生 embedding：一条序列一个 variate token
 
-每条外生序列独立压成一个 $D$ 维 variate token：<Cite n={1} />
+每条外生序列独立压成一个 $D$ 维 variate token<Cite n={1} />：
 
 $$
 V_{\text{ex},i}=\mathrm{VariateEmbed}\left(z^{(i)}_{1:T_{\text{ex}}}\right),\qquad i=1,\dots,C.
 $$
 
-为什么不用 patch 级表示？论文的解释是：外生变量的作用是提供变量级的相关信息，patch 级太细，既增加计算量，又引入不必要的噪声；variate 级表示还能天然吸收缺失、错位、频率和长度差异。<Cite n={1} />消融也支持这一点：把外生换成 patch 表示、或者把内外生 token 直接相加/拼接，效果都更差。<Cite n={1} />
+为什么不用 patch 级表示？论文的解释是：外生变量的作用是提供变量级的相关信息，patch 级太细，既增加计算量，又引入不必要的噪声；variate 级表示还能天然吸收缺失、错位、频率和长度差异<Cite n={1} />。消融也支持这一点：把外生换成 patch 表示、或者把内外生 token 直接相加/拼接，效果都更差<Cite n={1} />。
 
 ### 2.3 Self-attention + cross-attention
 
-在每个 TimeXer block 里，先把内生 patch token 和全局 token 拼在一起做 self-attention：<Cite n={1} />
+在每个 TimeXer block 里，先把内生 patch token 和全局 token 拼在一起做 self-attention<Cite n={1} />：
 
 $$
 \left[\hat P_{\text{en}},\,\hat G_{\text{en}}\right]
@@ -80,16 +80,16 @@ $$
 +\mathrm{SelfAttention}\left(\left[P_{\text{en}},\,G_{\text{en}}\right]\right)\right).
 $$
 
-这一步同时完成三件事：patch 之间交换时序信息、全局 token 聚合 patch 信息、patch 从全局 token 读取整条序列的上下文。<Cite n={1} />
+这一步同时完成三件事：patch 之间交换时序信息、全局 token 聚合 patch 信息、patch 从全局 token 读取整条序列的上下文<Cite n={1} />。
 
-然后全局 token 作为 query，外生 variate token 作为 key/value，做 cross-attention：<Cite n={1} />
+然后全局 token 作为 query，外生 variate token 作为 key/value，做 cross-attention<Cite n={1} />：
 
 $$
 \hat G_{\text{en}}
 =\mathrm{LayerNorm}\left(G_{\text{en}}+\mathrm{CrossAttention}\left(G_{\text{en}},\,V_{\text{ex}}\right)\right).
 $$
 
-外生信息只在这一步进入，并且只进入全局 token；再通过下一层的 self-attention 分配给 patch。这样形成了一个清晰的信息通路：**外生变量 → 全局 token → 内生 patch**。<Cite n={1} />
+外生信息只在这一步进入，并且只进入全局 token；再通过下一层的 self-attention 分配给 patch。这样形成了一个清晰的信息通路：**外生变量 → 全局 token → 内生 patch**<Cite n={1} />。
 
 <figure className="my-6">
   <img src="./fig2-architecture.svg" alt="TimeXer 架构：(a) 内生序列切成 patch 并加全局 token；(b) 外生序列压成 variate token；(c) 内生 patch 与全局 token 做 patch-wise self-attention；(d) 全局 token 与外生 variate token 做 variate-wise cross-attention" className="mx-auto h-auto max-w-full rounded-lg border border-zinc-200 shadow-sm dark:border-zinc-800" />
@@ -99,7 +99,7 @@ $$
   </figcaption>
 </figure>
 
-最后，把内生输出 $[P_{\text{en}}^L,G_{\text{en}}^L]$ 线性投影成未来 $S$ 步，用 L2 loss 训练：<Cite n={1} />
+最后，把内生输出 $[P_{\text{en}}^L,G_{\text{en}}^L]$ 线性投影成未来 $S$ 步，用 L2 loss 训练<Cite n={1} />：
 
 $$
 \hat x=\mathrm{Projection}\left(\left[P_{\text{en}}^L,\,G_{\text{en}}^L\right]\right),\qquad
@@ -108,21 +108,21 @@ $$
 
 ### 2.4 并行多变量：把其他变量都当外生
 
-TimeXer 还能直接做普通多变量预测。做法是 channel independence：对每个变量，把它当内生变量，其余变量当外生变量，所有变量共享同一套 self-attention 和 cross-attention 层，并行预测。<Cite n={1} />这样多变量预测就变成“每个变量都带一组外生协变量”的特例，不需要单独设计多变量架构。
+TimeXer 还能直接做普通多变量预测。做法是 channel independence：对每个变量，把它当内生变量，其余变量当外生变量，所有变量共享同一套 self-attention 和 cross-attention 层，并行预测<Cite n={1} />。这样多变量预测就变成“每个变量都带一组外生协变量”的特例，不需要单独设计多变量架构。
 
 ## 三、实验：外生场景优势明显
 
 ### 3.1 设置
 
-**短期电价预测**：5 个真实电力市场（NP、PJM、BE、FR、DE），内生是电价，外生是两个关键市场变量；输入 168、预测 24、patch 24。<Cite n={1} />
+**短期电价预测**：5 个真实电力市场（NP、PJM、BE、FR、DE），内生是电价，外生是两个关键市场变量；输入 168、预测 24、patch 24<Cite n={1} />。
 
-**长程多变量预测**：7 个公开数据集（ECL、Weather、ETTh1/2、ETTm1/2、Traffic），lookback 96、patch 16、horizon 取 96/192/336/720，沿用 iTransformer/TSLib 的常用协议。<Cite n={[1,2,13]} />
+**长程多变量预测**：7 个公开数据集（ECL、Weather、ETTh1/2、ETTm1/2、Traffic），lookback 96、patch 16、horizon 取 96/192/336/720，沿用 iTransformer/TSLib 的常用协议<Cite n={[1,2,13]} />。
 
-基线覆盖 Transformer（iTransformer、PatchTST、Crossformer、Autoformer）、CNN（TimesNet、SCINet）和线性模型（RLinear、DLinear、TiDE）。<Cite n={[2,3,4,5,6,9,10,11,12]} />
+基线覆盖 Transformer（iTransformer、PatchTST、Crossformer、Autoformer）、CNN（TimesNet、SCINet）和线性模型（RLinear、DLinear、TiDE）<Cite n={[2,3,4,5,6,9,10,11,12]} />。
 
 ### 3.2 短期电价：五个市场全面领先
 
-在 EPF 五个市场上，TimeXer 的平均 MSE/MAE 为 **0.307/0.265**，优于：<Cite n={1} />
+在 EPF 五个市场上，TimeXer 的平均 MSE/MAE 为 **0.307/0.265**，优于<Cite n={1} />：
 
 | 模型 | 平均 MSE | 平均 MAE |
 |---|---:|---:|
@@ -136,17 +136,17 @@ TimeXer 还能直接做普通多变量预测。做法是 channel independence：
 | SCINet | 0.533 | 0.384 |
 | Autoformer | 0.453 | 0.368 |
 
-这个任务的关键是内外生交互：线性模型（DLinear/RLinear）无法利用外生关系，表现明显更差；Crossformer 把所有变量的 patch 一起建模，反而引入噪声；iTransformer 只做 variate 级注意力，缺少时序细粒度，也不如 TimeXer。<Cite n={1} />
+这个任务的关键是内外生交互：线性模型（DLinear/RLinear）无法利用外生关系，表现明显更差；Crossformer 把所有变量的 patch 一起建模，反而引入噪声；iTransformer 只做 variate 级注意力，缺少时序细粒度，也不如 TimeXer<Cite n={1} />。
 
 ### 3.3 长程多变量：多数最好，但有例外
 
-在 7 个长程数据集上，TimeXer 在多数数据集上取得最好或接近最好的结果：ECL 0.171、Weather 0.241、ETTh1 0.437、ETTh2 0.367、ETTm1 0.382、ETTm2 0.274（MSE）。<Cite n={1} />但在 **Traffic** 上，TimeXer 的 MSE 为 0.466，不如 iTransformer 的 0.428。论文也表述为“在大多数数据集上 SOTA”，而不是全面通吃。<Cite n={1} />
+在 7 个长程数据集上，TimeXer 在多数数据集上取得最好或接近最好的结果：ECL 0.171、Weather 0.241、ETTh1 0.437、ETTh2 0.367、ETTm1 0.382、ETTm2 0.274（MSE）<Cite n={1} />。但在 **Traffic** 上，TimeXer 的 MSE 为 0.466，不如 iTransformer 的 0.428。论文也表述为“在大多数数据集上 SOTA”，而不是全面通吃<Cite n={1} />。
 
 这个例外说明：当变量间关系非常强、且时序粒度不是主要矛盾时，纯 variate-wise 注意力仍然有优势；TimeXer 的 patch + global token 设计并不是对所有多变量场景都占优。
 
 ### 3.4 消融：全局 token 和 cross-attention 都必要
 
-论文在 EPF 上做了 embedding 与融合方式的消融，平均 MSE 如下：<Cite n={1} />
+论文在 EPF 上做了 embedding 与融合方式的消融，平均 MSE 如下<Cite n={1} />：
 
 | 设计 | 内生表示 | 外生表示 | 融合方式 | 平均 MSE |
 |---|---|---|---|---:|
@@ -156,15 +156,15 @@ TimeXer 还能直接做普通多变量预测。做法是 channel independence：
 | 外生直接相加（Add） | patch + global | variate | add | 0.329 |
 | 外生直接拼接（Concatenate） | patch + global | variate | concat | 0.312 |
 
-两个结论：全局 token 不能省；外生用 patch 级表示反而更差；把外生直接加/拼到内生 token 上，也不如让全局 token 做 cross-attention。<Cite n={1} />
+两个结论：全局 token 不能省；外生用 patch 级表示反而更差；把外生直接加/拼到内生 token 上，也不如让全局 token 做 cross-attention<Cite n={1} />。
 
 ### 3.5 泛化：错位、缺失与大规模
 
-**lookback 不一致。** TimeXer 允许内外生 lookback 不同。论文测试了“固定内生、增加外生”“固定外生、增加内生”“两者同时增加”三种设置：增加内生历史带来的收益更大，两者同时增加进一步变好。<Cite n={1} />
+**lookback 不一致。** TimeXer 允许内外生 lookback 不同。论文测试了“固定内生、增加外生”“固定外生、增加内生”“两者同时增加”三种设置：增加内生历史带来的收益更大，两者同时增加进一步变好<Cite n={1} />。
 
-**缺失值。** 把内生历史替换成零或随机值，性能会大幅下降（平均 MSE 1.125/1.150）；但把外生历史替换成零或随机值，性能只有轻微下降（0.330/0.333，对比正常 0.307）。<Cite n={1} />这说明外生是辅助信息，内生质量仍是上限；也说明模型不会盲目依赖外生。
+**缺失值。** 把内生历史替换成零或随机值，性能会大幅下降（平均 MSE 1.125/1.150）；但把外生历史替换成零或随机值，性能只有轻微下降（0.330/0.333，对比正常 0.307）<Cite n={1} />。这说明外生是辅助信息，内生质量仍是上限；也说明模型不会盲目依赖外生。
 
-**大规模。** 论文构建了一个 3,850 个气象站的数据集：内生是站点小时温度，外生是周围 3×3 网格、每格 4 个气象变量，共 36 条外生序列；用 7 天历史预测未来 3 天，且外生采样间隔为 3 小时、与内生频率不同。<Cite n={1} />TimeXer 的 MSE 为 0.200，优于 iTransformer 0.207、PatchTST 0.208、DLinear 0.212、RLinear 0.216。<Cite n={1} />
+**大规模。** 论文构建了一个 3,850 个气象站的数据集：内生是站点小时温度，外生是周围 3×3 网格、每格 4 个气象变量，共 36 条外生序列；用 7 天历史预测未来 3 天，且外生采样间隔为 3 小时、与内生频率不同<Cite n={1} />。TimeXer 的 MSE 为 0.200，优于 iTransformer 0.207、PatchTST 0.208、DLinear 0.212、RLinear 0.216<Cite n={1} />。
 
 <figure className="my-6">
   <img src="./fig4-scalability.png" alt="大规模外生预测：左图为全球气象站分布，中图为内生站点与周围 3×3 网格、每格 4 个外生变量的示意，右图为 TimeXer 0.200 MSE 优于 iTransformer 0.207、PatchTST 0.208、DLinear 0.212、RLinear 0.216" className="mx-auto h-auto max-w-full rounded-lg border border-zinc-200 shadow-sm dark:border-zinc-800" />
@@ -176,9 +176,9 @@ TimeXer 还能直接做普通多变量预测。做法是 channel independence：
 
 ### 3.6 可解释性与效率
 
-cross-attention 的注意力权重可以直接看：论文在 Weather 上可视化了每个外生变量对全局 token 的注意力。与内生序列形状相似的外生变量会获得更高注意力；在 CO2 浓度的例子里，Air Density 获得高注意力，Maximum Wind Velocity 较低，这与物理直觉一致。<Cite n={1} />
+cross-attention 的注意力权重可以直接看：论文在 Weather 上可视化了每个外生变量对全局 token 的注意力。与内生序列形状相似的外生变量会获得更高注意力；在 CO2 浓度的例子里，Air Density 获得高注意力，Maximum Wind Velocity 较低，这与物理直觉一致<Cite n={1} />。
 
-效率方面，在 ECL 的 320 个外生变量上：TimeXer 约 0.95GB / 33ms，iTransformer 约 1.23GB / 25ms，PatchTST 约 5.92GB / 163ms，Crossformer 约 7.41GB / 128ms。<Cite n={1} />TimeXer 比 iTransformer 略慢，但显存更低：外生变量只在开头嵌入一次，后续只和全局 token 做 cross-attention，不在每层和外生 token 反复交互。<Cite n={1} />
+效率方面，在 ECL 的 320 个外生变量上：TimeXer 约 0.95GB / 33ms，iTransformer 约 1.23GB / 25ms，PatchTST 约 5.92GB / 163ms，Crossformer 约 7.41GB / 128ms<Cite n={1} />。TimeXer 比 iTransformer 略慢，但显存更低：外生变量只在开头嵌入一次，后续只和全局 token 做 cross-attention，不在每层和外生 token 反复交互<Cite n={1} />。
 
 <figure className="my-6">
   <img src="./fig5-analysis.svg" alt="TimeXer 分析：左侧为注意力热图与高/低注意力的外生序列（CO2 浓度、Air Density、Maximum Wind Velocity），右侧为 ECL 320 个外生变量下各模型的显存与训练时间气泡图" className="mx-auto h-auto max-w-full rounded-lg border border-zinc-200 shadow-sm dark:border-zinc-800" />
@@ -190,7 +190,7 @@ cross-attention 的注意力权重可以直接看：论文在 Weather 上可视�
 
 ## 四、局限与工程启示
 
-**局限。** 外生信息只通过全局 token 一个瓶颈进入内生 patch，可能损失细粒度的外生-内生局部对应关系；外生序列本身噪声很大时，也可能拖累预测。论文显示内生历史被破坏时性能会大幅下降，说明模型仍高度依赖内生序列质量。<Cite n={1} />此外，TimeXer 使用的是历史外生序列，不涉及未来外生值；上线前要确认推理时能拿到对应的历史外生数据。
+**局限。** 外生信息只通过全局 token 一个瓶颈进入内生 patch，可能损失细粒度的外生-内生局部对应关系；外生序列本身噪声很大时，也可能拖累预测。论文显示内生历史被破坏时性能会大幅下降，说明模型仍高度依赖内生序列质量<Cite n={1} />。此外，TimeXer 使用的是历史外生序列，不涉及未来外生值；上线前要确认推理时能拿到对应的历史外生数据。
 
 **工程启示：**
 
@@ -201,7 +201,7 @@ cross-attention 的注意力权重可以直接看：论文在 Weather 上可视�
 
 ## 小结
 
-TimeXer 的一句话结论是：**外生变量应该以变量级的粗粒度进入模型，再通过一个全局 token 桥接到内生的 patch 级时序表示。** 它不修改 Transformer，只重新组织 embedding 和 attention，就让 canonical Transformer 同时具备 patch-wise 时序建模和 variate-wise 外生建模能力。<Cite n={1} />
+TimeXer 的一句话结论是：**外生变量应该以变量级的粗粒度进入模型，再通过一个全局 token 桥接到内生的 patch 级时序表示。** 它不修改 Transformer，只重新组织 embedding 和 attention，就让 canonical Transformer 同时具备 patch-wise 时序建模和 variate-wise 外生建模能力<Cite n={1} />。
 
 对读者来说，最值得记住的是“两种粒度”的思路：内生要细，外生要粗；内外生不是同一类 token，强行拼在一起反而不如让它们通过一个中间表示交互。这个思路也可以迁移到其他“主序列 + 辅助序列”的预测任务。
 

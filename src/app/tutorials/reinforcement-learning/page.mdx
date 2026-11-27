@@ -351,7 +351,7 @@ $$
 r^i_t \;\propto\; \frac{1}{\sqrt{N(s_t)}}
 $$
 
-状态越没见过，$N$ 越小，奖金越高；去过了，$N$ 增大，奖金自动衰减——探索是**定向**的，而非 ε-贪心那样均匀撒随机。这在表格世界里完美，但深度 RL 的状态是高维像素（210×160 的画面），**几乎不可能两次见到完全相同的帧**，$N(s)$ 永远是 1，bonus 永远拉满，等于没探索。于是要靠**伪计数（pseudo-count）** $\hat N(s)$：不直接数「这一帧出现过几次」（永远是 0 或 1），而是用一个**密度模型**估计「这个状态在训练集里出现的概率密度」，再从概率反推一个等效计数 [10]。<Cite n={10} />
+状态越没见过，$N$ 越小，奖金越高；去过了，$N$ 增大，奖金自动衰减——探索是**定向**的，而非 ε-贪心那样均匀撒随机。这在表格世界里完美，但深度 RL 的状态是高维像素（210×160 的画面），**几乎不可能两次见到完全相同的帧**，$N(s)$ 永远是 1，bonus 永远拉满，等于没探索。于是要靠**伪计数（pseudo-count）** $\hat N(s)$：不直接数「这一帧出现过几次」（永远是 0 或 1），而是用一个**密度模型**估计「这个状态在训练集里出现的概率密度」，再从概率反推一个等效计数 [10]<Cite n={10} />。
 
 下面这个交互先在**表格世界**里把「定向 vs 盲目」的差距演示清楚：同一张 7×7 稀疏奖励网格（奖励只在右下角），左边跑 ε-贪心的盲目随机游走，右边跑基于计数的新奇性探索（总往访问最少的邻格走，即 $r^i\propto 1/\sqrt{N(s)}$）。拖动滑块看两者足迹热力的分道扬镳：
 
@@ -361,7 +361,7 @@ $$
 
 #### 伪计数：从密度模型反推等效计数
 
-Bellemare et al. 2016 [10] 的关键观察：一个**学习正（learning-positive）**的密度模型——多见到一次状态 $x$，它对 $x$ 的预测概率就**上升**——本身就编码了「$x$ 见过几次」的信息。<Cite n={10} />设密度模型在见过 $n$ 个样本后对状态 $x$ 的预测概率为 $\rho_n(x)$（prediction probability），再喂一个 $x$ 后重训，概率变成 $\rho'_n(x)$（recoding probability）。学习正保证 $\rho_n(x)\le\rho'_n(x)$。把这两个概率和一个真实计数模型类比：
+Bellemare et al. 2016 [10] 的关键观察：一个**学习正（learning-positive）**的密度模型——多见到一次状态 $x$，它对 $x$ 的预测概率就**上升**——本身就编码了「$x$ 见过几次」的信息<Cite n={10} />。设密度模型在见过 $n$ 个样本后对状态 $x$ 的预测概率为 $\rho_n(x)$（prediction probability），再喂一个 $x$ 后重训，概率变成 $\rho'_n(x)$（recoding probability）。学习正保证 $\rho_n(x)\le\rho'_n(x)$。把这两个概率和一个真实计数模型类比：
 
 $$
 \rho_n(x)=\frac{\hat N_n(x)}{\hat n},\qquad \rho'_n(x)=\frac{\hat N_n(x)+1}{\hat n+1}
@@ -385,11 +385,11 @@ $$
 
 #### 密度模型的演进：CTS → PixelCNN
 
-伪计数本身不限定密度模型选哪种，只要学习正即可。Bellemare et al. 2016 [10] 用一个轻量的 **CTS(Context Tree Switching)**密度模型——按像素位置独立地用 L 形滤波器乘积估计整帧概率——在 Atari 原始像素上算 $\rho_n$，$\hat N$ 驱动的内在奖励在**Montezuma's Revenge**（ notoriously 难探索、随机游走几乎拿不到分）上首次取得进展。Ostrovski et al. 2017 [11] 把 CTS 换成更强的 **PixelCNN** 神经密度模型，大幅提升概率估计质量，在多个 hard-exploration Atari 游戏上刷新纪录。<Cite n={11} />后续还有用高斯混合模型（Zhao & Tresp 2018）等变体——**密度模型越准，pseudo-count 越接近真实计数，探索越定向**。
+伪计数本身不限定密度模型选哪种，只要学习正即可。Bellemare et al. 2016 [10] 用一个轻量的 **CTS(Context Tree Switching)**密度模型——按像素位置独立地用 L 形滤波器乘积估计整帧概率——在 Atari 原始像素上算 $\rho_n$，$\hat N$ 驱动的内在奖励在**Montezuma's Revenge**（ notoriously 难探索、随机游走几乎拿不到分）上首次取得进展。Ostrovski et al. 2017 [11] 把 CTS 换成更强的 **PixelCNN** 神经密度模型，大幅提升概率估计质量，在多个 hard-exploration Atari 游戏上刷新纪录<Cite n={11} />。后续还有用高斯混合模型（Zhao & Tresp 2018）等变体——**密度模型越准，pseudo-count 越接近真实计数，探索越定向**。
 
 #### 另一条路：Hash 降维再数
 
-不学密度模型，也可以先把高维状态**哈希到低维桶**再朴素地数。Tang et al. 2017 [12] 用 SimHash（或 autoencoder 编码后哈希）把每帧映射到一个低维二进制码，相同码的状态视为「同类」，对桶计数 $N(\text{bucket})$ 驱动 bonus。比密度模型简单（无需训练生成模型），但**哈希冲突**会把 genuinely 不同的状态混到一桶，粒度不如 pseudo-count 细。<Cite n={12} />两条路同源：都是把「高维状态空间里数不过来」降维成「低维空间里数得清」。
+不学密度模型，也可以先把高维状态**哈希到低维桶**再朴素地数。Tang et al. 2017 [12] 用 SimHash（或 autoencoder 编码后哈希）把每帧映射到一个低维二进制码，相同码的状态视为「同类」，对桶计数 $N(\text{bucket})$ 驱动 bonus。比密度模型简单（无需训练生成模型），但**哈希冲突**会把 genuinely 不同的状态混到一桶，粒度不如 pseudo-count 细<Cite n={12} />。两条路同源：都是把「高维状态空间里数不过来」降维成「低维空间里数得清」。
 
 下面这个演示把 pseudo-count 公式跑在一个 5 状态的小世界里，看它如何从密度模型概率**精确还原**真实计数、并把探索 bonus 定向指向少见状态：
 
@@ -458,7 +458,7 @@ print("但公式完全一样——pseudo-count 把 count-based 探索从表格�
 
 ### 思路二：ICM——预测误差当好奇心，但只学「能控制的」部分
 
-**ICM(Intrinsic Curiosity Module, Pathak et al. 2017)**[2] 换了个更巧妙的衡量：训一个**前向动力学模型（forward model）**，给定当前状态和动作，预测下一步状态；**预测不准 = 没见过 = 好奇**。<Cite n={2} />但直接在原始像素上预测会掉进 noisy-TV 陷阱（下文详述），所以 ICM 先用一个**逆向动力学模型（inverse model）**学一个**特征空间** $\phi(s)$：
+**ICM(Intrinsic Curiosity Module, Pathak et al. 2017)**[2] 换了个更巧妙的衡量：训一个**前向动力学模型（forward model）**，给定当前状态和动作，预测下一步状态；**预测不准 = 没见过 = 好奇**<Cite n={2} />。但直接在原始像素上预测会掉进 noisy-TV 陷阱（下文详述），所以 ICM 先用一个**逆向动力学模型（inverse model）**学一个**特征空间** $\phi(s)$：
 
 - **逆向模型** $g_\phi$：输入相邻两帧 $(s_t, s_{t+1})$，预测中间采取的动作 $\hat a_t = g(s_t, s_{t+1})$。要预测动作，它**必须学到那些「受动作影响」的特征**——动作改变不了的东西（背景墙、噪点电视）对预测动作没帮助，自然被特征 $\phi$ 丢弃。
 - **前向模型** $f_\psi$：在学到的特征空间里预测下一帧特征 $\hat\phi_{t+1} = f(\phi(s_t), a_t)$。
@@ -468,7 +468,7 @@ $$
 r^i_t \;=\; \tfrac{1}{2}\big\|\hat\phi(s_{t+1}) - \phi(s_{t+1})\big\|^2
 $$
 
-逆模型的妙处在于它是**特征过滤器**：只把「智能体能影响的变化」编码进 $\phi$，不可控的噪声（那台一直放雪花的电视）进不了特征，前向模型也就不会为它产生永不衰减的预测误差。ICM 在 Mario、Doom 等环境里让智能体在没有外在奖励时也能探索得很远，甚至学会「绕远路打怪」这类为后续得分铺路的行为[2]。<Cite n={2} />
+逆模型的妙处在于它是**特征过滤器**：只把「智能体能影响的变化」编码进 $\phi$，不可控的噪声（那台一直放雪花的电视）进不了特征，前向模型也就不会为它产生永不衰减的预测误差。ICM 在 Mario、Doom 等环境里让智能体在没有外在奖励时也能探索得很远，甚至学会「绕远路打怪」这类为后续得分铺路的行为[2]<Cite n={2} />。
 
 ICM 的三个部件（编码器 + 逆模型 + 前向模型）是**联合训练**的，核心逻辑就这几行：
 
@@ -503,7 +503,7 @@ $$
 \text{内在奖励}\quad r^i_t \;=\; \big\|\hat\phi_\psi(s_t) - \phi(s_t)\big\|^2
 $$
 
-预测器在见过的状态上拟合得好、误差小；在新状态上没拟合过、误差大——于是误差就成了**新状态的度量**。<Cite n={3} />固定随机目标保证了「真理」不会漂移（不像 ICM 的前向模型和特征一起学，可能协同崩塌），简单稳定。Burda et al. 2018 用纯 RND 内在奖励（完全不给环境分）在 Montezuma's Revenge 上找到了**过半房间**——这是当时**首个无需人类示范即超越人类表现**的方法之一[3]，论文还发布了大规模纯内在奖励探索的 benchmark。<Cite n={3} />
+预测器在见过的状态上拟合得好、误差小；在新状态上没拟合过、误差大——于是误差就成了**新状态的度量**<Cite n={3} />。固定随机目标保证了「真理」不会漂移（不像 ICM 的前向模型和特征一起学，可能协同崩塌），简单稳定。Burda et al. 2018 用纯 RND 内在奖励（完全不给环境分）在 Montezuma's Revenge 上找到了**过半房间**——这是当时**首个无需人类示范即超越人类表现**的方法之一[3]，论文还发布了大规模纯内在奖励探索的 benchmark<Cite n={3} />。
 
 #### RND 的工程细节：为什么单靠预测误差还不够
 
@@ -511,7 +511,7 @@ $$
 
 **① 非情景内在回报（non-episodic intrinsic return）。** 这是最反直觉的一点。标准 RL 里，回合结束（智能体死亡）就把回报截断、return 归零——这叫 **episodic** return。若把 intrinsic reward 也按 episodic 处理，智能体会学到一种「**怕死**」的行为：死亡会清零它辛苦累积的内在回报，于是它宁愿停在一个「已经见过但还能反复蹭点 $r^i$」的局部区域，也不敢深入新区域去探索（因为路上可能死掉，累积的 intrinsic 分全没了）。这与上面「朴素 shaping 陷阱」里智能体在 $s_0/s_1$ 间来回蹭是**同一个病**——optimization pressure 钻了奖励设计的空子。RND 的解法：把 intrinsic return 当 **non-episodic**——死亡**不截断** intrinsic 的 bootstrap，$\gamma_I$ 继续累积。换句话说，智能体「死后的内在回报」仍算数，这样它就不怕死了。
 
-**② 单策略 + 双价值头 $V=V_E+V_I$。** 因为 extrinsic 是 episodic（死亡截断）、intrinsic 是 non-episodic（死亡不截断），两套 return 的**性质根本不同**，不能塞进同一个价值函数。RND 用**一个策略**配**两个价值头**：$V_E$ 拟合 episodic extrinsic return、$V_I$ 拟合 non-episodic intrinsic return，合并 $V=V_E+V_I$。优势也对应相加 $A=A_E+A_I$，PPO 用这个合并优势更新那唯一的策略。两个价值头分别拟合各自的 return，但策略只有一个——这是「**返回报性质不同时，分头估价值、合头用优势**」的通用模式（后面 [SAC 篇](/tutorials/continuous-control) 会看到最大熵 RL 里也有类似的「两项相加」结构）。原文最佳配置用 $\gamma_E=0.99$、$\gamma_I=0.999$（intrinsic 更长视，鼓励长程探索），extrinsic 系数 2、intrinsic 系数 1。<Cite n={3} />
+**② 单策略 + 双价值头 $V=V_E+V_I$。** 因为 extrinsic 是 episodic（死亡截断）、intrinsic 是 non-episodic（死亡不截断），两套 return 的**性质根本不同**，不能塞进同一个价值函数。RND 用**一个策略**配**两个价值头**：$V_E$ 拟合 episodic extrinsic return、$V_I$ 拟合 non-episodic intrinsic return，合并 $V=V_E+V_I$。优势也对应相加 $A=A_E+A_I$，PPO 用这个合并优势更新那唯一的策略。两个价值头分别拟合各自的 return，但策略只有一个——这是「**返回报性质不同时，分头估价值、合头用优势**」的通用模式（后面 [SAC 篇](/tutorials/continuous-control) 会看到最大熵 RL 里也有类似的「两项相加」结构）。原文最佳配置用 $\gamma_E=0.99$、$\gamma_I=0.999$（intrinsic 更长视，鼓励长程探索），extrinsic 系数 2、intrinsic 系数 1<Cite n={3} />。
 
 **③ 内在奖励归一化（除以 running std）。** intrinsic reward 的量级会随训练**大幅下降**——预测器越拟合，见过的状态误差越小，$r^i$ 整体往下掉。若不归一化，后期 $r^i\to 0$，探索信号**熄灭**，智能体又变回「没动力探索」。RND 用一个 **running estimate of the standard deviation of the intrinsic returns** 来除当前 intrinsic reward，把它拉回 $O(1)$ 量级。关键：running std 是**跟踪当前量级**的移动估计（不是全历史的标准差），所以 raw reward 暴跌时 std 跟着降，归一化后信号保持稳定——预测器拟合得越好，raw $r^i$ 越小，但归一化后的探索驱动不衰减。
 
@@ -716,7 +716,7 @@ $$
 F(s,s') \;=\; \gamma\,\phi(s') \;-\; \phi(s)
 $$
 
-其中 $\phi(s)$ 是任意一个**只依赖状态**的「势函数（potential）」。把 $F$ 加到每步真实奖励上，$r'_t = r_t + F(s_t,s_{t+1})$，得到**塑造后的 MDP**。神奇的是：**它的最优策略和原 MDP 完全一样**。<Cite n={1} />
+其中 $\phi(s)$ 是任意一个**只依赖状态**的「势函数（potential）」。把 $F$ 加到每步真实奖励上，$r'_t = r_t + F(s_t,s_{t+1})$，得到**塑造后的 MDP**。神奇的是：**它的最优策略和原 MDP 完全一样**<Cite n={1} />。
 
 **证明靠 telescoping（伸缩求和）**。把塑造后的回报展开：
 
@@ -804,9 +804,9 @@ potential-based shaping 是**「安全」的 reward engineering**：它给了密
 
 ### 问题的两个维度：结构性 vs 时序性
 
-Minsky(1961)[4] 在 *Steps Toward Artificial Intelligence* 里最早提出信用分配问题，原指**结构性（structural）**：一个由很多部件组成的系统做对了一件事，该给哪个部件记功？神经网络里就是「哪些连接权重该为正确输出被加强」。这对 RL 同样存在——联合动作、多智能体、并行选项里，「这一步的成功」该归功于哪个子动作/哪个智能体。<Cite n={4} />
+Minsky(1961)[4] 在 *Steps Toward Artificial Intelligence* 里最早提出信用分配问题，原指**结构性（structural）**：一个由很多部件组成的系统做对了一件事，该给哪个部件记功？神经网络里就是「哪些连接权重该为正确输出被加强」。这对 RL 同样存在——联合动作、多智能体、并行选项里，「这一步的成功」该归功于哪个子动作/哪个智能体<Cite n={4} />。
 
-但 RL 还多一层 Minsky 没特别强调的维度：**时序性（temporal）**。Sutton(1984)[5] 在博士论文 *Temporal Credit Assignment in Reinforcement Learning* 里把这层挑明——下棋赢了，奖励在终局才出现，可胜负是**几十步共同**决定的，**该给哪一步记功？** 时序信用分配要回答：一个延迟到达的奖励，怎么分配回沿途各步动作/状态。<Cite n={5} />
+但 RL 还多一层 Minsky 没特别强调的维度：**时序性（temporal）**。Sutton(1984)[5] 在博士论文 *Temporal Credit Assignment in Reinforcement Learning* 里把这层挑明——下棋赢了，奖励在终局才出现，可胜负是**几十步共同**决定的，**该给哪一步记功？** 时序信用分配要回答：一个延迟到达的奖励，怎么分配回沿途各步动作/状态<Cite n={5} />。
 
 > 💡 **一句话区分**:**结构性**问「**哪个**部件/动作该被归因」（空间维度）；**时序性**问「**哪一步**动作该被归因」（时间维度）。RL 里两者都棘手，但时序性是 RL 独有的、且更普遍——因为 RL 的奖励几乎总是延迟的。
 
@@ -912,7 +912,7 @@ print("     λ=0 退化单步 TD(慢、低方差); λ=1 退化 MC(快、高方�
 
 ## 控制即推断：RL 的概率统一视角
 
-前面几节把 RL 讲成「最大化累积奖励」的优化问题。Levine (2018)[8] 给出另一个等价视角：**控制就是概率推断**——把「智能体最优地行动」当成一个**观测事实**来反推动作。这个视角不改变任何算法的答案，却把奖励、策略、价值、探索统一进一个概率图模型，并直接解释了为什么 [SAC](/tutorials/continuous-control) 的最大熵目标和 [DIAYN](/tutorials/hierarchical-rl) 的互信息目标长那样。<Cite n={8} />
+前面几节把 RL 讲成「最大化累积奖励」的优化问题。Levine (2018)[8] 给出另一个等价视角：**控制就是概率推断**——把「智能体最优地行动」当成一个**观测事实**来反推动作。这个视角不改变任何算法的答案，却把奖励、策略、价值、探索统一进一个概率图模型，并直接解释了为什么 [SAC](/tutorials/continuous-control) 的最大熵目标和 [DIAYN](/tutorials/hierarchical-rl) 的互信息目标长那样<Cite n={8} />。
 
 ### 最优性变量：把奖励变成对数似然
 
@@ -926,7 +926,7 @@ $$
 
 ### soft Bellman：后验的递归 = 配分函数
 
-对动作后验做变分推断（策略 $\pi(a\mid s)$ 当变分分布，近似「最优动作的后验」），消息传递给出**软贝尔曼方程**——和 [SAC](/tutorials/continuous-control) 那个最大熵 soft Bellman 是同一个：<Cite n={8} />
+对动作后验做变分推断（策略 $\pi(a\mid s)$ 当变分分布，近似「最优动作的后验」），消息传递给出**软贝尔曼方程**——和 [SAC](/tutorials/continuous-control) 那个最大熵 soft Bellman 是同一个<Cite n={8} />：
 
 $$
 V(s) \;=\; \alpha\,\log\int_a \exp\!\Big(\tfrac{1}{\alpha}Q(s,a)\Big)\,da \;=\; \alpha\,\text{logsumexp}_a\!\big(Q(s,a)/\alpha\big)
@@ -1012,7 +1012,7 @@ print("   奖励 r(s,a) = log P(O=1|s,a); soft V = 后验归一化常数; soft p
 
 ### Bengio 2009：易→难顺序为何有效
 
-课程学习的现代形式化来自 [Bengio et al.， 2009][7] 的 ICML 论文 *Curriculum Learning*。核心想法：训练样本不一次性全给，而按**难度递增**的顺序呈现。直觉是「先在简单变体上把低层特征/基本动作学好，再让高层能力在难的变体上精修」，从动物训练的 shaping 与人类教育里得到启发，溯源 Elman 1993「starting small」——先训短句子再训长句子的神经网络学得更好。Bengio 把它形式化成三要素：<Cite n={7} />
+课程学习的现代形式化来自 [Bengio et al.， 2009][7] 的 ICML 论文 *Curriculum Learning*。核心想法：训练样本不一次性全给，而按**难度递增**的顺序呈现。直觉是「先在简单变体上把低层特征/基本动作学好，再让高层能力在难的变体上精修」，从动物训练的 shaping 与人类教育里得到启发，溯源 Elman 1993「starting small」——先训短句子再训长句子的神经网络学得更好。Bengio 把它形式化成三要素<Cite n={7} />：
 
 1. **定义难度（difficulty）**：谁来判一个样本「难不难」？可以靠人标（短句=易）、靠外部启发式（图像复杂度），或靠另一个模型（预测准确率高的=易）。
 2. **节奏（pacing）**：难度是 steady 上升还是分阶段跳？按确定性时间表，还是按概率分布？要不要加多样性约束防止过表示相似的易例？
@@ -1115,11 +1115,11 @@ for n_eps in [100, 300]:
 - **医疗诊断**：医生只看到症状（观测）,病人的真实病理（状态）要推断.
 - **机器人定位**：传感器有噪声,机器人在迷宫里不知道自己**精确**在哪（这就是经典的 *gridworld localization*）.
 
-这时状态 $s$ 不再可直接观测，智能体只能拿到一个**观测 $o$**（observation），它是真实状态 $s$ 的带噪投影。这叫**部分可观测马尔可夫决策过程（Partially Observable MDP, POMDP）**[9]。<Cite n={9} />
+这时状态 $s$ 不再可直接观测，智能体只能拿到一个**观测 $o$**（observation），它是真实状态 $s$ 的带噪投影。这叫**部分可观测马尔可夫决策过程（Partially Observable MDP, POMDP）**[9]<Cite n={9} />。
 
 ### POMDP 的形式：多了一个观测函数
 
-MDP 是 $(\mathcal S, \mathcal A, P, r, \gamma)$ 五元组（状态、动作、转移、奖励、折扣）。<Cite n={9} />POMDP 在此基础上**多两个东西**：
+MDP 是 $(\mathcal S, \mathcal A, P, r, \gamma)$ 五元组（状态、动作、转移、奖励、折扣）<Cite n={9} />。POMDP 在此基础上**多两个东西**：
 
 $$\text{POMDP} = (\mathcal S, \mathcal A, \mathcal O, P, Z, r, \gamma)$$
 
@@ -1130,7 +1130,7 @@ $$\text{POMDP} = (\mathcal S, \mathcal A, \mathcal O, P, Z, r, \gamma)$$
 
 ### 信念状态：把历史压缩成一个分布
 
-既然看不到真实状态 $s$，智能体只能基于**历史** $h_t=(o_0,a_0,o_1,\dots,a_{t-1},o_t)$ 推断「我大概在哪个状态」。但历史越攒越长，直接拿来当策略输入不现实。幸好有个优雅的结论：**历史的**充分统计量**是一个状态分布 $b_t(s)=P(s_t=s\mid h_t)$，叫**信念状态（belief state）****——它记录「我认为真实状态是 $s$ 的概率」，且只需递推更新，不必存整条历史。<Cite n={9} />
+既然看不到真实状态 $s$，智能体只能基于**历史** $h_t=(o_0,a_0,o_1,\dots,a_{t-1},o_t)$ 推断「我大概在哪个状态」。但历史越攒越长，直接拿来当策略输入不现实。幸好有个优雅的结论：**历史的**充分统计量**是一个状态分布 $b_t(s)=P(s_t=s\mid h_t)$，叫**信念状态（belief state）****——它记录「我认为真实状态是 $s$ 的概率」，且只需递推更新，不必存整条历史<Cite n={9} />。
 
 **信念更新公式**（Bayes 滤波）：执行动作 $a$、观测到 $o$ 后，
 

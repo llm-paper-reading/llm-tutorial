@@ -22,7 +22,7 @@ $$
 \mathbb{E}_{a\sim\pi_\theta}\big[\nabla_\theta \log \pi_\theta(a\mid s)\cdot b(s)\big] = b(s)\,\nabla_\theta \sum_a \pi_\theta(a\mid s) = b(s)\,\nabla_\theta 1 = 0
 $$
 
-所以减去 $b(s)$ 不改变梯度期望，却把信号从「绝对回报」平移成「相对基准的好坏」，方差大幅下降。$V(s)$ 正是理论上最优的减方差基线 <Cite n={2} />。
+所以减去 $b(s)$ 不改变梯度期望，却把信号从「绝对回报」平移成「相对基准的好坏」，方差大幅下降。$V(s)$ 正是理论上最优的减方差基线<Cite n={2} />。
 
 但 $V(s)$ 我们也不知道，于是**再训练一个网络 $V_\psi$ 去估它**。这就是 **Actor-Critic** 架构：
 
@@ -31,7 +31,7 @@ $$
 
 ### Critic 怎么训练：回归到回报
 
-Critic 的目标很简单——**让 $V_\psi(s)$ 拟合「从 $s$ 出发的期望回报」**。给定一批采样到的回报 $\hat R_t$（reward-to-go,$\hat R_t=\sum_{t'\ge t}\gamma^{t'-t}r_{t'}$），用均方误差做回归 <Cite n={2} />:<Cite n={2} />
+Critic 的目标很简单——**让 $V_\psi(s)$ 拟合「从 $s$ 出发的期望回报」**。给定一批采样到的回报 $\hat R_t$（reward-to-go,$\hat R_t=\sum_{t'\ge t}\gamma^{t'-t}r_{t'}$），用均方误差做回归<Cite n={2} />:
 
 $$
 \psi_k = \arg\min_\psi\; \mathbb{E}_{s_t,\hat R_t\sim\pi_k}\Big[\big(V_\psi(s_t)-\hat R_t\big)^2\Big]
@@ -84,7 +84,7 @@ print("策略 argmax:", softmax(theta).argmax(1).tolist(),
       " 真值最优动作:", true_Q.argmax(1).tolist())
 `} />
 
-跑一下，你会看到 $V_\psi$ 收敛到 `true_V` 附近，策略把每个状态的动作概率压向 `true_Q` 更大的那个动作——**一个网络学策略、一个网络学价值，用「回报减价值」当优势**，$\hat R_t$ 用蒙特卡洛 return 时这就是 A2C 的标准形态（Spinning Up <Cite n={2} />）；若把 Critic 的 target 换成 $r+\gamma V(s')$、优势换成 TD（0） 的 $\delta_t$，就得到上节骨架里的在线 TD（0） 版本。
+跑一下，你会看到 $V_\psi$ 收敛到 `true_V` 附近，策略把每个状态的动作概率压向 `true_Q` 更大的那个动作——**一个网络学策略、一个网络学价值，用「回报减价值」当优势**，$\hat R_t$ 用蒙特卡洛 return 时这就是 A2C 的标准形态（Spinning Up<Cite n={2} />）；若把 Critic 的 target 换成 $r+\gamma V(s')$、优势换成 TD（0） 的 $\delta_t$，就得到上节骨架里的在线 TD（0） 版本。
 
 ### 优势怎么估：TD(0) / n-step / 蒙特卡洛的三段谱系
 
@@ -113,7 +113,7 @@ $$
 
 ### GAE：在偏差与方差之间连续插值
 
-**广义优势估计（Generalized Advantage Estimation,GAE,Schulman et al., 2016 <Cite n={1} />）** 的出发点是上一节的那个困境：小 $n$ 偏差大、大 $n$ 方差大，离散地选一个 $n$ 必然顾此失彼。GAE 的洞察是——**与其选一个 $n$，不如把所有 $n$-step 优势加权平均**，且权重随 $n$ 几何衰减，让短视野权重更大、长视野权重更小，用一个旋钮 $\lambda$ 连续控制衰减快慢。<Cite n={1} />
+**广义优势估计（Generalized Advantage Estimation,GAE,Schulman et al., 2016<Cite n={1} />）** 的出发点是上一节的那个困境：小 $n$ 偏差大、大 $n$ 方差大，离散地选一个 $n$ 必然顾此失彼。GAE 的洞察是——**与其选一个 $n$，不如把所有 $n$-step 优势加权平均**，且权重随 $n$ 几何衰减，让短视野权重更大、长视野权重更小，用一个旋钮 $\lambda$ 连续控制衰减快慢<Cite n={1} />。
 
 **定义**（以 TD 误差 $\delta_t=r_t+\gamma V(s_{t+1})-V(s_t)$ 为基本砖块）:
 
@@ -155,7 +155,7 @@ $\gamma$ 和 $\lambda$ 是**正交的两个旋钮**：$\gamma$ 决定「我们�
 
 > 💡 **一句话总结**：GAE 把「选哪个 $n$」的离散难题换成「$\lambda$ 调多大」的连续旋钮——它是所有 $n$-step 优势的几何加权凸组合（权重和=1），$\lambda=0$ 退化为 1-step TD、$\lambda=1$ 退化为蒙特卡洛，中间连续插值偏差与方差。$\gamma$ 控回报视野、$\lambda$ 控估计器偏差-方差，两旋钮正交。它是 A2C/PPO/TRPO 的事实标准优势估计器，本质是**优势版的 TD(λ)**。
 
-GAE 原论文用学习曲线直接展示了 $\lambda$ 的作用——cart-pole 任务上，$\gamma=0.99$ 固定、$\lambda$ 从 0 扫到 1：左图单次运行，$\lambda=0.92$ 收敛最快、$\lambda=0$ 与 $\lambda=1$（两个极端）都明显更慢；右图网格扫 $(\gamma,\lambda)$，同样的「中间 $\lambda$ 最快」模式在多个 $\gamma$ 下重现：<Cite n={1} />
+GAE 原论文用学习曲线直接展示了 $\lambda$ 的作用——cart-pole 任务上，$\gamma=0.99$ 固定、$\lambda$ 从 0 扫到 1：左图单次运行，$\lambda=0.92$ 收敛最快、$\lambda=0$ 与 $\lambda=1$（两个极端）都明显更慢；右图网格扫 $(\gamma,\lambda)$，同样的「中间 $\lambda$ 最快」模式在多个 $\gamma$ 下重现<Cite n={1} />：
 
 <figure className="my-6 grid gap-4 sm:grid-cols-2">
   <img src="./gae-cartpole.svg" alt="GAE 论文 Figure 2 左图：cart-pole 任务学习曲线，固定 γ=0.99 改变 λ，λ=0.92 收敛最快，λ=0 和 λ=1 都更慢，展示偏差-方差权衡的最优中间点" className="mx-auto h-auto max-w-full rounded-lg border border-zinc-200 shadow-sm dark:border-zinc-800" />
@@ -168,13 +168,13 @@ GAE 原论文用学习曲线直接展示了 $\lambda$ 的作用——cart-pole �
 
 ### GAE 的形式化偏差界：Critic 误差如何传导给优势
 
-上面讲了 $\lambda$ 调偏差-方差的**直觉**，但「偏差」到底从哪来、能有多大？GAE 原论文 <Cite n={1} /> 给了一个干净的形式化界。设 Critic $V_\phi$ 对真值 $v_\pi$ 的近似误差有上界 $\epsilon=\max_s|V_\phi(s)-v_\pi(s)|$，则用 $V_\phi$ 算的 GAE 优势 $\hat A^{GAE}_t$ 偏离「用真值算的 GAE 优势」$\hat A^{GAE,\pi}_t$ 不超过：
+上面讲了 $\lambda$ 调偏差-方差的**直觉**，但「偏差」到底从哪来、能有多大？GAE 原论文<Cite n={1} /> 给了一个干净的形式化界。设 Critic $V_\phi$ 对真值 $v_\pi$ 的近似误差有上界 $\epsilon=\max_s|V_\phi(s)-v_\pi(s)|$，则用 $V_\phi$ 算的 GAE 优势 $\hat A^{GAE}_t$ 偏离「用真值算的 GAE 优势」$\hat A^{GAE,\pi}_t$ 不超过：
 
 $$
 \big|\hat A^{GAE}_t - \hat A^{GAE,\pi}_t\big| \;\le\; \frac{2\,\epsilon}{1-\gamma\lambda}\qquad(\lambda<1)
 $$
 
-**推导** <Cite n={1} />：记偏差 $b(s)=V_\phi(s)-v_\pi(s)$（故 $|b(s)|\le\epsilon$）。用 $V_\phi$ 算的 TD 误差 $\delta_t^\phi=r_t+\gamma V_\phi(s_{t+1})-V_\phi(s_t)$ 与用真值的 $\delta_t^\pi=r_t+\gamma v_\pi(s_{t+1})-v_\pi(s_t)$ 之差为 $\gamma b(s_{t+1})-b(s_t)$（奖励与转移抵消，只剩 $b$ 的差）。GAE 优势是 $\delta$ 的几何加权和 $\sum_l(\gamma\lambda)^l\delta_{t+l}$，故偏差 $=\sum_l(\gamma\lambda)^l[\gamma b(s_{t+l+1})-b(s_{t+l})]$，每项绝对值 $\le\gamma\epsilon+\epsilon=\epsilon(1+\gamma)$，求和得 $\epsilon(1+\gamma)/(1-\gamma\lambda)\le 2\epsilon/(1-\gamma\lambda)$（因 $\gamma\le1$）。$\lambda=1$ 时分母 $1-\gamma\to0$，界发散——这正是「λ=1 退化为 MC、Critic 误差通过长 rollout 被放大」的极端。
+**推导**<Cite n={1} />：记偏差 $b(s)=V_\phi(s)-v_\pi(s)$（故 $|b(s)|\le\epsilon$）。用 $V_\phi$ 算的 TD 误差 $\delta_t^\phi=r_t+\gamma V_\phi(s_{t+1})-V_\phi(s_t)$ 与用真值的 $\delta_t^\pi=r_t+\gamma v_\pi(s_{t+1})-v_\pi(s_t)$ 之差为 $\gamma b(s_{t+1})-b(s_t)$（奖励与转移抵消，只剩 $b$ 的差）。GAE 优势是 $\delta$ 的几何加权和 $\sum_l(\gamma\lambda)^l\delta_{t+l}$，故偏差 $=\sum_l(\gamma\lambda)^l[\gamma b(s_{t+l+1})-b(s_{t+l})]$，每项绝对值 $\le\gamma\epsilon+\epsilon=\epsilon(1+\gamma)$，求和得 $\epsilon(1+\gamma)/(1-\gamma\lambda)\le 2\epsilon/(1-\gamma\lambda)$（因 $\gamma\le1$）。$\lambda=1$ 时分母 $1-\gamma\to0$，界发散——这正是「λ=1 退化为 MC、Critic 误差通过长 rollout 被放大」的极端。
 
 这个界揭示了三件事：
 
@@ -243,9 +243,9 @@ print(f"  -> 这就是为何 PPO 默认 lam=0.95: 界可控 (~34*eps), 靠 Criti
 
 ### A2C 与 A3C：同步批量 vs 异步多线程
 
-Actor-Critic 的「批量更新」有两个主流工程实现，差别只在**怎么采集数据**：<Cite n={[3,5]} />
+Actor-Critic 的「批量更新」有两个主流工程实现，差别只在**怎么采集数据**<Cite n={[3,5]} />：
 
-| | **A2C**（Advantage Actor-Critic，同步） | **A3C**(Asynchronous Advantage Actor-Critic,Mnih et al., 2016 <Cite n={3} />) |
+| | **A2C**（Advantage Actor-Critic，同步） | **A3C**(Asynchronous Advantage Actor-Critic,Mnih et al., 2016<Cite n={3} />) |
 |---|---|---|
 | 采集 | 多个 actor **同步**各跑一段轨迹，凑齐一个 batch 再更新 | 多个 worker **异步**各自跑，谁ready谁就去更新共享参数 |
 | 参数 | 各 actor 参数一致（同一份 $\theta$） | 各 worker 参数可能落后于全局 $\theta$（异步读到旧值） |
@@ -257,13 +257,13 @@ Actor-Critic 的「批量更新」有两个主流工程实现，差别只在**�
 
 [DQN](/tutorials/dqn) 靠**经验回放池**稳定训练：把转移存起来、打乱重采样，打破相邻样本的时间相关性。但 actor-critic 是 **on-policy** 的——策略 $\pi_\theta$ 每步都在变，旧策略采的转移对当前策略是「过时的」（importance ratio $\pi_\theta/\pi_{\theta_{\text{old}}}$ 偏离 1），不能像 DQN 那样反复回放老数据。那 on-policy 方法怎么解决样本相关性？
 
-A3C 的答案 <Cite n={3} /> 是**用并行 worker 替代经验回放**：开 $K$ 个 worker，各自跑一份独立的环境副本、带不同的探索种子，它们的轨迹互不影响、**天然去相关**。同一个 batch 里的样本来自 $K$ 条独立轨迹而不是一条轨迹的相邻时刻——这起到了和 replay buffer 一样的去相关作用，但完全 on-policy（采完就用、用完就丢，不存旧数据）。论文里把这叫「parallel actor-learners have a stabilizing effect on training」<Cite n={3} />，本质就是并行去相关。<Cite n={3} />
+A3C 的答案<Cite n={3} /> 是**用并行 worker 替代经验回放**：开 $K$ 个 worker，各自跑一份独立的环境副本、带不同的探索种子，它们的轨迹互不影响、**天然去相关**。同一个 batch 里的样本来自 $K$ 条独立轨迹而不是一条轨迹的相邻时刻——这起到了和 replay buffer 一样的去相关作用，但完全 on-policy（采完就用、用完就丢，不存旧数据）。论文里把这叫「parallel actor-learners have a stabilizing effect on training」<Cite n={3} />，本质就是并行去相关<Cite n={3} />。
 
 > 💡 **为何 on-policy 不能用 replay**：replay 回放的是 $\pi_{\theta_{\text{old}}}$ 采的转移，但 actor-critic 的梯度 $\nabla\log\pi_\theta(a|s)\hat A$ 里 $\log\pi_\theta$ 是**当前**策略的对数概率——用旧数据算它需要重要性采样修正 $\frac{\pi_\theta}{\pi_{\theta_{\text{old}}}}$，且 ratio 会随训练发散。PPO 的裁剪就是为约束这个 ratio 才存在的（见上节）。A3C/A2C 用并行采集直接采当前策略的新数据，绕开了这整个问题。
 
 #### A3C 异步架构：Hogwild！ 式无锁更新
 
-A3C 的工程结构（Mnih et al. 2016 <Cite n={3} />，Lilian Weng 的讲法 <Cite n={5} /> 给了清晰梳理）：
+A3C 的工程结构（Mnih et al. 2016<Cite n={3} />，Lilian Weng 的讲法<Cite n={5} /> 给了清晰梳理）：
 
 - **全局共享参数**：策略网络 $\theta$、价值网络 $w$,放在共享内存里,所有 worker 共用一份.
 - **线程本地副本**：每个 worker 有本地副本 $\theta', w'$.每轮开始时从全局同步 $\theta'\leftarrow\theta,\ w'\leftarrow w$.
@@ -274,7 +274,7 @@ $$
 \hat Q(s_t,a_t) \;=\; \sum_{i=0}^{n-1}\gamma^i r_{t+i} \;+\; \gamma^n V_w(s_{t+n})
 $$
 
-- **本地算梯度并异步写回**：policy 梯度 $d\theta \leftarrow d\theta + \nabla_{\theta'}\log\pi_{\theta'}(a_t|s_t)\,(R - V_{w'}(s_t))$,value 梯度 $dw \leftarrow dw + \nabla_{w'}(R - V_{w'}(s_t))^2$,累加完一步**直接异步写回全局 $\theta, w$**——**不加锁**（Hogwild! 式 <Cite n={5} />）,写回期间别的 worker 可能正在读或写.这就是 A3C 名字里 **Asynchronous** 的来源.
+- **本地算梯度并异步写回**：policy 梯度 $d\theta \leftarrow d\theta + \nabla_{\theta'}\log\pi_{\theta'}(a_t|s_t)\,(R - V_{w'}(s_t))$,value 梯度 $dw \leftarrow dw + \nabla_{w'}(R - V_{w'}(s_t))^2$,累加完一步**直接异步写回全局 $\theta, w$**——**不加锁**（Hogwild! 式<Cite n={5} />）,写回期间别的 worker 可能正在读或写.这就是 A3C 名字里 **Asynchronous** 的来源.
 
 ```
 # A3C 单个 worker 伪代码(Mnih et al. 2016 [3])
@@ -293,13 +293,13 @@ async_update(global θ, w, dθ, dw)        # 无锁异步写回
 
 #### entropy 正则化：别让策略太早收敛
 
-A3C 在策略损失里还加了一项 **entropy bonus** $+\beta\,H(\pi_\theta(\cdot|s))$（熵 $H=-\sum_a \pi\log\pi$，均匀分布时最大）。直觉：策略越确定（概率越集中在一个动作上），熵越低。加 $+\beta H$ 是**鼓励策略保持一定随机性**，抵消梯度上升把概率往当前最优动作堆积的倾向——否则策略一旦坍缩到某个动作就不再探索，容易卡在局部最优。$\beta\approx0.01$ 是常见值。这个 trick 不止 A3C 用，PPO 的组合目标 $L^{\text{CLIP}+S+V}$ 里的 $S$ 项 <Cite n={4} />、SAC 的最大熵目标、IMPALA 的 entropy bonus 都是同一个东西。
+A3C 在策略损失里还加了一项 **entropy bonus** $+\beta\,H(\pi_\theta(\cdot|s))$（熵 $H=-\sum_a \pi\log\pi$，均匀分布时最大）。直觉：策略越确定（概率越集中在一个动作上），熵越低。加 $+\beta H$ 是**鼓励策略保持一定随机性**，抵消梯度上升把概率往当前最优动作堆积的倾向——否则策略一旦坍缩到某个动作就不再探索，容易卡在局部最优。$\beta\approx0.01$ 是常见值。这个 trick 不止 A3C 用，PPO 的组合目标 $L^{\text{CLIP}+S+V}$ 里的 $S$ 项<Cite n={4} />、SAC 的最大熵目标、IMPALA 的 entropy bonus 都是同一个东西。
 
 #### A2C：同步版的工程简化
 
-A2C（Advantage Actor-Critic）是 A3C 的**同步版** <Cite n={5} />：一个 coordinator 等所有 $K$ 个并行 actor 都跑完各自 rollout，把数据凑成一个 batch，**一次性**更新全局参数，然后所有 actor 从同一份新 $\theta$ 出发开始下一轮。
+A2C（Advantage Actor-Critic）是 A3C 的**同步版**<Cite n={5} />：一个 coordinator 等所有 $K$ 个并行 actor 都跑完各自 rollout，把数据凑成一个 batch，**一次性**更新全局参数，然后所有 actor 从同一份新 $\theta$ 出发开始下一轮。
 
-代价是吞吐——要等最慢的 actor。但收益是：**staleness = 0**（所有样本都是当前策略采的，梯度基于当前参数算），而且批量更新对 GPU 友好（大批量矩阵运算比 A3C 的频繁零碎更新高效得多）。实践发现 **同步批量（A2C）+ 大批量 + GAE + PPO 裁剪**这套组合更稳更快，A3C 逐渐退场 <Cite n={3} /><Cite n={5} />。**今天说「actor-critic」，默认就是 A2C 式的同步批量 + Critic 回归 $V$ + GAE 优势。**
+代价是吞吐——要等最慢的 actor。但收益是：**staleness = 0**（所有样本都是当前策略采的，梯度基于当前参数算），而且批量更新对 GPU 友好（大批量矩阵运算比 A3C 的频繁零碎更新高效得多）。实践发现 **同步批量（A2C）+ 大批量 + GAE + PPO 裁剪**这套组合更稳更快，A3C 逐渐退场<Cite n={[3,5]} />。**今天说「actor-critic」，默认就是 A2C 式的同步批量 + Critic 回归 $V$ + GAE 优势。**
 
 #### 同步 vs 异步：一张表看懂取舍
 
@@ -310,7 +310,7 @@ A2C（Advantage Actor-Critic）是 A3C 的**同步版** <Cite n={5} />：一个 
 | 吞吐 | 高（谁 ready 谁更新，不等） | 受最慢 actor 拖累 |
 | 实现复杂度 | 高（无锁共享内存、线程同步） | 低（coordinator + batch） |
 | 数据同质性 | 各 worker 轨迹时序错开，天然去相关 | 同一时刻采集，batch 内跨 worker 独立 |
-| 现代地位 | 经典开创工作 <Cite n={3} />，已退场 | 主流（PPO 采集基本是 A2C 式） |
+| 现代地位 | 经典开创工作<Cite n={3} />，已退场 | 主流（PPO 采集基本是 A2C 式） |
 
 下面这个 CodeRunner 把「并行去相关」「staleness」「entropy 正则」三件事用最小玩具演示一遍——脱离真实训练循环，直接看机理：
 
@@ -369,9 +369,9 @@ print("  => A3C 损失里加 +beta*H(pi)(beta~0.01),把 entropy 顶住不让它�
 print("     否则策略一旦确定就不再探索,陷入局部最优。PPO/SAC/IMPALA 都沿用此 trick。")
 `} />
 
-> 💡 **A3C 为什么不需要 target network**：DQN 用一个延迟更新的 target network 来稳定 Q 目标，但 A3C 的并行去相关 + 异步平均本身已经提供了稳定性（各 worker 的梯度噪声互相抵消、n-step return 缩短了 bootstrap 链），不再需要 target network 这层补丁 <Cite n={3} />。这是「并行去相关」红利的另一个体现——同一个机理（并行 worker）同时解决了样本相关性和训练不稳定两个问题。
+> 💡 **A3C 为什么不需要 target network**：DQN 用一个延迟更新的 target network 来稳定 Q 目标，但 A3C 的并行去相关 + 异步平均本身已经提供了稳定性（各 worker 的梯度噪声互相抵消、n-step return 缩短了 bootstrap 链），不再需要 target network 这层补丁<Cite n={3} />。这是「并行去相关」红利的另一个体现——同一个机理（并行 worker）同时解决了样本相关性和训练不稳定两个问题。
 
-A3C 的核心创新是「**多个异步 worker 写同一份共享参数**」——不需要经验回放池（不像 DQN），靠 worker 之间的时间错位就实现了样本去相关，这让它在 2016 年能稳定训练纯策略方法 <Cite n={3} />。但异步更新有读写竞争、梯度可能是过时的（staleness，见上 CodeRunner 第 2 段），工程上不如同步批量干净；后来实践发现**同步批量（A2C）+ 大批量 + GAE + PPO 裁剪**这套组合更稳更快，A3C 逐渐退场 <Cite n={5} />。**今天说「actor-critic」，默认就是 A2C 式的同步批量 + Critic 回归 V + GAE 优势。**
+A3C 的核心创新是「**多个异步 worker 写同一份共享参数**」——不需要经验回放池（不像 DQN），靠 worker 之间的时间错位就实现了样本去相关，这让它在 2016 年能稳定训练纯策略方法<Cite n={3} />。但异步更新有读写竞争、梯度可能是过时的（staleness，见上 CodeRunner 第 2 段），工程上不如同步批量干净；后来实践发现**同步批量（A2C）+ 大批量 + GAE + PPO 裁剪**这套组合更稳更快，A3C 逐渐退场<Cite n={5} />。**今天说「actor-critic」，默认就是 A2C 式的同步批量 + Critic 回归 V + GAE 优势。**
 
 | 方法 | 权重用什么 | 方差 | 需要 Critic? |
 |---|---|---|---|
@@ -381,11 +381,11 @@ A3C 的核心创新是「**多个异步 worker 写同一份共享参数**」—�
 | Actor-Critic(GAE) | $\sum(\gamma\lambda)^l\delta_{t+l}$ | 可调 | 是（$V_\psi$） |
 ## IMPALA 与 V-trace：大规模分布式的偏策略修正
 
-A2C 的同步批量有个天花板：**coordinator 要等所有 actor 跑完 rollout 才能更新**。actor 越多、环境越慢，「等最慢的 worker」的浪费越严重；而且所有 actor 必须在「同一份 $\theta$」上采集，意味着 actor 数量受 learner 单次更新能消化的 batch 大小限制——你想扩到几百个 actor 跨机器并行采集，A2C 的同步屏障就成了瓶颈。IMPALA（Importance-Weighted Actor-Learner Architectures,Espeholt et al. 2018 <Cite n={6} />）就是为打破这个瓶颈设计的，它也是 DeepMind 那一批大规模分布式 RL 框架（后续的 Seed RL、Agent57 都沿用此架构）的工程奠基。<Cite n={6} />
+A2C 的同步批量有个天花板：**coordinator 要等所有 actor 跑完 rollout 才能更新**。actor 越多、环境越慢，「等最慢的 worker」的浪费越严重；而且所有 actor 必须在「同一份 $\theta$」上采集，意味着 actor 数量受 learner 单次更新能消化的 batch 大小限制——你想扩到几百个 actor 跨机器并行采集，A2C 的同步屏障就成了瓶颈。IMPALA（Importance-Weighted Actor-Learner Architectures,Espeholt et al. 2018<Cite n={6} />）就是为打破这个瓶颈设计的，它也是 DeepMind 那一批大规模分布式 RL 框架（后续的 Seed RL、Agent57 都沿用此架构）的工程奠基<Cite n={6} />。
 
 ### actor-learner 解耦：采集与学习彻底分离
 
-IMPALA 的核心架构改动是把 A3C 的「线程既是 actor 又是 learner」拆成两个角色 <Cite n={6} />:
+IMPALA 的核心架构改动是把 A3C 的「线程既是 actor 又是 learner」拆成两个角色<Cite n={6} />:
 
 - **Actor**（只采集）：一份环境 + 一份策略网络副本 $\theta_{\text{old}}$，只管 rollout 产生轨迹 $(s_t, a_t, r_t)$，把轨迹塞进一个队列。**Actor 不算梯度、不更新参数**.
 - **Learner**（只学习）：从队列取轨迹，用 V-trace 算 off-policy 价值目标 + 策略梯度，更新唯一的「主 $\theta$」，再定期把新 $\theta$ 推回所有 actor.
@@ -396,7 +396,7 @@ IMPALA 的核心架构改动是把 A3C 的「线程既是 actor 又是 learner�
 
 ### V-trace 目标：截断式 n-step 偏策略价值估计
 
-V-trace 要解决的问题是：给定一条由 $\mu$（旧策略）采的轨迹，如何构造一个 $V_\theta(s_t)$ 的学习目标，使得它既能在 off-policy 下用、又不至于方差爆炸。朴素办法是 n-step 重要性采样——每步乘以 IS 比 $\rho_t=\pi(a_t\mid s_t)/\mu(a_t\mid s_t)$，但 $\rho_t$ 可能很大（分母 $\mu(a_t)$ 小时），n 步乘积随 $n$ 指数爆炸或塌零，方差失控。V-trace 的关键创新是**两个独立的截断系数** <Cite n={6} />:
+V-trace 要解决的问题是：给定一条由 $\mu$（旧策略）采的轨迹，如何构造一个 $V_\theta(s_t)$ 的学习目标，使得它既能在 off-policy 下用、又不至于方差爆炸。朴素办法是 n-step 重要性采样——每步乘以 IS 比 $\rho_t=\pi(a_t\mid s_t)/\mu(a_t\mid s_t)$，但 $\rho_t$ 可能很大（分母 $\mu(a_t)$ 小时），n 步乘积随 $n$ 指数爆炸或塌零，方差失控。V-trace 的关键创新是**两个独立的截断系数**<Cite n={6} />:
 
 $$
 v_t = V_\theta(s_t) + \sum_{i=t}^{t+n-1} \gamma^{i-t}\!\left(\prod_{j=t}^{i-1} c_j\right)\rho_i\!\left(r_i + \gamma V_\theta(s_{i+1}) - V_\theta(s_i)\right)
@@ -408,7 +408,7 @@ $$
 \rho_i = \min\!\left(\bar\rho,\ \frac{\pi(a_i\mid s_i)}{\mu(a_i\mid s_i)}\right),\qquad c_j = \min\!\left(\bar c,\ \frac{\pi(a_j\mid s_j)}{\mu(a_j\mid s_j)}\right)
 $$
 
-这里 $\bar\rho \geq \bar c$ 是论文 Theorem 1 的假设 <Cite n={6} />。理解这个公式要看清三个角色：
+这里 $\bar\rho \geq \bar c$ 是论文 Theorem 1 的假设<Cite n={6} />。理解这个公式要看清三个角色：
 
 - **$\rho_i$（在 TD 误差 $\delta_i$ 上）**：控制**这一步的 TD 误差以多大权重进入目标**.截断到 $\bar\rho$ 意味着「即便目标策略 $\pi$ 远比 $\mu$ 更想选这个动作,我也最多只信 $\bar\rho$ 倍」——防止单步 IS 比爆炸.
 - **$c_j$（在累积 trace 系数 $\prod c_j$ 上）**：控制**历史 TD 误差向当前状态回传的衰减率**.$\prod_{j=t}^{i-1} c_j$ 是一个沿时间的 trace 系数,截断到 $\bar c$ 使其单调不增——这就是 n-step return 的「折扣」部分,但用截断 IS 比替代了纯 $\gamma$.
@@ -416,7 +416,7 @@ $$
 
 ### $\bar\rho$ 决定不动点，$\bar c$ 决定收敛速度
 
-V-trace 最深刻的性质是这两个截断系数扮演**完全不同的角色** <Cite n={5} /><Cite n={6} />:
+V-trace 最深刻的性质是这两个截断系数扮演**完全不同的角色**<Cite n={[5,6]} />:
 
 - **$\bar\rho$ 决定收敛的不动点**。可以证明，V-trace 目标对应的算子是一个收缩算子，其不动点是某个策略 $V^{\pi_{\bar\rho}}$ 的真值，其中 $\pi_{\bar\rho}$ 介于 $\mu$ 和 $\pi$ 之间：
   - $\bar\rho = \infty$（不截断）→ 收敛到 $V^\pi$（目标策略真值，完全 off-policy 修正）；
@@ -424,11 +424,11 @@ V-trace 最深刻的性质是这两个截断系数扮演**完全不同的角色*
   - $\bar\rho$ 在中间 → 收敛到 $\pi$ 与 $\mu$ 之间某策略的值。
 - **$\bar c$ 只影响收敛速度，不动点与 $\bar c$ 无关**。$\bar c$ 越大，trace 系数 $\prod c_j$ 衰减越慢、回传越远、方差越大但信息利用越充分；$\bar c$ 越小，trace 衰减越快、方差小但偏向 1-step TD。$\bar c$ 本质上是个**方差控制旋钮**，不动点由 $\bar\rho$ 锁死。
 
-IMPALA 在 Atari 上的实验默认 **$\bar c = 1.0,\ \bar\rho = 1.0$**，并搜过 $\bar\rho\in\{1, 10, 100\}$，发现 $\bar\rho=1$ 最稳 <Cite n={6} />——也就是说，实践上倾向于「轻度偏策略修正」：把 IS 比夹在 1 以内，既容忍 actor-learner 的版本 staleness，又不让 off-policy 偏差把训练带偏。<Cite n={6} />
+IMPALA 在 Atari 上的实验默认 **$\bar c = 1.0,\ \bar\rho = 1.0$**，并搜过 $\bar\rho\in\{1, 10, 100\}$，发现 $\bar\rho=1$ 最稳<Cite n={6} />——也就是说，实践上倾向于「轻度偏策略修正」：把 IS 比夹在 1 以内，既容忍 actor-learner 的版本 staleness，又不让 off-policy 偏差把训练带偏<Cite n={6} />。
 
 ### on-policy 无害退化：V-trace 的优雅
 
-V-trace 最讨人喜欢的一点是它**在 on-policy 情形下自动退化为标准 n-step Bellman target** <Cite n={5} />。当 $\pi=\mu$（actor 没落后、与 learner 同一份 $\theta$），所有 IS 比都是 1，截断后 $\rho_i = c_j = 1$（假设 $\bar c \geq 1$），V-trace 目标变成：
+V-trace 最讨人喜欢的一点是它**在 on-policy 情形下自动退化为标准 n-step Bellman target**<Cite n={5} />。当 $\pi=\mu$（actor 没落后、与 learner 同一份 $\theta$），所有 IS 比都是 1，截断后 $\rho_i = c_j = 1$（假设 $\bar c \geq 1$），V-trace 目标变成：
 
 $$
 v_t\big|_{\pi=\mu} = V_\theta(s_t) + \sum_{i=t}^{t+n-1}\gamma^{i-t}\!\left(r_i + \gamma V_\theta(s_{i+1}) - V_\theta(s_i)\right) = \text{标准 n-step Bellman target}
@@ -510,9 +510,9 @@ print(f"   V-trace 的优雅:on-policy 无害退化,off-policy 自动加 IS 修�
 | off-policy 修正 | 无（假装 on-policy） | 无（真 on-policy） | **V-trace**（截断 IS） |
 | 扩展性 | 受单机线程数限制 | 受同步屏障 + batch 大小限制 | **可跨机器扩到数百 actor** |
 | GPU 利用 | 差（零碎更新） | 好（大批量） | 好（learner 单点批量，actor 不占 GPU） |
-| 现代地位 | 经典开创 <Cite n={3} />，已退场 | PPO 采集的事实形态 | 大规模分布式 RL 工程奠基 <Cite n={6} /> |
+| 现代地位 | 经典开创<Cite n={3} />，已退场 | PPO 采集的事实形态 | 大规模分布式 RL 工程奠基<Cite n={6} /> |
 
-一句话总结三种架构的演进：**A3C** 证明了「并行去相关 + 异步更新」能稳定训练 on-policy 策略；**A2C** 把异步改成同步、消除 staleness、吃满 GPU，成为 PPO 的采集层；**IMPALA** 接受了 staleness 不可避免，用 V-trace 给它一个正确的 off-policy 修正，从而打破同步屏障、把采集扩到跨机器的几百个 actor——这是从「单机多线程」到「分布式大规模」的工程跃迁 <Cite n={6} />。
+一句话总结三种架构的演进：**A3C** 证明了「并行去相关 + 异步更新」能稳定训练 on-policy 策略；**A2C** 把异步改成同步、消除 staleness、吃满 GPU，成为 PPO 的采集层；**IMPALA** 接受了 staleness 不可避免，用 V-trace 给它一个正确的 off-policy 修正，从而打破同步屏障、把采集扩到跨机器的几百个 actor——这是从「单机多线程」到「分布式大规模」的工程跃迁<Cite n={6} />。
 
 ## 小结
 

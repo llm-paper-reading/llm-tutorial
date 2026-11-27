@@ -14,7 +14,7 @@ export const metadata = tutorialMetadata("safe-rl");
 
 ### CMDP：把约束写进问题定义
 
-标准 MDP 只有奖励 $r$。**约束马尔可夫决策过程（Constrained MDP,CMDP）**<Cite n={2} /> 在此基础上加一组辅助代价函数 $C_i:S\times A\times S\to\mathbb R$ 与对应上限 $d_i$。<Cite n={2} />策略的**代价回报**定义为：
+标准 MDP 只有奖励 $r$。**约束马尔可夫决策过程（Constrained MDP,CMDP）**<Cite n={2} /> 在此基础上加一组辅助代价函数 $C_i:S\times A\times S\to\mathbb R$ 与对应上限 $d_i$<Cite n={2} />。策略的**代价回报**定义为：
 
 $$
 J_{C_i}(\pi)\;=\;\mathbb E_{\tau\sim\pi}\!\left[\sum_{t=0}^{\infty}\gamma^t\,C_i(s_t,a_t,s_{t+1})\right]
@@ -40,18 +40,18 @@ $$
 
 | 方法 | 约束怎么生效 | 代表算法 | 特点 |
 |---|---|---|---|
-| **信赖域硬约束** | 每步更新在 KL 信赖域内**显式投影**到可行集 | CPO(Achiam et al. 2017 <Cite n={1} />) | 每步近约束满足有理论保证，二阶求解复杂 |
+| **信赖域硬约束** | 每步更新在 KL 信赖域内**显式投影**到可行集 | CPO(Achiam et al. 2017<Cite n={1} />) | 每步近约束满足有理论保证，二阶求解复杂 |
 | **拉格朗日对偶** | 把约束上升为对偶变量 $\lambda$，与策略交替优化 | PPO-Lagrangian | 一阶简单，但 $\lambda$ 调参敏感、振荡 |
-| **安全滤波（双策略）** | 任务策略只管奖励，**安全 critic 估违反概率**，超阈值则用**恢复策略**覆盖动作 | Recovery RL(Thanananjeyan et al. 2021 <Cite n={3} />) | 解耦任务与安全，可叠加任意基座算法，需离线数据预学危险区 |
+| **安全滤波（双策略）** | 任务策略只管奖励，**安全 critic 估违反概率**，超阈值则用**恢复策略**覆盖动作 | Recovery RL(Thanananjeyan et al. 2021<Cite n={3} />) | 解耦任务与安全，可叠加任意基座算法，需离线数据预学危险区 |
 | **奖励塑质（软）** | $r'=r-\sum\lambda_i C_i$ 折进奖励 | potential-based shaping | 最简单但**不保证约束满足**，只鼓励 |
 
-**CPO(Constrained Policy Optimization)**<Cite n={1} /> 是 TRPO 的约束版——TRPO 在 KL 信赖域 $\bar D_{KL}(\pi\|\pi_k)\le\delta$ 内最大化替代优势，CPO 在同样的信赖域内**同时**满足代价约束。<Cite n={1} />它的局部近似是：
+**CPO(Constrained Policy Optimization)**<Cite n={1} /> 是 TRPO 的约束版——TRPO 在 KL 信赖域 $\bar D_{KL}(\pi\|\pi_k)\le\delta$ 内最大化替代优势，CPO 在同样的信赖域内**同时**满足代价约束<Cite n={1} />。它的局部近似是：
 
 $$
 \pi_{k+1}=\arg\max_{\pi}\;\mathbb E_{\substack{s\sim d^{\pi_k}\\a\sim\pi}}\!\Bigl[A^{\pi_k}(s,a)\Bigr]\quad\text{s.t.}\quad J_{C_i}(\pi_k)+\frac{1}{1-\gamma}\,\mathbb E_{\substack{s\sim d^{\pi_k}\\a\sim\pi}}\!\Bigl[A^{\pi_k}_{C_i}(s,a)\Bigr]\le d_i,\;\;\bar D_{KL}(\pi\|\pi_k)\le\delta
 $$
 
-代价约束用一阶上界近似（代价替代 $\bar C_i(\pi)=J_{C_i}(\pi_k)+\frac{1}{1-\gamma}E[A^{\pi_k}_{C_i}]$），Proposition 2 给出每步约束违反界 $J_{C_i}(\pi_{k+1})\le d_i+\frac{\sqrt{2\delta}\,\gamma\,\epsilon^{\pi_{k+1}}_{C_i}}{(1-\gamma)^2}$——**每次迭代近约束满足**，这是 CPO 相比拉格朗日法的核心优势（后者可能大幅违反再慢慢拉回）。<Cite n={1} />
+代价约束用一阶上界近似（代价替代 $\bar C_i(\pi)=J_{C_i}(\pi_k)+\frac{1}{1-\gamma}E[A^{\pi_k}_{C_i}]$），Proposition 2 给出每步约束违反界 $J_{C_i}(\pi_{k+1})\le d_i+\frac{\sqrt{2\delta}\,\gamma\,\epsilon^{\pi_{k+1}}_{C_i}}{(1-\gamma)^2}$——**每次迭代近约束满足**，这是 CPO 相比拉格朗日法的核心优势（后者可能大幅违反再慢慢拉回）<Cite n={1} />。
 
 ### CPO 的实用求解：线性-二次凸规划
 
@@ -165,7 +165,7 @@ $$
 
 ### Recovery RL：安全滤波的双策略分解
 
-CPO 和 PPO-Lagrangian 都是**单策略**框架——同一个 $\pi_\theta$ 既要追奖励又要守约束，约束只能通过修改目标（塑质）或更新规则（信赖域投影）间接介入。**Recovery RL**<Cite n={3} /> 换了个思路：**把任务和安全拆给两个策略**，任务策略 $\pi_{\text{task}}$ 完全无视约束只管奖励，一个**安全 critic** $\hat Q^{\pi}_{\text{risk}}(s,a)$ 估当前 $(s,a)$ 的未来违反概率，超阈值就把动作**覆盖**成恢复策略 $\pi_{\text{rec}}$ 输出的安全动作——这就是「安全滤波（safety filter）」。<Cite n={3} />
+CPO 和 PPO-Lagrangian 都是**单策略**框架——同一个 $\pi_\theta$ 既要追奖励又要守约束，约束只能通过修改目标（塑质）或更新规则（信赖域投影）间接介入。**Recovery RL**<Cite n={3} /> 换了个思路：**把任务和安全拆给两个策略**，任务策略 $\pi_{\text{task}}$ 完全无视约束只管奖励，一个**安全 critic** $\hat Q^{\pi}_{\text{risk}}(s,a)$ 估当前 $(s,a)$ 的未来违反概率，超阈值就把动作**覆盖**成恢复策略 $\pi_{\text{rec}}$ 输出的安全动作——这就是「安全滤波（safety filter）」<Cite n={3} />。
 
 先看约束设定。Recovery RL 把代价函数限定为**二元违反指示** $C:S\to\{0,1\}$（$C(s)=1$ 表示该状态违反约束，如碰撞/越界），并引入一个**独立于奖励折扣的 $\gamma_{\text{risk}}$** 折扣未来违反。安全 critic 估的是**当前策略 $\pi$ 下、从 $(s,a)$ 出发的未来违反折扣概率**：
 

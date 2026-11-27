@@ -20,14 +20,14 @@ export const metadata = tutorialMetadata("meta-rl");
 
 元 RL 有两大范式，思路截然不同：
 
-**MAML（Model-Agnostic Meta-Learning,[Finn et al., 2017]<Cite n={1} />）** 学一个「**易微调的初始化**」$\theta$。核心是**双层优化（bi-level optimization）**：<Cite n={1} />
+**MAML（Model-Agnostic Meta-Learning,[Finn et al., 2017]<Cite n={1} />）** 学一个「**易微调的初始化**」$\theta$。核心是**双层优化（bi-level optimization）**<Cite n={1} />：
 
 - **内循环（inner loop）**：对采样任务 $\mathcal T_i$,从 $\theta$ 走几步梯度下降,得到任务适配参数 $\theta'_i = \theta - \alpha\nabla_\theta \mathcal L_{\mathcal T_i}(f_\theta)$.在 RL 里 $\mathcal L_{\mathcal T_i}$ 就是 policy gradient 损失（在 $\mathcal T_i$ 上采几条轨迹,REINFORCE 或 actor-critic 更新）.
 - **外循环（outer loop）**：meta 目标评估**适配后**的 $\theta'_i$ 在该任务新轨迹上的泛化损失,$\min_\theta \mathbb E_{\mathcal T_i}[\mathcal L_{\mathcal T_i}(f_{\theta'_i})]$.关键是 **meta 梯度穿过内循环的梯度更新本身**——对原始 $\theta$ 求导时,要算 $\theta'_i$ 如何依赖 $\theta$（$\theta'_i=\theta-\alpha\nabla\mathcal L$,故 $\partial\theta'_i/\partial\theta=I-\alpha\nabla^2\mathcal L$ 含二阶 Hessian 项）.这一阶泰勒近似即 **FOMAML**(first-order MAML),省掉 Hessian 算力.
 
 直觉：MAML 不优化 $\theta$ 在任务上的直接损失，而是优化「**从 $\theta$ 走几步后**的损失」——所以 $\theta$ 被推向参数空间里「几步梯度就能到达好解」的区域，而非「本身就在好解」的区域。
 
-**RL²（[Duan et al., 2016]<Cite n={2} />）** 不手设快速 RL 算法，**把 RL 算法本身编码进 RNN 的权重**。一个 RNN 策略跨 episode 维持隐藏状态（同一个 MDP 内**不重置**隐藏状态），隐藏激活充当「面对未见 MDP 时的算法记忆」。输入是 $(o_t, a_{t-1}, r_{t-1}, \text{done}_{t-1})$——正是普通 RL 算法需要的信息。双时间尺度：训练时**慢速**权重更新学出一个 RNN（用标准 PPO/TRPO 在任务分布上训），测试时**快速**激活更新（按 episode 累积隐藏状态）即可适配新 MDP，无需任何梯度步。<Cite n={2} />
+**RL²（[Duan et al., 2016]<Cite n={2} />）** 不手设快速 RL 算法，**把 RL 算法本身编码进 RNN 的权重**。一个 RNN 策略跨 episode 维持隐藏状态（同一个 MDP 内**不重置**隐藏状态），隐藏激活充当「面对未见 MDP 时的算法记忆」。输入是 $(o_t, a_{t-1}, r_{t-1}, \text{done}_{t-1})$——正是普通 RL 算法需要的信息。双时间尺度：训练时**慢速**权重更新学出一个 RNN（用标准 PPO/TRPO 在任务分布上训），测试时**快速**激活更新（按 episode 累积隐藏状态）即可适配新 MDP，无需任何梯度步<Cite n={2} />。
 
 | 范式 | 学什么 | 优化结构 | 梯度阶数 | 算法可解释性 |
 |---|---|---|---|---|
@@ -101,7 +101,7 @@ meta 训练后: a0=-0.0398 (任务族 a~U(-2,2) 均值=0)
 
 ### FOMAML：把 meta 梯度的二阶项砍掉
 
-MAML 透明、有原则，但 MAML 的推导里那句「meta 梯度穿过内循环，含二阶 Hessian 项」是它工程上的阿喀琉斯之踵。算 Hessian-向量积 $\nabla^2\mathcal L\,\mathbf v$ 在深度网络里要额外一次反向传播（与 [TRPO 共轭梯度法里的 Hessian-向量积](/tutorials/trpo#二阶近似目标一阶约束二阶)同源），且内循环多步时 Hessian 链式相乘，数值不稳、显存翻倍。Finn et al. 2017 在原论文里就给了一个工程兜底——**FOMAML(first-order MAML)**：把 meta 梯度里的二阶项直接砍掉，只用一阶信息 <Cite n={1} />。
+MAML 透明、有原则，但 MAML 的推导里那句「meta 梯度穿过内循环，含二阶 Hessian 项」是它工程上的阿喀琉斯之踵。算 Hessian-向量积 $\nabla^2\mathcal L\,\mathbf v$ 在深度网络里要额外一次反向传播（与 [TRPO 共轭梯度法里的 Hessian-向量积](/tutorials/trpo#二阶近似目标一阶约束二阶)同源），且内循环多步时 Hessian 链式相乘，数值不稳、显存翻倍。Finn et al. 2017 在原论文里就给了一个工程兜底——**FOMAML(first-order MAML)**：把 meta 梯度里的二阶项直接砍掉，只用一阶信息<Cite n={1} />。
 
 **完整 meta 梯度怎么来。** 单步内循环 $\theta'_i=\theta-\alpha\nabla_\theta\mathcal L_{\mathcal T_i}(\theta)$，meta 目标是 $\min_\theta\mathbb E_{\mathcal T_i}[\mathcal L_{\mathcal T_i}(\theta'_i)]$。对 $\theta$ 求导要穿过内循环的梯度更新本身——链式法则给
 
@@ -210,7 +210,7 @@ print(f"     这正是 Finn 2017 原论文发现 FOMAML 与 MAML 性能相当的
 
 **FOMAML 何时失准。** 偏差 $\alpha H\mathbf g'$ 在三种情况下不再只是良性的幅值缩放：① **$\alpha$ 大**（内循环走远，$\theta'$ 偏离 $\theta$ 大，Hessian 在两点间变化大，$I$ 近似失真）；② **损失曲面强非凸**（Hessian 方向随 $\theta$ 急剧变化，$H\mathbf g'$ 与 $\mathbf g'$ 不再近似共线，方向偏转出现）；③ **内循环多步**（雅可比链式相乘 $(I-\alpha H_1)\cdots(I-\alpha H_k)$，每步舍掉的 $\alpha H$ 误差累积）。实践中 MAML 用小 $\alpha$ + 1-5 步内循环，这三种失准条件都不严重；但若把内循环步数推到很大或 $\alpha$ 调高，FOMAML 与 MAML 的差距会显现。
 
-**一阶 meta-RL 家族。** FOMAML 不是唯一的一阶近似。**Reptile**（Nichol et al. 2018）走得更远：连外循环的「在 $\theta'$ 处算梯度」都省了，直接把 $\theta$ 沿 $\theta'-\theta$ 方向更新（即「朝适配后的参数走」），完全无需反向传播穿过内循环——它是 FOMAML 的进一步简化，在简单任务族上与 MAML 表现相近。**ANIL**（almost no inner loop,Raghu et al. 2020）则发现内循环只更新网络最后一层就足够，前面层靠外循环一阶梯度自然学出——把 FOMAML「一阶够用」的洞察推到极致。这三者（FOMAML / Reptile / ANIL）构成一阶 meta-RL 的谱系，核心洞见都是 Finn 2017 原论文的那个经验发现：**meta 梯度里二阶项的贡献小到可以忽略** <Cite n={1} />。这也解释了为何工业界 meta-RL 几乎不用完整 MAML——二阶精度的理论收益抵不过一阶近似的工程节省。
+**一阶 meta-RL 家族。** FOMAML 不是唯一的一阶近似。**Reptile**（Nichol et al. 2018）走得更远：连外循环的「在 $\theta'$ 处算梯度」都省了，直接把 $\theta$ 沿 $\theta'-\theta$ 方向更新（即「朝适配后的参数走」），完全无需反向传播穿过内循环——它是 FOMAML 的进一步简化，在简单任务族上与 MAML 表现相近。**ANIL**（almost no inner loop,Raghu et al. 2020）则发现内循环只更新网络最后一层就足够，前面层靠外循环一阶梯度自然学出——把 FOMAML「一阶够用」的洞察推到极致。这三者（FOMAML / Reptile / ANIL）构成一阶 meta-RL 的谱系，核心洞见都是 Finn 2017 原论文的那个经验发现：**meta 梯度里二阶项的贡献小到可以忽略**<Cite n={1} />。这也解释了为何工业界 meta-RL 几乎不用完整 MAML——二阶精度的理论收益抵不过一阶近似的工程节省。
 
 ## 小结
 

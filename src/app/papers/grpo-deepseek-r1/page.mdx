@@ -7,21 +7,21 @@ export const metadata = paperMetadata(paper);
 
 # GRPO 与 DeepSeek-R1：训练会推理的大模型
 
-2025 年 1 月，DeepSeek 发布的 R1 让开源社区震动：一个**纯强化学习**训出来的模型，在数学与代码推理上比肩 OpenAI 的 o1。<Cite n={1} />这篇阅读笔记拆解论文的两个核心方法——**GRPO** 砍掉 PPO 的 critic，**RLVR** 用规则判分取代奖励模型——并指出论文后续被专门批判的两个训练偏置。<Cite n={[1,4]} />
+2025 年 1 月，DeepSeek 发布的 R1 让开源社区震动：一个**纯强化学习**训出来的模型，在数学与代码推理上比肩 OpenAI 的 o1<Cite n={1} />。这篇阅读笔记拆解论文的两个核心方法——**GRPO** 砍掉 PPO 的 critic，**RLVR** 用规则判分取代奖励模型——并指出论文后续被专门批判的两个训练偏置<Cite n={[1,4]} />。
 
-> 🕰 **论文溯源**：GRPO 最早由 DeepSeekMath（Shao et al., 2024，arXiv:2402.03300）提出，当时的动机就是降低 PPO 的显存开销；R1 论文也明确把 GRPO 归功于该工作。R1 的推进在于把奖励从训练出来的奖励模型换成规则验证，并把 GRPO 用到通用推理任务上。<Cite n={[1,2]} />
+> 🕰 **论文溯源**：GRPO 最早由 DeepSeekMath（Shao et al., 2024，arXiv:2402.03300）提出，当时的动机就是降低 PPO 的显存开销；R1 论文也明确把 GRPO 归功于该工作。R1 的推进在于把奖励从训练出来的奖励模型换成规则验证，并把 GRPO 用到通用推理任务上<Cite n={[1,2]} />。
 
 > 📌 前置：熟悉 [PPO 裁剪](/tutorials/ppo) 与 [优势函数](/tutorials/actor-critic) 会很有帮助。GRPO 几乎是站在 PPO 肩上做减法。
 
 ## 一、动机：为什么不要 critic?
 
-[PPO](/tutorials/ppo) 是 actor-critic：除了策略网络 $\pi_\theta$，还要维护一个**价值网络** $V_\psi(s)$ 来算基线、估计优势 $A_t = G_t - V_\psi(s_t)$。<Cite n={3} />在大模型场景，这个 critic 通常和策略**一样大**（几十亿参数），显存与算力近乎翻倍；而且给「半句话」估准确价值本身就难。<Cite n={2} />
+[PPO](/tutorials/ppo) 是 actor-critic：除了策略网络 $\pi_\theta$，还要维护一个**价值网络** $V_\psi(s)$ 来算基线、估计优势 $A_t = G_t - V_\psi(s_t)$<Cite n={3} />。在大模型场景，这个 critic 通常和策略**一样大**（几十亿参数），显存与算力近乎翻倍；而且给「半句话」估准确价值本身就难<Cite n={2} />。
 
 GRPO 的追问是：**能不能不要 critic，还能算出一个好用的基线？**
 
 ## 二、关键一招：用「一组回答」当基线
 
-对同一道题 $q$，一次采样 $G$ 个回答 $o_1,\dots,o_G$，第 $i$ 个拿到奖励 $r_i$。<Cite n={[1,2]} />GRPO 把优势定义为**组内标准化**:
+对同一道题 $q$，一次采样 $G$ 个回答 $o_1,\dots,o_G$，第 $i$ 个拿到奖励 $r_i$<Cite n={[1,2]} />。GRPO 把优势定义为**组内标准化**:
 
 $$
 \hat A_{i,t} \;=\; \frac{r_i - \operatorname{mean}(r_1,\dots,r_G)}{\operatorname{std}(r_1,\dots,r_G)}, \qquad \text{对回答 } o_i \text{ 的所有 token } t \text{ 取同一值。}
@@ -47,11 +47,11 @@ $$
 
 <GRPOAdvantageViz />
 
-值得一提的是，DeepSeekMath 里的 GRPO 是配合**奖励模型**使用的：4.1.2 节做 outcome supervision，4.1.3 节做 process supervision，奖励来自训练出来的 reward model，而不是规则判分。DeepSeekMath 7B 先用 120B 数学相关 token 继续预训练，再叠加这套 RL，在 MATH 上拿到 51.7%（无外部工具、无投票）。<Cite n={2} />
+值得一提的是，DeepSeekMath 里的 GRPO 是配合**奖励模型**使用的：4.1.2 节做 outcome supervision，4.1.3 节做 process supervision，奖励来自训练出来的 reward model，而不是规则判分。DeepSeekMath 7B 先用 120B 数学相关 token 继续预训练，再叠加这套 RL，在 MATH 上拿到 51.7%（无外部工具、无投票）<Cite n={2} />。
 
 ## 三、目标函数：还是 PPO 的裁剪形状
 
-有了优势，GRPO 的目标几乎就是 PPO 的 ratio-clipping，只是把 $A_t$ 换成上面的组内 $\hat A_{i,t}$，并加上一个 KL 正则把策略拉回参考模型 $\pi_{\text{ref}}$:<Cite n={[1,3]} />
+有了优势，GRPO 的目标几乎就是 PPO 的 ratio-clipping，只是把 $A_t$ 换成上面的组内 $\hat A_{i,t}$，并加上一个 KL 正则把策略拉回参考模型 $\pi_{\text{ref}}$<Cite n={[1,3]} />:
 
 $$
 \mathcal{J}_{\text{GRPO}}(\theta) = \mathbb{E}_{q,\{o_i\}}\!\left[\frac{1}{G}\sum_{i=1}^{G}\frac{1}{|o_i|}\sum_{t=1}^{|o_i|}\!\Big(\min\!\big(\rho_{i,t}\hat A_{i,t},\;\operatorname{clip}(\rho_{i,t},1\!-\!\epsilon,1\!+\!\epsilon)\hat A_{i,t}\big) - \beta\,\mathbb{KL}(\pi_\theta\Vert\pi_{\text{ref}})\Big)\right]
@@ -61,11 +61,11 @@ $$
 
 ## 四、RLVR：规则即奖励
 
-RLVR（Reinforcement Learning with **Verifiable** Rewards）的关键不是新算法，而是**奖励来源**：对数学题，验算答案是否相等；对代码题，跑测试用例看通过率。<Cite n={1} />奖励是**二元或分段**的确定性函数 $r(q,o)\in\{0,1\}$，不需要训练奖励模型，也不存在 RM 被钻空子（reward hacking）的问题。<Cite n={1} />
+RLVR（Reinforcement Learning with **Verifiable** Rewards）的关键不是新算法，而是**奖励来源**：对数学题，验算答案是否相等；对代码题，跑测试用例看通过率<Cite n={1} />。奖励是**二元或分段**的确定性函数 $r(q,o)\in\{0,1\}$，不需要训练奖励模型，也不存在 RM 被钻空子（reward hacking）的问题<Cite n={1} />。
 
 代价是：只适用于「答案可验证」的任务。开放式对话、创意写作没有标准答案，RLVR 无能为力——这正是 R1 之后 RLHF 仍被需要的原因。
 
-但在这类任务上，纯 RLVR 的效果是惊人的。论文最著名的两张训练曲线（R1-Zero，无任何 SFT 冷启动）：（a） AIME 2024 的 pass@1 从 15.6% 一路爬到 71.0%（图上还叠了人类参赛者平均线），consensus（64 次采样投票）更是到 86.7%；（b） 平均响应长度从约 1,800 token 涨到约 8,000——**模型自发学会了「想得更久」**，没有任何人教它反思，「wait, let me reconsider」这类行为是从优化可验证奖励中涌现的：<Cite n={1} />
+但在这类任务上，纯 RLVR 的效果是惊人的。论文最著名的两张训练曲线（R1-Zero，无任何 SFT 冷启动）：（a） AIME 2024 的 pass@1 从 15.6% 一路爬到 71.0%（图上还叠了人类参赛者平均线），consensus（64 次采样投票）更是到 86.7%；（b） 平均响应长度从约 1,800 token 涨到约 8,000——**模型自发学会了「想得更久」**，没有任何人教它反思，「wait, let me reconsider」这类行为是从优化可验证奖励中涌现的<Cite n={1} />：
 
 <figure className="my-6 grid gap-4 sm:grid-cols-2">
   <img src="./fig-aime-curve.svg" alt="R1-Zero 训练过程中 AIME 2024 分数随步数上升：pass@1 从 15.6% 升至 71.0%,consensus@64 达到 86.7%，超过人类参赛者平均水平" className="mx-auto h-auto max-w-full rounded-lg border border-zinc-200 shadow-sm dark:border-zinc-800" />
@@ -78,7 +78,7 @@ RLVR（Reinforcement Learning with **Verifiable** Rewards）的关键不是新�
 
 ## 五、R1-Zero 到 R1：为什么又把 SFT 加回来？
 
-DeepSeek-R1 论文最容易被误读成“一步纯 RL 就够了”。更准确的读法是：**R1-Zero 证明纯 RL 可以激发推理，R1 则把这种能力工程化成可读、可控、可蒸馏的模型**。<Cite n={1} />
+DeepSeek-R1 论文最容易被误读成“一步纯 RL 就够了”。更准确的读法是：**R1-Zero 证明纯 RL 可以激发推理，R1 则把这种能力工程化成可读、可控、可蒸馏的模型**<Cite n={1} />。
 
 | 阶段 | 训练对象 | 主要目的 | 关键取舍 |
 |---|---|---|---|
@@ -89,7 +89,7 @@ DeepSeek-R1 论文最容易被误读成“一步纯 RL 就够了”。更准确�
 | 全场景 RL / 对齐 | 兼顾 helpfulness、harmlessness、reasoning | 让最终 R1 不只是会做题，还能作为通用助手使用 | 开放式偏好仍需要偏好/安全信号 |
 | Distillation | 将 R1 的推理数据蒸馏到 Qwen/Llama 小模型 | 证明大模型涌现的推理模式可以迁移 | 蒸馏模型能力上限受学生容量与数据覆盖限制 |
 
-因此，R1 的贡献有两层：算法层是 GRPO + RLVR 降低了推理 RL 的复杂度；系统层是把“纯 RL 的野生能力”经过 cold start、筛选、SFT、再 RL 和蒸馏，变成可发布、可复现、可被小模型学习的训练流水线。<Cite n={1} />
+因此，R1 的贡献有两层：算法层是 GRPO + RLVR 降低了推理 RL 的复杂度；系统层是把“纯 RL 的野生能力”经过 cold start、筛选、SFT、再 RL 和蒸馏，变成可发布、可复现、可被小模型学习的训练流水线<Cite n={1} />。
 
 ## 六、实验：看结果时要区分 base、Zero、R1 与蒸馏模型
 
@@ -105,10 +105,10 @@ DeepSeek-R1 论文最容易被误读成“一步纯 RL 就够了”。更准确�
 
 ## 七、局限与后续修正
 
-论文走红后，后续工作指出 GRPO+RLVR 有两个系统性偏置，也暴露了可验证奖励路线的边界：<Cite n={[4,5]} />
+论文走红后，后续工作指出 GRPO+RLVR 有两个系统性偏置，也暴露了可验证奖励路线的边界<Cite n={[4,5]} />：
 
-1. **长度偏置（length bias）**：组内标准化里，答对的长回答与答对的短回答优势相同，但长回答包含更多被同一优势更新的 token，训练会逐渐偏向“想得更久、写得更多”。<Cite n={4} />Dr.GRPO 的修法是调整归一化与长度处理，让奖励不再隐式鼓励冗长。
-2. **难度偏置（difficulty bias）**：对一道**全组都答错**的题，$r_i\equiv 0\Rightarrow\operatorname{std}=0$，优势无法定义，该题梯度为零；全组都对的题也提供不了区分信号。<Cite n={4} />DAPO 用 dynamic sampling 丢弃全对/全错题，并用 token-level 策略梯度等工程修正缓解。<Cite n={5} />
+1. **长度偏置（length bias）**：组内标准化里，答对的长回答与答对的短回答优势相同，但长回答包含更多被同一优势更新的 token，训练会逐渐偏向“想得更久、写得更多”<Cite n={4} />。Dr.GRPO 的修法是调整归一化与长度处理，让奖励不再隐式鼓励冗长。
+2. **难度偏置（difficulty bias）**：对一道**全组都答错**的题，$r_i\equiv 0\Rightarrow\operatorname{std}=0$，优势无法定义，该题梯度为零；全组都对的题也提供不了区分信号<Cite n={4} />。DAPO 用 dynamic sampling 丢弃全对/全错题，并用 token-level 策略梯度等工程修正缓解<Cite n={5} />。
 3. **奖励覆盖有限**：RLVR 最适合数学、代码、选择题等可验证任务；对开放式写作、复杂偏好、安全性、真实性等目标，规则奖励很难完整表达。
 4. **过程质量不可直接监督**：最终答案正确不代表推理过程可靠。模型可能学会长篇试探、格式化自我反思，甚至偶然撞对答案；这也是 R1 要补 cold start、SFT 和通用对齐阶段的原因。
 
@@ -116,18 +116,18 @@ DeepSeek-R1 论文最容易被误读成“一步纯 RL 就够了”。更准确�
 
 ## 八、源码走读：两个实现，两条路线
 
-DeepSeekMath 与 R1 论文本身没有开源官方训练代码，但 GRPO 的核心循环在开源社区有两个事实标准实现，正好覆盖「读懂」与「跑大」两种需求：<Cite n={[6,7]} />
+DeepSeekMath 与 R1 论文本身没有开源官方训练代码，但 GRPO 的核心循环在开源社区有两个事实标准实现，正好覆盖「读懂」与「跑大」两种需求<Cite n={[6,7]} />：
 
 | 实现 | 定位 | 代码规模 | 适合谁读 |
 |---|---|---|---|
 | TRL `GRPOTrainer` | 参考实现，HuggingFace 生态，单机易跑易改 | 单文件 ~3,400 行 | 想逐行理解算法的人 |
 | verl `core_algos.py` | 生产级训练框架（火山引擎，R1 类大规模训练的主力开源方案之一） | 多模块 | 想跑千亿模型、多卡 rollout 的人 |
 
-两个实现共同覆盖了论文 Eq (3) 的三件事：**组采样**（同一 prompt 采 $G$ 条回答）、**组内标准化优势**（减均值、除标准差）、**KL 约束**（论文用无偏低方差估计器替代完整 KL）。下面按这个顺序对照源码。<Cite n={2} />
+两个实现共同覆盖了论文 Eq (3) 的三件事：**组采样**（同一 prompt 采 $G$ 条回答）、**组内标准化优势**（减均值、除标准差）、**KL 约束**（论文用无偏低方差估计器替代完整 KL）。下面按这个顺序对照源码<Cite n={2} />。
 
 ### 8.1 组相对优势：verl 的 `compute_grpo_outcome_advantage`
 
-GRPO 的核心一招在 verl 里只有二十几行（`verl/trainer/ppo/core_algos.py`），逐行对应论文 Eq (3)：<Cite n={7} />
+GRPO 的核心一招在 verl 里只有二十几行（`verl/trainer/ppo/core_algos.py`），逐行对应论文 Eq (3)<Cite n={7} />：
 
 ```python
 # verl/trainer/ppo/core_algos.py（节选，注释为本站所加）
@@ -162,7 +162,7 @@ def compute_grpo_outcome_advantage(token_level_rewards, response_mask, index, ep
 
 四个论文概念都能在代码里找到落点：`token_level_rewards.sum` 对应 outcome supervision（奖励只看最终结果）；`id2mean`/`id2std` 就是 Eq (3) 的分母分子；`torch.no_grad()` 是「没有 critic」的直接证据——优势整段不建计算图；最后的 `unsqueeze(-1) * response_mask` 实现「回答 $o_i$ 的所有 token 共享 $\hat A_i$」。特别值得看 `norm_adv_by_std_in_grpo` 这个开关：源码注释明确写着设为 `False` 就变成 Dr.GRPO——第七节讲的长度偏置修正，在这行代码处合流。
 
-TRL 里等价的逻辑更紧凑（`trl/trainer/grpo_trainer.py` 的 `_generate_and_score_completions`），一行张量操作搞定：<Cite n={6} />
+TRL 里等价的逻辑更紧凑（`trl/trainer/grpo_trainer.py` 的 `_generate_and_score_completions`），一行张量操作搞定<Cite n={6} />：
 
 ```python
 # trl/trainer/grpo_trainer.py（节选，注释为本站所加）
@@ -182,7 +182,7 @@ if self.scale_rewards != "none":
 
 ### 8.2 组采样：TRL 的 rollout 循环
 
-优势能这么算的前提，是同一 prompt 真的被采了 $G$ 次。TRL 用一个**重复采样器**从数据侧保证这一点（构造函数里 `self.num_generations = args.num_generations  # = G in the GRPO paper` 是源码自带的论文对照）：<Cite n={6} />
+优势能这么算的前提，是同一 prompt 真的被采了 $G$ 次。TRL 用一个**重复采样器**从数据侧保证这一点（构造函数里 `self.num_generations = args.num_generations  # = G in the GRPO paper` 是源码自带的论文对照）<Cite n={6} />：
 
 ```python
 # trl/trainer/grpo_trainer.py（节选，注释为本站所加）
@@ -199,7 +199,7 @@ def _get_train_sampler(self, dataset=None):
     )
 ```
 
-重复后的 prompt 进入生成阶段。vLLM 路径下，`num_generations` 直接透传给推理引擎，一次调用同时产出同一 prompt 的 $G$ 条不同回答（靠采样温度保证多样性）：<Cite n={6} />
+重复后的 prompt 进入生成阶段。vLLM 路径下，`num_generations` 直接透传给推理引擎，一次调用同时产出同一 prompt 的 $G$ 条不同回答（靠采样温度保证多样性）<Cite n={6} />：
 
 ```python
 # trl/trainer/grpo_trainer.py（节选，注释为本站所加）
@@ -224,7 +224,7 @@ def _generate_single_turn(self, prompt_ids, images, multimodal_fields, has_tool_
 
 ### 8.3 KL 估计器：无偏低方差替代
 
-论文 Eq (1) 里 KL 项是 $\mathbb{KL}(\pi_\theta\Vert\pi_{\text{ref}})$，但对几十亿参数的模型，逐 token 算完整 KL 需要遍历整个词表的 logits，开销不可接受。DeepSeekMath 论文的方案是改用 Schulman 的单样本无偏低方差估计器，verl 的 `kl_penalty` 一字排开所有选项：<Cite n={[2,7]} />
+论文 Eq (1) 里 KL 项是 $\mathbb{KL}(\pi_\theta\Vert\pi_{\text{ref}})$，但对几十亿参数的模型，逐 token 算完整 KL 需要遍历整个词表的 logits，开销不可接受。DeepSeekMath 论文的方案是改用 Schulman 的单样本无偏低方差估计器，verl 的 `kl_penalty` 一字排开所有选项<Cite n={[2,7]} />：
 
 ```python
 # verl/trainer/ppo/core_algos.py（节选，注释为本站所加）
@@ -252,7 +252,7 @@ def kl_penalty_forward(logprob, ref_logprob, kl_penalty):
 
 `k3` 只用已采出 token 的两个 logprob——策略的与参考模型的——不需要整个词表分布，把 $O(V)$ 的 KL 计算降到 $O(1)$，这就是论文「单样本估计器」的全部代价与收益。`kl_penalty` 外层还支持 `k3+` 后缀做 straight-through（前向用 k3、反向用 k2 梯度），照顾偏差与方差的两头。
 
-TRL 的 `_compute_loss` 内联了同一个 k3 估计器，并把它加在**目标函数**一侧而非奖励里——正对应第三节「KL 项直接乘在目标里」的论文原版做法：<Cite n={6} />
+TRL 的 `_compute_loss` 内联了同一个 k3 估计器，并把它加在**目标函数**一侧而非奖励里——正对应第三节「KL 项直接乘在目标里」的论文原版做法<Cite n={6} />：
 
 ```python
 # trl/trainer/grpo_trainer.py（节选，注释为本站所加）
@@ -297,7 +297,7 @@ print(f"advantages = {A.round(3)}")
 - **R1-Zero** 证明纯 RL 能激发长推理、反思和验证；**R1** 则通过 cold start、reasoning RL、拒绝采样、SFT、全场景 RL 和蒸馏，把这种能力整理成可用模型。
 - 长度偏置、难度偏置和奖励覆盖不足，是 R1 之后各类 Dr.GRPO、DAPO、V3.2-style 工程修正继续解决的问题。
 
-论文真正的贡献不是某个精巧的技巧，而是**证明了纯 RL 能激发推理**——这把“推理能力是否必须靠 SFT 蒸馏”的争论一举掀翻。<Cite n={1} />
+论文真正的贡献不是某个精巧的技巧，而是**证明了纯 RL 能激发推理**——这把“推理能力是否必须靠 SFT 蒸馏”的争论一举掀翻<Cite n={1} />。
 
 ## 参考资料
 

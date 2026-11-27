@@ -7,7 +7,7 @@ export const metadata = paperMetadata(paper);
 
 # Chain-of-Thought：提示词里的推理涌现
 
-2022 年 1 月（2023 年 1 月定稿），Google 的 Jason Wei 等人发布 Chain-of-Thought Prompting<Cite n={1} />——可能是一句 prompt 改变一个领域的最纯粹例子。方法只有一行：**在 few-shot 示例的答案前面，把中间推理步骤写出来**。零参数更新、零架构改动，PaLM 540B 仅用 8 个手写示例就在 GSM8K 数学应用题基准上拿到 **56.9%**——超过微调的 GPT-3 175B 加验证器，当时的最优成绩<Cite n={1} />。更重要的是它确立的范式：<Cite n={1} />**推理发生在生成的 token 流里**。[DeepSeek-R1](/papers/deepseek-r1) 的 RL 涌现、Qwen3 的 thinking 模式、o1 系列的 test-time compute——这条线的起点都是这个 prompt 技巧。
+2022 年 1 月（2023 年 1 月定稿），Google 的 Jason Wei 等人发布 Chain-of-Thought Prompting<Cite n={1} />——可能是一句 prompt 改变一个领域的最纯粹例子。方法只有一行：**在 few-shot 示例的答案前面，把中间推理步骤写出来**。零参数更新、零架构改动，PaLM 540B 仅用 8 个手写示例就在 GSM8K 数学应用题基准上拿到 **56.9%**——超过微调的 GPT-3 175B 加验证器，当时的最优成绩<Cite n={1} />。更重要的是它确立的范式<Cite n={1} />：**推理发生在生成的 token 流里**。[DeepSeek-R1](/papers/deepseek-r1) 的 RL 涌现、Qwen3 的 thinking 模式、o1 系列的 test-time compute——这条线的起点都是这个 prompt 技巧。
 
 > 📌 前置：需要 few-shot / in-context learning 概念（[GPT-3](/papers/gpt3)）；后续演进接 [DeepSeek-R1](/papers/deepseek-r1)（RL 训练出的推理）与 [Constitutional AI](/papers/constitutional-ai)（把 CoT 用于 AI 评判）。
 

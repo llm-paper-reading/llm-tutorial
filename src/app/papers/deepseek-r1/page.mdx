@@ -7,7 +7,7 @@ export const metadata = paperMetadata(paper);
 
 # DeepSeek-R1：纯 RL 涌现推理与蒸馏
 
-2025 年 1 月，DeepSeek 发布 R1 论文，给出了一个此前没有完整公开证据的答案：<Cite n={1} />**推理能力可以不靠人类标注的推理轨迹，直接用大规模强化学习从基座里激发出来**。R1-Zero 在 DeepSeek-V3-Base 上跳过 SFT 直接跑 GRPO，奖励只有「答案对不对 + 格式对不对」两条规则，AIME 2024 的 pass@1 从 15.6% 涨到 77.9%，自洽解码 cons@16 到 86.7%——超过人类参赛者平均水平<Cite n={1} />。更关键的是行为层面的涌现：验证、反思、策略切换没有被显式教过，却在训练中自然出现。R1 本体再把这些能力用多阶段管线做成人人可用的模型，并蒸馏出 1.5B–70B 六个小模型开源。
+2025 年 1 月，DeepSeek 发布 R1 论文，给出了一个此前没有完整公开证据的答案<Cite n={1} />：**推理能力可以不靠人类标注的推理轨迹，直接用大规模强化学习从基座里激发出来**。R1-Zero 在 DeepSeek-V3-Base 上跳过 SFT 直接跑 GRPO，奖励只有「答案对不对 + 格式对不对」两条规则，AIME 2024 的 pass@1 从 15.6% 涨到 77.9%，自洽解码 cons@16 到 86.7%——超过人类参赛者平均水平<Cite n={1} />。更关键的是行为层面的涌现：验证、反思、策略切换没有被显式教过，却在训练中自然出现。R1 本体再把这些能力用多阶段管线做成人人可用的模型，并蒸馏出 1.5B–70B 六个小模型开源。
 
 > 📌 前置：GRPO 的算法细节（组内相对优势、去 value model）站内已有 [GRPO 与 DeepSeek-R1](/papers/grpo-deepseek-r1) 精读；基座是 [DeepSeek-V3](/papers/deepseek-v3)；蒸馏思路可对照 [知识蒸馏总览](/papers/distilling-knowledge) 与 [Qwen3 的 OPD](/papers/qwen3)。
 

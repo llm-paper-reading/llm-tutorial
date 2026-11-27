@@ -7,9 +7,9 @@ export const metadata = paperMetadata(paper);
 
 # DPO：无需奖励模型与 RL 的偏好对齐
 
-RLHF 的标准流水线分两步：先用人类偏好数据拟合一个奖励模型 $r_\phi(x,y)$，再用 [PPO](/tutorials/ppo) 优化策略去最大化这个奖励。<Cite n={[2,3,4]} />这条链路复杂、不稳，还要在 RL 阶段在线采样。DPO（Direct Preference Optimization）的洞见是：**奖励与最优策略之间本来就有闭式关系**，把它代回去，就能跳过显式奖励模型和 RL，直接从偏好对优化策略。<Cite n={1} />
+RLHF 的标准流水线分两步：先用人类偏好数据拟合一个奖励模型 $r_\phi(x,y)$，再用 [PPO](/tutorials/ppo) 优化策略去最大化这个奖励<Cite n={[2,3,4]} />。这条链路复杂、不稳，还要在 RL 阶段在线采样。DPO（Direct Preference Optimization）的洞见是：**奖励与最优策略之间本来就有闭式关系**，把它代回去，就能跳过显式奖励模型和 RL，直接从偏好对优化策略<Cite n={1} />。
 
-论文原版的全景对比图：左侧是标准 RLHF 流水线（偏好数据 → 拟合奖励模型 → RL 优化，通常还要加 KL 约束采样），右侧是 DPO——同一个偏好数据集直接进策略模型，用简单的分类损失一步到位，隐式奖励模型内嵌在策略里：<Cite n={1} />
+论文原版的全景对比图：左侧是标准 RLHF 流水线（偏好数据 → 拟合奖励模型 → RL 优化，通常还要加 KL 约束采样），右侧是 DPO——同一个偏好数据集直接进策略模型，用简单的分类损失一步到位，隐式奖励模型内嵌在策略里<Cite n={1} />：
 
 <figure className="my-6">
   <img src="./fig-teaser.png" alt="DPO 与 RLHF 流水线对比：RLHF 需先拟合奖励模型再用强化学习优化策略；DPO 直接用分类目标从偏好数据优化策略，隐式拟合奖励模型" className="mx-auto h-auto max-w-full rounded-lg border border-zinc-200 shadow-sm dark:border-zinc-800" />
@@ -23,13 +23,13 @@ RLHF 的标准流水线分两步：先用人类偏好数据拟合一个奖励模
 
 ## 一、从 KL 约束的 RL 目标出发
 
-RLHF 的 RL 阶段，本质是在奖励 $r$ 下、受 KL 约束求解最优策略：<Cite n={1} />
+RLHF 的 RL 阶段，本质是在奖励 $r$ 下、受 KL 约束求解最优策略<Cite n={1} />：
 
 $$
 \max_{\pi_\theta}\;\mathbb{E}_{x\sim\mathcal{D},\,y\sim\pi_\theta(\cdot\mid x)}\!\big[r(x,y)\big] - \beta\,\mathbb{KL}\!\big(\pi_\theta(\cdot\mid x)\;\big\Vert\;\pi_{\text{ref}}(\cdot\mid x)\big)
 $$
 
-这个 KL 约束的 RL 有**闭式最优解**（用拉格朗日量 + 指数族技巧可解）:<Cite n={1} />
+这个 KL 约束的 RL 有**闭式最优解**（用拉格朗日量 + 指数族技巧可解）<Cite n={1} />:
 
 $$
 \pi^*(y\mid x) = \frac{1}{Z(x)}\,\pi_{\text{ref}}(y\mid x)\,\exp\!\Big(\frac{1}{\beta}\,r(x,y)\Big)
@@ -45,11 +45,11 @@ $$
 r(x,y) = \beta\log\frac{\pi^*(y\mid x)}{\pi_{\text{ref}}(y\mid x)} + \beta\log Z(x)
 $$
 
-这就是论文标题「Your Language Model is Secretly a Reward Model」的来历——**最优策略本身（的对数比）就是一个奖励函数**，无需单独学 $r_\phi$。<Cite n={1} />
+这就是论文标题「Your Language Model is Secretly a Reward Model」的来历——**最优策略本身（的对数比）就是一个奖励函数**，无需单独学 $r_\phi$<Cite n={1} />。
 
 ## 三、代入偏好模型，得到 DPO 损失
 
-人类偏好通常建模为 Bradley-Terry：在 $y_w\succ y_l$(win/lose)下，<Cite n={1} />
+人类偏好通常建模为 Bradley-Terry：在 $y_w\succ y_l$(win/lose)下<Cite n={1} />，
 
 $$
 p(y_w\succ y_l\mid x) = \sigma\!\big(r(x,y_w)-r(x,y_l)\big)
@@ -61,7 +61,7 @@ $$
 p(y_w\succ y_l\mid x) = \sigma\!\Big(\beta\log\frac{\pi_\theta(y_w\mid x)}{\pi_{\text{ref}}(y_w\mid x)} - \beta\log\frac{\pi_\theta(y_l\mid x)}{\pi_{\text{ref}}(y_l\mid x)}\Big)
 $$
 
-于是 DPO 的目标就是对这个偏好概率做**最大似然**（等价于一个二分类交叉熵）:<Cite n={1} />
+于是 DPO 的目标就是对这个偏好概率做**最大似然**（等价于一个二分类交叉熵）<Cite n={1} />:
 
 $$
 \mathcal{L}_{\text{DPO}}(\theta) = -\mathbb{E}_{(x,y_w,y_l)}\!\Big[\log\sigma\!\Big(\beta\log\frac{\pi_\theta(y_w\mid x)}{\pi_{\text{ref}}(y_w\mid x)} - \beta\log\frac{\pi_\theta(y_l\mid x)}{\pi_{\text{ref}}(y_l\mid x)}\Big)\Big]
@@ -71,7 +71,7 @@ $$
 
 ## 四、$\beta$ 到底控制什么？
 
-DPO 论文里 $\beta$ 不是普通学习率，而是来自 KL 约束的温度：它控制新策略允许偏离参考模型 $\pi_{\text{ref}}$ 的程度。<Cite n={1} />
+DPO 论文里 $\beta$ 不是普通学习率，而是来自 KL 约束的温度：它控制新策略允许偏离参考模型 $\pi_{\text{ref}}$ 的程度<Cite n={1} />。
 
 - $\beta$ 较大：偏好 logit 里的对数比被放大，模型更保守地贴近参考策略；训练更稳，但对偏好数据的响应更弱。
 - $\beta$ 较小：同样的 chosen / rejected 差异会产生更强更新，模型更容易偏离参考策略；如果偏好数据噪声大，可能过度优化数据集偏差。
@@ -81,7 +81,7 @@ DPO 论文里 $\beta$ 不是普通学习率，而是来自 KL 约束的温度：
 
 ## 五、实验：DPO 的证据来自三类偏好任务
 
-原论文没有把 DPO 定位成只服务聊天模型的技巧，而是在三类任务上验证“直接偏好优化”能替代奖励模型 + PPO：<Cite n={1} />
+原论文没有把 DPO 定位成只服务聊天模型的技巧，而是在三类任务上验证“直接偏好优化”能替代奖励模型 + PPO<Cite n={1} />：
 
 | 任务 | 评估对象 | 论文想证明什么 |
 |---|---|---|
@@ -89,7 +89,7 @@ DPO 论文里 $\beta$ 不是普通学习率，而是来自 KL 约束的温度：
 | 摘要生成 | Reddit TL;DR 等摘要偏好场景 | DPO 在真实偏好数据上可与 PPO-RLHF 竞争 |
 | 单轮对话 | Anthropic Helpful and Harmless 偏好数据 | DPO 能在开放式回复质量上取得与现有 RLHF 方法相当或更好的结果 |
 
-读这些实验时要注意两个边界：第一，DPO 使用的是**离线偏好对**，它不会像在线 RL 那样在训练中发现新轨迹；第二，论文比较的是当时常见的 PPO-RLHF 实现，后续 RLHF 工程（更好的 reward model、KL 控制、采样策略）本身也在进化。<Cite n={1} />因此 DPO 的意义不是“永远替代 RL”，而是证明许多偏好对齐问题不必先绕一圈奖励模型。
+读这些实验时要注意两个边界：第一，DPO 使用的是**离线偏好对**，它不会像在线 RL 那样在训练中发现新轨迹；第二，论文比较的是当时常见的 PPO-RLHF 实现，后续 RLHF 工程（更好的 reward model、KL 控制、采样策略）本身也在进化<Cite n={1} />。因此 DPO 的意义不是“永远替代 RL”，而是证明许多偏好对齐问题不必先绕一圈奖励模型。
 
 ## 六、与 PPO/RLHF 的对照
 
@@ -113,7 +113,7 @@ DPO 论文里 $\beta$ 不是普通学习率，而是来自 KL 约束的温度：
 
 ## 八、源码走读：两份实现，一条恒等式
 
-前七节把推导走完了，这一节换到真实代码里验证它。DPO 的核心损失短到十行就能写完，但「把论文公式落成能跑的训练器」仍有拼接、掩码、数值稳定等一堆工程细节。两个最常被引用的仓库恰好互补：<Cite n={[5,6]} />
+前七节把推导走完了，这一节换到真实代码里验证它。DPO 的核心损失短到十行就能写完，但「把论文公式落成能跑的训练器」仍有拼接、掩码、数值稳定等一堆工程细节。两个最常被引用的仓库恰好互补<Cite n={[5,6]} />：
 
 | 实现 | 定位 | DPO 损失在哪 | 适合谁读 |
 |---|---|---|---|
@@ -122,7 +122,7 @@ DPO 论文里 $\beta$ 不是普通学习率，而是来自 KL 约束的温度：
 
 ### 8.1 官方 `preference_loss`：论文 Eq(7) 的逐行翻译
 
-先看官方版。四个输入都是**序列级** logprob（下一小节看它们怎么算出来）：<Cite n={5} />
+先看官方版。四个输入都是**序列级** logprob（下一小节看它们怎么算出来）<Cite n={5} />：
 
 ```python
 # direct-preference-optimization/trainers.py（节选，注释为本站所加）
@@ -161,7 +161,7 @@ def preference_loss(policy_chosen_logps: torch.FloatTensor,
 
 ### 8.2 序列级 logprob 从哪来：`concatenated_forward`
 
-`preference_loss` 的输入由 `concatenated_forward` 产出：chosen 与 rejected 沿 batch 维拼成 $2B$，一次前向算完再切回两半（对 FSDP 更省通信），参考模型用同一个函数在 `no_grad` 下再跑一遍：<Cite n={5} />
+`preference_loss` 的输入由 `concatenated_forward` 产出：chosen 与 rejected 沿 batch 维拼成 $2B$，一次前向算完再切回两半（对 FSDP 更省通信），参考模型用同一个函数在 `no_grad` 下再跑一遍<Cite n={5} />：
 
 ```python
 # direct-preference-optimization/trainers.py（节选，注释为本站所加）
@@ -185,7 +185,7 @@ with torch.no_grad():
     reference_chosen_logps, reference_rejected_logps = self.concatenated_forward(self.reference_model, batch)
 ```
 
-再看 logprob 本体，三件事都发生在这十几行里：<Cite n={5} />
+再看 logprob 本体，三件事都发生在这十几行里<Cite n={5} />：
 
 ```python
 # direct-preference-optimization/trainers.py（节选，注释为本站所加）
@@ -211,7 +211,7 @@ def _get_batch_logps(logits, labels, average_log_prob=False):
 
 ### 8.3 TRL `DPOTrainer`：DPO 是个家族
 
-TRL 的生产实现把同一份对数比套上不同外壳（以下节选自 main 分支，2026-09 核对）：<Cite n={6} />
+TRL 的生产实现把同一份对数比套上不同外壳（以下节选自 main 分支，2026-09 核对）<Cite n={6} />：
 
 ```python
 # trl/trainer/dpo_trainer.py（节选，注释为本站所加）

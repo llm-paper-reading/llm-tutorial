@@ -7,7 +7,7 @@ export const metadata = paperMetadata(paper);
 
 # Constitutional AI：用 AI 反馈做无害对齐
 
-2022 年 12 月，Anthropic 发布 Constitutional AI（CAI）<Cite n={1} />——对齐方法的第二大范式分支。彼时 [InstructGPT](/papers/instructgpt) 的 RLHF 刚证明人类偏好可以驱动对齐，但其代价已显现：无害性标注昂贵缓慢、目标不透明（数万条私有标签无法审查），且模型学会了**敷衍式拒绝**——遇到有问题的请求就含糊推脱，helpfulness 与 harmlessness 此消彼长。CAI 的方案激进而简洁：<Cite n={1} />**用一份自然语言写成的原则清单（宪法）替代人工无害性标注，让 AI 自己批评、改写、评判**。52B 模型的实验显示，RL-CAI 在无害-有用的 Pareto 前沿上全面优于用人类反馈训练的版本，且训出一个「不回避」的助手。
+2022 年 12 月，Anthropic 发布 Constitutional AI（CAI）<Cite n={1} />——对齐方法的第二大范式分支。彼时 [InstructGPT](/papers/instructgpt) 的 RLHF 刚证明人类偏好可以驱动对齐，但其代价已显现：无害性标注昂贵缓慢、目标不透明（数万条私有标签无法审查），且模型学会了**敷衍式拒绝**——遇到有问题的请求就含糊推脱，helpfulness 与 harmlessness 此消彼长。CAI 的方案激进而简洁<Cite n={1} />：**用一份自然语言写成的原则清单（宪法）替代人工无害性标注，让 AI 自己批评、改写、评判**。52B 模型的实验显示，RL-CAI 在无害-有用的 Pareto 前沿上全面优于用人类反馈训练的版本，且训出一个「不回避」的助手。
 
 > 📌 前置：建议先读 [InstructGPT](/papers/instructgpt)（RLHF 三步法是 CAI 的对照组）与 [PPO](/papers/ppo-schulman)；偏好判断里用到的推理可接 [Chain-of-Thought](/papers/chain-of-thought)。
 

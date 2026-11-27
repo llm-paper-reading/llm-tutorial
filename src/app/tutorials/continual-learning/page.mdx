@@ -16,7 +16,7 @@ export const metadata = tutorialMetadata("continual-learning");
 
 ### EWC：Fisher 信息标记「重要参数」
 
-**弹性权重巩固（Elastic Weight Consolidation, EWC）**<Cite n={1} /> 的思路是：不存 A 的数据，只存一个「**A 训完后，每个参数有多重要**」的摘要，训 B 时对重要参数施加软约束——允许它们动，但动得越远罚得越重。<Cite n={1} />
+**弹性权重巩固（Elastic Weight Consolidation, EWC）**<Cite n={1} /> 的思路是：不存 A 的数据，只存一个「**A 训完后，每个参数有多重要**」的摘要，训 B 时对重要参数施加软约束——允许它们动，但动得越远罚得越重<Cite n={1} />。
 
 参数重要性用什么度量？EWC 选用该参数处损失曲面的**Fisher 信息对角** $F_i$。直觉：若参数 $i$ 在 A 的解 $\theta^*_A$ 处损失曲面很陡（$F_i$ 大），微动它就让 A 的损失大涨——它对 A「关键」，训 B 时要保护；若曲面很平（$F_i$ 小），动它对 A 无伤——放它自由去适配 B。Fisher 信息的对角元正是损失在当前解处的二阶曲率（负对数似然的 Hessian 期望，见 [策略梯度的收敛性](/tutorials/policy-gradient-theory#自然梯度换一种距离让收敛更稳) 中 Fisher 作策略分布度量的同一概念；在 [DQN 篇 VIME](/tutorials/dqn#不确定性驱动的探索vime集成分歧与情景可达性) 里它还以 KL 近似形式驱动探索），EWC 把它从「度量策略空间距离」转用为「度量参数重要性」。
 
@@ -88,7 +88,7 @@ print("  EWC 遗忘量: %.3f  (精准保护关键参数)" % (L_A(theta_ewc)  - L
 
 ### Progressive Networks：加列而非改列
 
-EWC 走的是「**保护参数**」路线——不动结构，只约束已有权重的更新。另一条截然不同的路线是「**扩张架构**」:**为每个新任务加一列全新网络，旧列冻结、新列随机初始化后训练，列间用侧向连接（lateral connections）传递特征**。这是 Progressive Networks（渐进式网络，Rusu et al. 2016）<Cite n={2} /> 的设计。<Cite n={2} />
+EWC 走的是「**保护参数**」路线——不动结构，只约束已有权重的更新。另一条截然不同的路线是「**扩张架构**」:**为每个新任务加一列全新网络，旧列冻结、新列随机初始化后训练，列间用侧向连接（lateral connections）传递特征**。这是 Progressive Networks（渐进式网络，Rusu et al. 2016）<Cite n={2} /> 的设计<Cite n={2} />。
 
 设任务 A 训完得到列 1 的权重 $\theta^{(1)}$（冻结）。任务 B 来了：新增列 2 $\theta^{(2)}$（可训练），列 1 保持冻结；列 2 的每一层 $l$ 通过一个侧向连接 $U^{(2\leftarrow 1)}_l$ 读列 1 同层特征，新列输出 $h^{(2)}_l = f(W^{(2)}_l h^{(2)}_{l-1} + U^{(2\leftarrow 1)}_l h^{(1)}_l)$。列 1 因冻结而**绝对不遗忘**（A 的表征原封不动），列 2 学 B 时通过侧向连接**复用 A 已学到的有用特征**（类似迁移学习的早期特征复用，但显式化、不破坏）。任务 C 来了再加列 3，侧向连列 1、列 2……
 

@@ -7,25 +7,25 @@ export const metadata = paperMetadata(paper);
 
 # MOMENT：用掩码重建预训练一个通用时序编码器
 
-时序领域一直缺少像 The Pile、ImageNet 那样的统一预训练语料。公开数据分散在预测、分类、异常检测等不同任务库里，采样率、变量数、序列长度、幅度各不相同，直接混合训练并不容易；而现有论文又大多在一个数据集上训练、换一个数据集测试。<Cite n={1} />MOMENT 想解决的就是这三件事：**把分散的数据拼成 Time Series Pile，用掩码重建在多数据集上预训练，再在一套有限监督基准上评测五类任务。**<Cite n={1} />
+时序领域一直缺少像 The Pile、ImageNet 那样的统一预训练语料。公开数据分散在预测、分类、异常检测等不同任务库里，采样率、变量数、序列长度、幅度各不相同，直接混合训练并不容易；而现有论文又大多在一个数据集上训练、换一个数据集测试<Cite n={1} />。MOMENT 想解决的就是这三件事：**把分散的数据拼成 Time Series Pile，用掩码重建在多数据集上预训练，再在一套有限监督基准上评测五类任务。**<Cite n={1} />
 
-它不是一个自回归预测器，而是一个 encoder-only 的通用表示模型：输入单变量序列，切成 patch，随机遮住一部分，让 Transformer 还原被遮住的内容。预测、插补、异常检测都可以看成“从上下文补全缺失”，因此同一个预训练目标能迁移到多个任务。<Cite n={[1,2]} />
+它不是一个自回归预测器，而是一个 encoder-only 的通用表示模型：输入单变量序列，切成 patch，随机遮住一部分，让 Transformer 还原被遮住的内容。预测、插补、异常检测都可以看成“从上下文补全缺失”，因此同一个预训练目标能迁移到多个任务<Cite n={[1,2]} />。
 
 > 📌 前置：可以和 [TimesFM](/papers/timesfm)、[Time-LLM](/papers/time-llm)、[时序综述与 TSLib](/papers/deep-ts-survey) 对照阅读。TimesFM 是 decoder-only 预测器，MOMENT 是 encoder-only 表示模型，两者代表时序基础模型的两条不同路线。
 
 ## 一、动机：缺数据、缺统一预训练、缺基准
 
-论文把时序基础模型的困难总结为三点：<Cite n={1} />
+论文把时序基础模型的困难总结为三点<Cite n={1} />：
 
 1. **没有大而统一的公开语料。** 文本有 The Pile，图像有 ImageNet；时序数据散落在各个任务库里，规模小、格式不一。
 2. **时序特征高度异质。** 采样频率、通道数、序列长度、幅度都不同，有时还有缺失值，多数据集混合预训练缺乏成熟做法。
 3. **缺少有限监督下的评测。** 大多数基准假设可以针对每个数据集训练一个模型；但真实场景往往没有足够数据、算力或标签。
 
-MOMENT 的贡献对应这三块：Time Series Pile、掩码重建预训练、以及一个覆盖五类任务且强调 zero-shot / linear probing 的基准。<Cite n={1} />
+MOMENT 的贡献对应这三块：Time Series Pile、掩码重建预训练、以及一个覆盖五类任务且强调 zero-shot / linear probing 的基准<Cite n={1} />。
 
 ## 二、Time Series Pile：把分散的公开数据拼起来
 
-Time Series Pile 由四个常用公开库组成：<Cite n={1} />
+Time Series Pile 由四个常用公开库组成<Cite n={1} />：
 
 | 来源 | 内容 |
 |---|---|
@@ -34,19 +34,19 @@ Time Series Pile 由四个常用公开库组成：<Cite n={1} />
 | UCR/UEA 分类档案 | 159 个分类数据集，覆盖图像轮廓、传感器、动作、心电等 |
 | TSB-UAD 异常检测 | 1980 条单变量序列，来自 18 个异常检测数据集 |
 
-为了避免数据泄漏，每个数据集按创建者提供的 split 切分；没有官方 split 时，随机取 60% 训练、10% 验证、30% 测试；预训练只使用训练 split。随机种子固定为 13。<Cite n={1} />
+为了避免数据泄漏，每个数据集按创建者提供的 split 切分；没有官方 split 时，随机取 60% 训练、10% 验证、30% 测试；预训练只使用训练 split。随机种子固定为 13<Cite n={1} />。
 
 ## 三、模型：patch + mask + encoder + reconstruction head
 
 ### 3.1 输入处理
 
-MOMENT 的输入是固定长度 $T=512$ 的单变量序列，先做 reversible instance normalization，再切成 $N=64$ 个长度 $P=8$ 的不重叠 patch。每个 patch 线性投影成 $D$ 维 embedding；被遮住的 patch 用可学习的 `[MASK]` embedding 替换。<Cite n={1} />
+MOMENT 的输入是固定长度 $T=512$ 的单变量序列，先做 reversible instance normalization，再切成 $N=64$ 个长度 $P=8$ 的不重叠 patch。每个 patch 线性投影成 $D$ 维 embedding；被遮住的 patch 用可学习的 `[MASK]` embedding 替换<Cite n={1} />。
 
-多变量序列按 channel independence 处理：每个通道独立送入模型，沿 batch 维并行。论文认为这对多变量时序是有效策略，也避免了变量数变化带来的架构改动。<Cite n={[1,2]} />
+多变量序列按 channel independence 处理：每个通道独立送入模型，沿 batch 维并行。论文认为这对多变量时序是有效策略，也避免了变量数变化带来的架构改动<Cite n={[1,2]} />。
 
 ### 3.2 掩码重建预训练
 
-预训练时随机遮住 30% 的 patch，让 Transformer 编码器输出每个 patch 的表示，再用轻量重建头还原原始 patch：<Cite n={1} />
+预训练时随机遮住 30% 的 patch，让 Transformer 编码器输出每个 patch 的表示，再用轻量重建头还原原始 patch<Cite n={1} />：
 
 $$
 \mathcal L_{\text{pretrain}}
@@ -54,7 +54,7 @@ $$
 \left\|\hat x_i-x_i\right\|_2^2,
 $$
 
-其中 $\mathcal M$ 是被遮住的 patch 集合。编码器采用 T5 风格的改动：LayerNorm 去 bias、前置到残差连接之前、使用相对位置编码，并额外加入绝对正弦位置编码。<Cite n={[1,8]} />
+其中 $\mathcal M$ 是被遮住的 patch 集合。编码器采用 T5 风格的改动：LayerNorm 去 bias、前置到残差连接之前、使用相对位置编码，并额外加入绝对正弦位置编码<Cite n={[1,8]} />。
 
 <figure className="my-6">
   <img src="./fig3-architecture.svg" alt="MOMENT 架构：输入序列切成 patch，随机用 [MASK] 替换部分 patch，经 Transformer 编码器和轻量重建头还原整条序列；右侧为单个 Transformer block 的 Norm、多头注意力和 MLP 结构" className="mx-auto h-auto max-w-full rounded-lg border border-zinc-200 shadow-sm dark:border-zinc-800 w-full" />
@@ -66,7 +66,7 @@ $$
 
 ### 3.3 三个规模
 
-论文训练了三个规模，对应 T5-Small/Base/Large 的编码器大小：<Cite n={1} />
+论文训练了三个规模，对应 T5-Small/Base/Large 的编码器大小<Cite n={1} />：
 
 | 规模 | 层数 | hidden dim | heads | FFN | 参数量 |
 |---|---:|---:|---:|---:|---:|
@@ -74,21 +74,21 @@ $$
 | Base | 12 | 768 | 12 | 3072 | 约 125M |
 | Large | 24 | 1024 | 16 | 4096 | 约 385M |
 
-训练用 Adam + weight decay 0.05、batch 2048、余弦学习率（$10^{-4}\to10^{-5}$）、梯度裁剪 5.0，混合精度，训练 2 个 epoch。<Cite n={1} />
+训练用 Adam + weight decay 0.05、batch 2048、余弦学习率（$10^{-4}\to10^{-5}$）、梯度裁剪 5.0，混合精度，训练 2 个 epoch<Cite n={1} />。
 
 ## 四、下游适配：一个编码器，三种用法
 
-MOMENT 不要求每个任务都端到端重训，而是提供三种使用方式：<Cite n={1} />
+MOMENT 不要求每个任务都端到端重训，而是提供三种使用方式<Cite n={1} />：
 
 - **Zero-shot**：保留重建头，直接做插补、异常检测等“补全”任务；
 - **Linear probing**：冻结编码器，只训练任务头（预测头、分类 SVM 等）；
 - **Full fine-tuning**：端到端微调，通常用于数据更充足的场景。
 
-预测任务会把重建头换成 forecasting head：把 64 个 patch embedding 展平，线性投影到目标 horizon。分类任务则用编码器输出训练 SVM，衡量表示质量而不是端到端分类性能。<Cite n={[1,6]} />
+预测任务会把重建头换成 forecasting head：把 64 个 patch embedding 展平，线性投影到目标 horizon。分类任务则用编码器输出训练 SVM，衡量表示质量而不是端到端分类性能<Cite n={[1,6]} />。
 
 ## 五、基准与结果：有限监督下表现如何
 
-论文在五类任务上评测，重点是 zero-shot 和 linear probing；这种“统一协议、有限监督”的评测思路，和 TSLib 等时序基准一致。<Cite n={[1,9]} />
+论文在五类任务上评测，重点是 zero-shot 和 linear probing；这种“统一协议、有限监督”的评测思路，和 TSLib 等时序基准一致<Cite n={[1,9]} />。
 
 | 任务 | 监督方式 | 数据集 | 指标 |
 |---|---|---|---|
@@ -98,17 +98,17 @@ MOMENT 不要求每个任务都端到端重训，而是提供三种使用方式�
 | 异常检测 | zero-shot / linear probing | UCR Anomaly Archive | adjusted best F1 / VUS-ROC |
 | 插补 | zero-shot / linear probing | ETT、Electricity、Weather | MSE / MAE |
 
-主要结论：<Cite n={1} />
+主要结论<Cite n={1} />：
 
-- **长程预测**：linear probing 接近 SOTA，通常仅次于 PatchTST；在不少数据集和 horizon 上优于 Time-LLM、GPT4TS 等 LLM 派模型。N-BEATS 仍然很强，说明不能只和 Transformer 比。<Cite n={[2,4,5,7]} />
+- **长程预测**：linear probing 接近 SOTA，通常仅次于 PatchTST；在不少数据集和 horizon 上优于 Time-LLM、GPT4TS 等 LLM 派模型。N-BEATS 仍然很强，说明不能只和 Transformer 比<Cite n={[2,4,5,7]} />。
 - **零样本短期预测**：这是差距最大的任务。Theta、ETS 等统计方法整体更好；MOMENT 只在部分数据集上优于 ARIMA。时序基础模型的零样本短期预测仍未解决。
-- **分类**：不微调编码器，只用其表示训练 SVM，就能超过除 4 个专用分类模型外的所有方法；GPT4TS、TimesNet 即使逐数据集训练也表现较差。<Cite n={[3,6]} />
+- **分类**：不微调编码器，只用其表示训练 SVM，就能超过除 4 个专用分类模型外的所有方法；GPT4TS、TimesNet 即使逐数据集训练也表现较差<Cite n={[3,6]} />。
 - **异常检测**：在 44 条 UCR 异常序列上，zero-shot 和 linear probing 都优于 TimesNet、GPT4TS 以及两个专用深度模型；kNN 的 VUS-ROC 略高，但 adjusted best F1 更低。
 - **插补**：linear probing 在四个 ETT 数据集上重建误差最低；zero-shot 也优于除线性插值外的大多数统计方法。
 
 ### 5.1 模型学到了什么
 
-论文用合成正弦波和 UCR 表示可视化来检查编码器。图 4 显示，MOMENT 的表示能区分 trend、amplitude、frequency、baseline shift 和 phase 这些因素；图 5 显示，即使不做数据集特定微调，不同类别的表示也能在 PCA/t-SNE 上分开。<Cite n={1} />
+论文用合成正弦波和 UCR 表示可视化来检查编码器。图 4 显示，MOMENT 的表示能区分 trend、amplitude、frequency、baseline shift 和 phase 这些因素；图 5 显示，即使不做数据集特定微调，不同类别的表示也能在 PCA/t-SNE 上分开<Cite n={1} />。
 
 <figure className="my-6">
   <img src="./fig4-representation.png" alt="MOMENT 在合成正弦波上的表示：五个面板分别展示 trend、amplitude、frequency、baseline shift、phase 的变化，颜色表示对应参数，说明编码器能捕捉这些时序特征" className="mx-auto h-auto max-w-full rounded-lg border border-zinc-200 shadow-sm dark:border-zinc-800" />
@@ -136,19 +136,19 @@ MOMENT 不要求每个任务都端到端重训，而是提供三种使用方式�
   </figcaption>
 </figure>
 
-三个经验观察值得注意：<Cite n={1} />
+三个经验观察值得注意<Cite n={1} />：
 
 1. **模型越大，训练损失越低**，呈现类似 LLM 的 scaling 趋势。
-2. **随机初始化从头预训练，比用语言模型权重初始化更好**：小模型上，随机初始化的 MOMENT 最终训练损失低于 Flan-T5 初始化版本。这支持“时序数据量足够，可以从头训”的判断。<Cite n={[1,8]} />
-3. **跨模态迁移可行**：冻结自注意力和 FFN，只训练轻量头，MOMENT 在 MNIST、CIFAR-10、IMDb 上与同规模 GPT-2/Flan-T5 相当。说明时序预训练也能学到通用序列表示。<Cite n={1} />
+2. **随机初始化从头预训练，比用语言模型权重初始化更好**：小模型上，随机初始化的 MOMENT 最终训练损失低于 Flan-T5 初始化版本。这支持“时序数据量足够，可以从头训”的判断<Cite n={[1,8]} />。
+3. **跨模态迁移可行**：冻结自注意力和 FFN，只训练轻量头，MOMENT 在 MNIST、CIFAR-10、IMDb 上与同规模 GPT-2/Flan-T5 相当。说明时序预训练也能学到通用序列表示<Cite n={1} />。
 
 ## 六、局限与工程启示
 
 **局限：**
 
-- **固定 512 长度、单变量输入。** 超长序列要下采样/截断，多变量按通道独立处理，无法显式建模变量间强相关。<Cite n={1} />
-- **零样本短期预测仍是短板。** 统计方法在 M3/M4 子集上整体更强，MOMENT 只在部分数据集上占优。<Cite n={1} />
-- **归一化抹掉绝对水平。** 表示能区分趋势/频率/相位，但无法区分整体上下平移的序列，因为输入先做了 instance normalization。<Cite n={1} />
+- **固定 512 长度、单变量输入。** 超长序列要下采样/截断，多变量按通道独立处理，无法显式建模变量间强相关<Cite n={1} />。
+- **零样本短期预测仍是短板。** 统计方法在 M3/M4 子集上整体更强，MOMENT 只在部分数据集上占优<Cite n={1} />。
+- **归一化抹掉绝对水平。** 表示能区分趋势/频率/相位，但无法区分整体上下平移的序列，因为输入先做了 instance normalization<Cite n={1} />。
 - **基准仍以学术数据集为主。** 真实业务里的长尾、缺失、协变量等场景覆盖有限。
 
 **工程启示：**
@@ -160,7 +160,7 @@ MOMENT 不要求每个任务都端到端重训，而是提供三种使用方式�
 
 ## 小结
 
-MOMENT 的一句话结论是：**把分散的公开时序数据拼成大语料，用 patch 级掩码重建预训练一个通用编码器，再用 zero-shot / linear probing / fine-tuning 适配五类任务。** 它的强项在表示质量——分类、异常检测、插补都很有竞争力；弱项是零样本短期预测，以及固定长度、单变量输入带来的结构限制。<Cite n={1} />
+MOMENT 的一句话结论是：**把分散的公开时序数据拼成大语料，用 patch 级掩码重建预训练一个通用编码器，再用 zero-shot / linear probing / fine-tuning 适配五类任务。** 它的强项在表示质量——分类、异常检测、插补都很有竞争力；弱项是零样本短期预测，以及固定长度、单变量输入带来的结构限制<Cite n={1} />。
 
 对读者来说，最值得记住的是“重建目标”的通用性：只要任务可以写成“从上下文补全缺失”，同一个预训练编码器就能复用。这比针对每个任务设计专用架构更接近基础模型的做法。
 

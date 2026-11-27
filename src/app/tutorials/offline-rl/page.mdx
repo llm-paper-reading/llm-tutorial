@@ -6,7 +6,7 @@ export const metadata = tutorialMetadata("offline-rl");
 
 前面所有方法——[DQN](/tutorials/dqn)、[策略梯度](/tutorials/policy-gradient)、[连续控制](/tutorials/continuous-control)——训练时都得**自己跟环境交互**：智能体走一步、环境给个奖励、再走一步。但现实里很多场景**不允许试错**：你不会让一个未训练的医疗 AI 在真人身上试药，也不会让自动驾驶原型在路上撞几千次再学会避让。这些领域却囤着**海量历史日志**——病历、驾驶记录、推荐点击流——全是别人（别的策略）跑出来的轨迹。
 
-**离线强化学习（offline RL，又叫 batch RL）** 要回答的问题就是：能不能**只靠一份固定数据集、不再多交互一步**，就学出一个比当初采集数据的那条策略更好的策略？答案是能，但有一个致命的拦路虎——**分布偏移**。<Cite n={7} />
+**离线强化学习（offline RL，又叫 batch RL）** 要回答的问题就是：能不能**只靠一份固定数据集、不再多交互一步**，就学出一个比当初采集数据的那条策略更好的策略？答案是能，但有一个致命的拦路虎——**分布偏移**<Cite n={7} />。
 
 ## 设定：学习器不能交互
 
@@ -32,7 +32,7 @@ $$
 
 这个 $\max_{a'}$ 会去查询**所有动作**的 Q 值——包括行为策略 $\pi_\beta$ **从来没在 $s'$ 采过**的动作 $a'$。数据集里没有这些 $(s', a')$ 的真实回报，Q 网络对它们的估计是**未经校正的猜测**。神经网络常用乐观初始化或外推，这些 OOD（out-of-distribution）动作的 Q 值会被**系统性高估**。
 
-更要命的是**误差会沿贝尔曼备份链累积**：第 $k$ 步的高估被当目标传给第 $k-1$ 步，$\max$ 又在每个状态挑出最高（也就是错得最离谱）的那个值，一环扣一环放大——这就是 **extrapolation error（外推误差）的复合**。最终策略会跑去选那些「Q 值虚高但实际很烂」的 OOD 动作。<Cite n={[7,8]} />
+更要命的是**误差会沿贝尔曼备份链累积**：第 $k$ 步的高估被当目标传给第 $k-1$ 步，$\max$ 又在每个状态挑出最高（也就是错得最离谱）的那个值，一环扣一环放大——这就是 **extrapolation error（外推误差）的复合**。最终策略会跑去选那些「Q 值虚高但实际很烂」的 OOD 动作<Cite n={[7,8]} />。
 
 下面这个玩具能让你亲眼看到这件事。单状态、5 个动作（真值 $Q^*=[0.2,0.5,0.8,0.6,0.1]$，最优是 a2），但行为策略只采过 a0–a2，a3、a4 是数据集**从未覆盖**的 OOD 动作。**切换「朴素离线」与「CQL 保守」**，看 Q 估计如何天差地别：
 
@@ -88,7 +88,7 @@ offline RL 的算法几乎都在对付上面那个 OOD 高估问题，按思路�
 
 #### BCQ 的 batch-constrained 思路：只从数据采过的动作里选
 
-BCQ 的解法干净利落：**不动 Q 函数本身，动「在哪选动作」**。把 TD 目标里的 $\max_{a'}$ 从「全动作空间」缩到「$\pi_\beta$ 可能采过的动作」——目标动作只从数据分布支持集里选，OOD 动作根本不进备选，外推误差无从发生。这就是 **batch-constrained**：约束动作空间，强制智能体「相对于数据的一个子集接近 on-policy」[8]。<Cite n={8} />
+BCQ 的解法干净利落：**不动 Q 函数本身，动「在哪选动作」**。把 TD 目标里的 $\max_{a'}$ 从「全动作空间」缩到「$\pi_\beta$ 可能采过的动作」——目标动作只从数据分布支持集里选，OOD 动作根本不进备选，外推误差无从发生。这就是 **batch-constrained**：约束动作空间，强制智能体「相对于数据的一个子集接近 on-policy」[8]<Cite n={8} />。
 
 $$
 a'_{\text{target}} \;=\; \arg\max_{a\in\mathcal A_\beta(s)} Q(s',a),\qquad \mathcal A_\beta(s)=\{a:\pi_\beta(a\mid s)>0\}
@@ -211,7 +211,7 @@ $$\Pi_\varepsilon = \big\{\pi\ \big|\ \pi(a\mid s)=0\ \text{whenever}\ \beta(a\m
 
 即「$\pi_\beta$ 几乎没采过的动作（$\beta<\varepsilon$），$\pi$ 也别采；但 $\pi_\beta$ 采过的动作，$\pi$ 可以**任意重新分配概率**」。这比 BCQ 的密度约束自由得多——BCQ 要求 $\pi\approx\pi_\beta$（密度贴近），BEAR 只要求 $\text{supp}(\pi)\subseteq\text{supp}(\pi_\beta)$（支持集包含）。BEAR 用 **MMD（Maximum Mean Discrepancy，最大均值差异）**距离度量这个支持集约束：用核函数 $k(\cdot,\cdot)$ 衡量 $\pi$ 采样与 $\hat\pi_\beta$（拟合的行为模型）采样之间的分布距离，约束 $\text{MMD}^2(\pi,\hat\pi_\beta)\le\varepsilon$。
 
-BEAR 的策略提升目标（双重保护）：<Cite n={16} />
+BEAR 的策略提升目标（双重保护）<Cite n={16} />：
 
 $$\pi_\varphi \;:=\; \arg\max_{\pi\in\Pi_\varepsilon}\ \mathbb E_{s\sim\mathcal D,\,a\sim\pi(\cdot\mid s)}\Big[\min_{j=1..K}\,\hat Q_j(s,a)\Big]\quad\text{s.t.}\quad \mathbb E_{s\sim\mathcal D}\big[\text{MMD}^2(\pi(\cdot\mid s),\,\hat\pi_\beta(\cdot\mid s))\big]\le\varepsilon$$
 
@@ -343,7 +343,7 @@ $$J_{\mathrm{ES}}(Q_\phi):=\mathbb E_{\mathbf s,\mathbf a\sim\mathcal D}\Big[\fr
 
 $$\min_{\phi_i}\big(Q_{\phi_i}(\mathbf s,\mathbf a)-y\big)^2+\frac{\eta}{N-1}\sum_{i\ne j}\mathrm{ES}_{\phi_i,\phi_j}(\mathbf s,\mathbf a),\quad y=r+\gamma\Big[\min_j Q_{\phi'_j}(\mathbf s',\mathbf a')-\beta\log\pi(\mathbf a'|\mathbf s')\Big]$$
 
-关键：**actor 目标与 SAC-N 完全相同**（$\max_\theta\mathbb E[\min_j Q_{\phi_j}(\mathbf s,\tilde{\mathbf a}_\theta)-\beta\log\pi(\tilde{\mathbf a}_\theta|\mathbf s)]$，$\eta$ 只出现在 critic 损失）。EDAC = SAC-N + ES 正则；$\eta=0$ 退化为 SAC-N，$\eta=0$ 且 $N=2$ 退化为 vanilla SAC。<Cite n={17} />
+关键：**actor 目标与 SAC-N 完全相同**（$\max_\theta\mathbb E[\min_j Q_{\phi_j}(\mathbf s,\tilde{\mathbf a}_\theta)-\beta\log\pi(\tilde{\mathbf a}_\theta|\mathbf s)]$，$\eta$ 只出现在 critic 损失）。EDAC = SAC-N + ES 正则；$\eta=0$ 退化为 SAC-N，$\eta=0$ 且 $N=2$ 退化为 vanilla SAC<Cite n={17} />。
 
 > 💡 **BEAR 的 ensemble 是"被动分歧"，EDAC 是"主动分散"。** BEAR 的 $K$ 个 Q 靠不同初始化 + bootstrap 子集**被动**产生分歧——OOD 处偶然分歧大、support 内偶然一致，分歧是训练副产物。EDAC 不靠运气，用 ES 正则**主动**把 $N$ 个 Q 的 input gradient 推到单位球面均匀分布，确保最坏方向也有大方差。结果：BEAR 的 $K$ 要够大才碰得上"OOD 分歧大"的运气，EDAC 的 $N$ 因为主动分散，$10$ 个抵 $500$ 个。
 
@@ -490,7 +490,7 @@ print("     EDAC 主动用 ES 正则推梯度分散, 小 N 即有大不确定性
 
 ### 2。 保守主义：把 OOD 动作往下压
 
-第二类不再限制策略，而是直接**修正 Q 函数**——让它对 OOD 动作**悲观**。代表是 **CQL(Conservative Q-Learning)**，在标准 TD 损失外加一个正则项：<Cite n={9} />
+第二类不再限制策略，而是直接**修正 Q 函数**——让它对 OOD 动作**悲观**。代表是 **CQL(Conservative Q-Learning)**，在标准 TD 损失外加一个正则项<Cite n={9} />：
 
 $$
 \min_Q\ \alpha\Big[\underbrace{\log\sum_a \exp Q(s,a)}_{\text{soft-max:压低所有动作}} - \underbrace{\mathbb E_{(s,a)\sim\mathcal D}[Q(s,a)]}_{\text{抬高数据动作}}\Big] + \tfrac12\,\mathbb E_{\mathcal D}\big[(Q-\mathcal B\bar Q)^2\big]
@@ -529,7 +529,7 @@ CQL 论文用 Atari 的离线数据做了系统验证——只给算法前 20% �
 
 ### 3。 隐式 Q-learning：干脆别问 OOD 动作
 
-**IQL(Implicit Q-Learning,Kostrikov, Nair & Levine, 2022)**[10] 的思路最干净：**从头到尾不在 OOD 动作上求 Q**。它靠一个叫 **expectile（期望回归）**的统计量，把一个价值 $V(s)$ 往数据动作 Q 值的**上尾**推——近似 $\max_a Q(s,a)$，但只用数据里真实出现过的动作。<Cite n={10} />下面把 expectile 与 IQL 三件套完整展开。
+**IQL(Implicit Q-Learning,Kostrikov, Nair & Levine, 2022)**[10] 的思路最干净：**从头到尾不在 OOD 动作上求 Q**。它靠一个叫 **expectile（期望回归）**的统计量，把一个价值 $V(s)$ 往数据动作 Q 值的**上尾**推——近似 $\max_a Q(s,a)$，但只用数据里真实出现过的动作<Cite n={10} />。下面把 expectile 与 IQL 三件套完整展开。
 
 #### 第 1 步：expectile——「不对称 L₂」的加权平衡点
 
@@ -628,7 +628,7 @@ IQL 的独特之处——**首个同时具备「多步动态规划」与「从�
 
 - 单步方法（One-step RL、Decision Transformer）也不查 OOD，但只做 1 步 bootstrap，**无 stitching 能力**（拼不出数据里没见过的更优轨迹片段），在需要长程拼接的任务（如 U-maze）上价值「离奖励状态稍远就衰减到 0」；
 - CQL/BCQ 做多步 DP，但要查 OOD 动作（靠惩罚/约束兜住）；
-- **IQL 两全**：多步 DP（靠 $V\to Q\to V$ 的贝尔曼链传播）+ 零 OOD 查询（每步只用 $\mathcal D$ 内动作）.原文在 Ant Maze（需 stitching）上 IQL 378.0 显著胜过 CQL 303.6,且训练约 4× 快于 CQL 的 JAX 实现.<Cite n={10} />
+- **IQL 两全**：多步 DP（靠 $V\to Q\to V$ 的贝尔曼链传播）+ 零 OOD 查询（每步只用 $\mathcal D$ 内动作）.原文在 Ant Maze（需 stitching）上 IQL 378.0 显著胜过 CQL 303.6,且训练约 4× 快于 CQL 的 JAX 实现<Cite n={10} />.
 
 #### 玩具：expectile 如何从均值爬到「数据支持集上的 max」
 
@@ -816,7 +816,7 @@ $$
 
 这样 $\lambda\cdot Q$ 的尺度被拉回到与 $\alpha$ 同量级，BC 项与 Q 项的权重比就由**单一**超参 $\alpha$ 控制。论文全实验固定 **$\alpha=2.5$**（仅在 Hopper-medium/expert 上扫过 $\{1,2,2.5,3,4\}$），一个值通吃 D4RL 九数据集——这正是「极简」的精髓：不为一堆超参发愁。
 
-它妙在**改动量极小**：相对 TD3 只改了几行策略损失 + 加状态归一化 $s_i=(s_i-\mu_i)/(\sigma_i+\varepsilon)$（$\varepsilon=10^{-3}$），critic 更新、目标网络、Polyak 平均全不改。论文标题就叫 *A Minimalist Approach to Offline Reinforcement Learning*——作者就是来证明「别把 offline RL 搞那么复杂」。结果也确实硬：在 D4RL 上 TD3+BC 总分 **979.3**，压过保守主义旗舰 CQL 的 **764.3**，且训练只需 **39 分钟** vs CQL 的 4 小时 11 分 [1]。仅在「random」数据集（数据极差、几乎无好动作可学）上 CQL 略胜；其余 medium / med-expert / expert 数据集 TD3+BC 全线领先。<Cite n={[1,11]} />
+它妙在**改动量极小**：相对 TD3 只改了几行策略损失 + 加状态归一化 $s_i=(s_i-\mu_i)/(\sigma_i+\varepsilon)$（$\varepsilon=10^{-3}$），critic 更新、目标网络、Polyak 平均全不改。论文标题就叫 *A Minimalist Approach to Offline Reinforcement Learning*——作者就是来证明「别把 offline RL 搞那么复杂」。结果也确实硬：在 D4RL 上 TD3+BC 总分 **979.3**，压过保守主义旗舰 CQL 的 **764.3**，且训练只需 **39 分钟** vs CQL 的 4 小时 11 分 [1]。仅在「random」数据集（数据极差、几乎无好动作可学）上 CQL 略胜；其余 medium / med-expert / expert 数据集 TD3+BC 全线领先<Cite n={[1,11]} />。
 
 <CodeRunner defaultCode={`# TD3+BC 的 lambda 归一化:为何一个 alpha=2.5 能通吃所有任务
 import numpy as np
@@ -848,7 +848,7 @@ print("   这就是 TD3+BC 能一个超参通吃 D4RL 的工程秘诀")
 更早的两条同源思路，与 TD3+BC 同属「在数据动作上约束策略」，但走的是**随机策略 + 指数优势加权**这条路：
 
 - **AWR**(Advantage-Weighted Regression,Peng et al., 2019)[2]：先用 **Monte-Carlo 回报**估行为策略的价值 $V^{\pi_\beta}(s)$，再算优势 $A(s,a)=Q(s,a)-V(s)$，最后把数据里每个 $(s,a)$ 按 $\exp(A(s,a)/\beta)$ 加权后做 BC——优势大的样本权重大、被着重模仿；优势小或负的样本权重指数衰减、几乎忽略。加权后再回归 $\pi_\beta$，本质仍是「带权的 BC」，把策略约束在数据支持集上。
-- **AWAC**(Advantage-Weighted Actor-Critic,Nair et al., 2020)[3]：目标 $\theta_{k+1}=\arg\max_\theta\,\mathbb E_{s,a\sim\mathcal D}[\log\pi_\theta(a|s)\cdot\exp(A^{\pi_k}(s,a)/\lambda)]$——把 AWR 的优势加权对数似然接进 actor-critic 框架。关键升级有两点：① critic 改用 **TD bootstrapping** 估 Q（而非 AWR 的 Monte-Carlo），样本效率高得多；② **隐式约束**——不显式建模 $\pi_\beta$（不像 BCQ/BEAR 要训 VAE/MMD 行为模型），靠优势加权让策略自然留在数据支持集上，online fine-tuning 时也不会因行为模型退化而变保守。$\lambda$ 是温度（$0.3$ dexterous / $1.0$ MuJoCo）。<Cite n={3} />
+- **AWAC**(Advantage-Weighted Actor-Critic,Nair et al., 2020)[3]：目标 $\theta_{k+1}=\arg\max_\theta\,\mathbb E_{s,a\sim\mathcal D}[\log\pi_\theta(a|s)\cdot\exp(A^{\pi_k}(s,a)/\lambda)]$——把 AWR 的优势加权对数似然接进 actor-critic 框架。关键升级有两点：① critic 改用 **TD bootstrapping** 估 Q（而非 AWR 的 Monte-Carlo），样本效率高得多；② **隐式约束**——不显式建模 $\pi_\beta$（不像 BCQ/BEAR 要训 VAE/MMD 行为模型），靠优势加权让策略自然留在数据支持集上，online fine-tuning 时也不会因行为模型退化而变保守。$\lambda$ 是温度（$0.3$ dexterous / $1.0$ MuJoCo）<Cite n={3} />。
 
 三者的统一视角：**都把策略约束在数据动作上，但机制不同**——TD3+BC 是**确定性策略 + 加法 MSE 软约束**（$\lambda Q - \lVert\pi(s)-a\rVert^2$），AWR/AWAC 是**随机策略 + 乘法指数优势加权**（$\exp(A/\beta)\log\pi$）。前者改 TD3 几行、后者改 BC 的样本权重；两者都不显式估 $\pi_\beta$ 的密度，实现都比 BCQ/BEAR 简单得多。一个有用的记法：TD3+BC 把 BC 当**损失项**加进去，AWR/AWAC 把 BC 当**加权**乘上去。
 
@@ -860,7 +860,7 @@ print("   这就是 TD3+BC 能一个超参通吃 D4RL 的工程秘诀")
 
 ### Decision Transformer：回报条件序列建模
 
-Decision Transformer(DT,Chen et al., 2021)[4] 的洞察来自一个经验观察：**好的轨迹，回报高；坏的轨迹，回报低**。那么只要学一个条件模型 $p(a \mid \text{RtG}, s)$——给定「期望回报」和当前状态，预测该走什么动作——它自然就学会了「要高回报时该怎么走」。<Cite n={4} />
+Decision Transformer(DT,Chen et al., 2021)[4] 的洞察来自一个经验观察：**好的轨迹，回报高；坏的轨迹，回报低**。那么只要学一个条件模型 $p(a \mid \text{RtG}, s)$——给定「期望回报」和当前状态，预测该走什么动作——它自然就学会了「要高回报时该怎么走」<Cite n={4} />。
 
 具体做法：把离线数据集里的每条轨迹切成三元组序列，每个时间步带上**当时到终止的累计回报（return-to-go, RtG）** $R_t = \sum_{t'\ge t} r_{t'}$：
 
@@ -1028,7 +1028,7 @@ print(f"  This is why DT beats CQL on long-horizon sparse tasks (94.6% vs 13% on
 | **Decision Transformer** | 71.8% | **94.6%** |
 | CQL（TD + 保守正则） | ~13% | ~13% |
 
-CQL 几乎学不动——因为它的 Q 值要靠 Bellman backup 从「开门」那一步一步一步传回「拿钥匙」那一步，中间几十步的随机游走全是干扰信号，Q 值传不到。而 DT 的 self-attention 让「开门拿奖励」这个信号**直接连到**轨迹早期的状态-动作 token，一步到位完成信用分配。这就是「无 bootstrapping + attention 直接信用分配」的实战价值。<Cite n={4} />
+CQL 几乎学不动——因为它的 Q 值要靠 Bellman backup 从「开门」那一步一步一步传回「拿钥匙」那一步，中间几十步的随机游走全是干扰信号，Q 值传不到。而 DT 的 self-attention 让「开门拿奖励」这个信号**直接连到**轨迹早期的状态-动作 token，一步到位完成信用分配。这就是「无 bootstrapping + attention 直接信用分配」的实战价值<Cite n={4} />。
 
 ### %BC、stitching 与一个未决争议
 
@@ -1061,7 +1061,7 @@ DT 把「生成动作」做成了逐 token 的自回归，但有两处留了遗�
 
 #### Trajectory Transformer：把整条轨迹当语言来建模
 
-Janner、Li、Levine(NeurIPS 2021)[5] 的想法是：**别只生成动作，把 $(s_t,a_t,r_t)$ 三元组整条轨迹的联合分布一起学**。具体做法：<Cite n={5} />
+Janner、Li、Levine(NeurIPS 2021)[5] 的想法是：**别只生成动作，把 $(s_t,a_t,r_t)$ 三元组整条轨迹的联合分布一起学**。具体做法<Cite n={5} />：
 
 - **离散化所有模态**：状态、动作、奖励各自分桶成离散 token（连续状态用 k-means 量化、奖励按分位切分）,于是轨迹变成一个「句子」:$\tau=(r_0,s_0,a_0,r_1,s_1,a_1,\dots)$,三类 token 交替排列.
 - **GPT 自回归学联合**：$p(\tau)=\prod_t p(r_t,s_t,a_t\mid r_{<t},s_{<t},a_{<t})$.关键在于它**同时学了转移 $p(s_{t+1}\mid\text{历史})$ 和奖励 $p(r_t\mid\text{历史})$**,而不只是 $p(a\mid s)$——这是它和 DT 的本质区别:DT 把状态当条件,TT 把状态当要生成的对象.
@@ -1071,7 +1071,7 @@ Janner、Li、Levine(NeurIPS 2021)[5] 的想法是：**别只生成动作，把 
 
 #### Diffusion Policy：用 DDPM 生成多模态动作序列
 
-Chi 等（RSS 2023）[6] 把图像生成里的去噪扩散概率模型（DDPM）搬来生成动作。核心是两阶段：<Cite n={6} />
+Chi 等（RSS 2023）[6] 把图像生成里的去噪扩散概率模型（DDPM）搬来生成动作。核心是两阶段<Cite n={6} />：
 
 - **前向加噪（训练时隐式）**：对训练集里的动作序列 $a_{0:H}$ 按扩散调度 $\beta_1..\beta_T$ 逐步加高斯噪声,得到 $a_{0:H}^{(t)}=\sqrt{\bar\alpha_t}\,a_{0:H}+\sqrt{1-\bar\alpha_t}\,\epsilon$（$\epsilon\sim\mathcal N(0,I)$,$\bar\alpha_t=\prod_{s\le t}(1-\beta_s)$）.网络 $\epsilon_\theta$ 学从含噪动作序列预测噪声 $\epsilon$.
 - **反向去噪（推理时）**：从纯噪声 $a_{0:H}^{(T)}\sim\mathcal N(0,I)$ 出发,按 DDPM 反向递推 $a^{(t-1)}=\frac{1}{\sqrt{1-\beta_t}}\big(a^{(t)}-\frac{\beta_t}{\sqrt{1-\bar\alpha_t}}\epsilon_\theta(a^{(t)},s)\big)+\sigma_t z$ 逐步去噪,$T$ 步后得到一条连贯的动作序列.
@@ -1198,7 +1198,7 @@ DT/TT/Diffusion Policy 都是在**单条轨迹**上做序列建模：给定一�
 
 但 Laskin et al. 2022 [13] 的 **Algorithm Distillation（AD，算法蒸馏）** 把这个范式推到了极致，问了一个更野的问题：**如果序列模型不吃单条轨迹，而是吃一整个 RL 算法从差到好的完整训练历史，它能学到什么？**
 
-答案是惊人的：**它学到了 RL 算法本身**。<Cite n={13} />
+答案是惊人的：**它学到了 RL 算法本身**<Cite n={13} />。
 
 ### 核心洞见：把「学习过程」当序列来建模
 
@@ -1351,7 +1351,7 @@ MOPO 训一个动力学模型的 **ensemble**（集成，比如 5-10 个模型�
 - 在**离线数据 support 内**，$(s,a)$ 是数据见过的，ensemble 成员都拟合得很好，预测接近 → **$\sigma$ 小**；
 - 在**support 外**，$(s,a)$ 没见过，ensemble 成员各凭外推方向发散 → **$\sigma$ 大**.
 
-MOPO 把这个不确定性变成奖励惩罚，构造一个**悲观奖励**：<Cite n={14} />
+MOPO 把这个不确定性变成奖励惩罚，构造一个**悲观奖励**<Cite n={14} />：
 
 $$\tilde r(s,a) = r(s,a) - \lambda\,\sigma(s,a)$$
 
@@ -1361,7 +1361,7 @@ $$\tilde r(s,a) = r(s,a) - \lambda\,\sigma(s,a)$$
 
 Kidambi et al. 2020 [15] 的 **MOReL**（Model-based Offline RL）走的是另一条路：**不惩罚奖励，而是构造一个悲观的动力学模型**。
 
-MOReL 也学一个 ensemble，但用它构造一个**悲观 MDP(P-MDP)**：在 support 外的区域，P-MDP 的转移被改成一个「不利的」转移（比如让 agent 掉进吸收态、或转移到一个低回报状态），等效于「模型不确定 → 假设最坏情况发生」。然后在这个 P-MDP 上学策略。关键性质：**对任意策略 $\pi$，它在 P-MDP 里的回报是它在真实环境里回报的下界**——$v^\pi_{\text{P-MDP}} \le v^\pi_{\text{real}}$。这意味着在 P-MDP 上学到的「最优」策略，在真实环境里至少不会比这差（下界保证），从而避免被模型误差骗。MOReL 理论上是 minimax optimal（对数因子内）的 offline RL 算法。<Cite n={15} />
+MOReL 也学一个 ensemble，但用它构造一个**悲观 MDP(P-MDP)**：在 support 外的区域，P-MDP 的转移被改成一个「不利的」转移（比如让 agent 掉进吸收态、或转移到一个低回报状态），等效于「模型不确定 → 假设最坏情况发生」。然后在这个 P-MDP 上学策略。关键性质：**对任意策略 $\pi$，它在 P-MDP 里的回报是它在真实环境里回报的下界**——$v^\pi_{\text{P-MDP}} \le v^\pi_{\text{real}}$。这意味着在 P-MDP 上学到的「最优」策略，在真实环境里至少不会比这差（下界保证），从而避免被模型误差骗。MOReL 理论上是 minimax optimal（对数因子内）的 offline RL 算法<Cite n={15} />。
 
 ### 可运行演示：ensemble 不确定性如何把策略压回 support
 
@@ -1489,7 +1489,7 @@ $$\hat v^\pi_{\text{IPS}}=\frac{1}{n}\sum_{i=1}^n \rho_i\, r_i,\qquad \rho_i=\fr
 
 **优点**:**无偏**（$\mathbb E_{\pi_\beta}[\rho r]=\mathbb E_\pi[r]$，这是 IS 的核心恒等式）；**缺点**:**方差爆炸**。当 $\pi$ 偏好某个动作而 $\pi_\beta$ 很少采它时，$\rho$ 会非常大（本节 demo 里 $\rho=19$），少数大权重样本主导估计，换一批数据结果剧变。$\pi$ 与 $\pi_\beta$ 偏移越大，IPS 越不稳。
 
-**③ 双重稳健估计（Doubly Robust, DR）—— 模型 + IS 双保险。** Dudík, Langford & Schapire (2011)[12] 把两者拼成：<Cite n={12} />
+**③ 双重稳健估计（Doubly Robust, DR）—— 模型 + IS 双保险。** Dudík, Langford & Schapire (2011)[12] 把两者拼成<Cite n={12} />：
 
 $$\hat v^\pi_{\text{DR}}=\frac{1}{n}\sum_{i=1}^n\Big[\rho_i\big(r_i-\hat r(s_i,a_i)\big)+\sum_a \pi(a\mid s_i)\,\hat r(s_i,a)\Big]$$
 
@@ -1502,7 +1502,7 @@ DR 得名于这个性质——**只要 $\hat r$ 或 $\rho$ 任意一个对，估
 - **模型对**（$\hat r=r^*$ 真实奖励）：残差 $r_i-\hat r(s_i,a_i)=0$，IS 修正项消失，只剩模型基准 $\sum_a\pi\hat r$，此时 DR = DM，**方差最低**（没有 $\rho$ 的随机性）。
 - **模型错但 IS 对**（$\rho$ 用真实的 $\pi/\pi_\beta$）：可以证明 IS 修正项的条件期望 $\mathbb E_{\pi_\beta}[\rho_i(r_i-\hat r(s_i,a_i))\mid s_i]=v^\pi(s_i)-\sum_a\pi(a\mid s_i)\hat r(s_i,a_i)$（因为 $\mathbb E_\pi[r]=\mathbb E_{\pi_\beta}[\rho r]$），恰好抵消模型基准的偏差，总和仍 = $v^\pi$。**即模型错，IS 来兜底**.
 
-「模型对或 IS 对」故名**双重稳健**。而 IPS 只有「IS 对」一条腿，DM 只有「模型对」一条腿——DR 是两条腿走路，**任意一条对就不偏**。代价是：模型错时 DR 方差会升高（退回到接近 IPS 的方差），但仍保无偏；只有模型和 IS 都错时才真偏。<Cite n={12} />
+「模型对或 IS 对」故名**双重稳健**。而 IPS 只有「IS 对」一条腿，DM 只有「模型对」一条腿——DR 是两条腿走路，**任意一条对就不偏**。代价是：模型错时 DR 方差会升高（退回到接近 IPS 的方差），但仍保无偏；只有模型和 IS 都错时才真偏<Cite n={12} />。
 
 > 💡 **直觉**：$\rho_i(r_i-\hat r)$ 是在**残差**上做 IS，而残差 $r_i-\hat r(s_i,a_i)$ 的尺度通常比 $r_i$ 本身小得多（模型 $\hat r$ 吃掉了奖励的大部分信号），所以 IS 修正项的方差远小于 IPS 的 $\rho_i r_i$——**模型越好，残差越小，DR 方差越低**。这就是「模型 + IS」不仅保无偏、还能降方差的根源。
 
@@ -1578,7 +1578,7 @@ print(f"4. 纯模型差模型偏差 {naive2.mean()-v_pi_true:+.4f} (大) -> 没�
 
 ### MSE 分解与「何时该用 DR」
 
-估计器好坏看 **MSE = 偏差² + 方差**。Dudík et al. (2011)[12] 给出 DR 的 MSE 分解，核心结论：**只要奖励模型 $\hat r$ 中等好（残差比 $r$ 本身小），DR 的方差就严格小于 IPS**，且偏差为零——**所以实践中几乎总是用 DR 而非 IPS**。IPS 只在「没有任何可用的奖励模型」时才退而求其次，且要配 WIS 降方差。<Cite n={12} />
+估计器好坏看 **MSE = 偏差² + 方差**。Dudík et al. (2011)[12] 给出 DR 的 MSE 分解，核心结论：**只要奖励模型 $\hat r$ 中等好（残差比 $r$ 本身小），DR 的方差就严格小于 IPS**，且偏差为零——**所以实践中几乎总是用 DR 而非 IPS**。IPS 只在「没有任何可用的奖励模型」时才退而求其次，且要配 WIS 降方差<Cite n={12} />。
 
 DR 的下界是 $O\!\big(\frac{1}{n}\big(\mathbb E_{\pi_\beta}[\rho^2\sigma^2]+\mathbb E_{\pi_\beta}[\rho^2 R_{\max}^2]\big)\big)$（$\sigma^2$ 奖励噪声）——**偏移越大（$\rho$ 越大），所需样本越多**。这与 offline RL 学策略侧的「分布偏移是万恶之源」是同一枚硬币：学策略怕偏移（Q 外推），评估策略也怕偏移（IS 方差爆炸）。两边的解法也对称——学策略侧用 BCQ/CQL/IQL 约束，评估侧用 DR 把方差从 $\rho^2 r^2$ 压到 $\rho^2(r-\hat r)^2$。
 
@@ -1698,7 +1698,7 @@ AWAC 之所以能从离线平滑过渡到在线微调，靠的是两个机制：
 1. **TD bootstrapping critic（样本高效）**：AWAC 的 critic 用 off-policy TD 学习（和 Q-learning 一样从 replay buffer 采 transition 做 Bellman 更新），不是 AWR 那种 Monte-Carlo return 估计。TD 样本效率高一个量级，在线微调几万步就能见效（MC 要等整条 episode 结束才更新）。
 2. **隐式约束不退化**：actor 直接从 buffer 采 $(s,a)$，新在线数据进 buffer 后，它们自动成为可回归的样本——**隐式约束会随 support 增长自然放松**（actor 现在可以在新数据的高优势动作上加大权重），而不会被陈旧行为模型拴住。对比 BEAR：显式 $\hat\pi_\beta$ 要重新拟合整个 buffer 才能跟上，且 log-likelihood 在新区域退化导致过度保守；AWAC 根本没有这个 $\hat\pi_\beta$ 退化问题。
 
-这两个机制合起来，就是 AWAC 在 offline→online 切换时**没有性能 dip**（HalfCheetah 从离线直接平滑爬升），而 SAC+BC/BEAR 都有 initial drop 的原因。<Cite n={3} />
+这两个机制合起来，就是 AWAC 在 offline→online 切换时**没有性能 dip**（HalfCheetah 从离线直接平滑爬升），而 SAC+BC/BEAR 都有 initial drop 的原因<Cite n={3} />。
 
 ### 可运行演示：naive 在线微调 vs AWAC
 

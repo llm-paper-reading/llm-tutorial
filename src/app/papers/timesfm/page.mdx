@@ -7,29 +7,29 @@ export const metadata = paperMetadata(paper);
 
 # TimesFM：解码器时序基础模型的零样本预测
 
-时序预测长期是“一个数据集一个模型”：ARIMA、DeepAR、PatchTST、N-BEATS 各自在特定数据集上训练和调参。NLP 的经验提醒我们，如果能把海量时序数据预训练成一个通用模型，下游用户就不必为每个任务重新训练。<Cite n={1} />但时序没有明确的词表和语法，还要同时支持不同的历史长度、预测长度和时间粒度，公开数据量也远小于文本——这条路并不显然可行。
+时序预测长期是“一个数据集一个模型”：ARIMA、DeepAR、PatchTST、N-BEATS 各自在特定数据集上训练和调参。NLP 的经验提醒我们，如果能把海量时序数据预训练成一个通用模型，下游用户就不必为每个任务重新训练<Cite n={1} />。但时序没有明确的词表和语法，还要同时支持不同的历史长度、预测长度和时间粒度，公开数据量也远小于文本——这条路并不显然可行。
 
-TimesFM 给出的回答是肯定的：一个 **200M 参数、只在时序数据上从头预训练** 的 decoder-only 模型，在 Monash、Darts、ETT 等未见数据集上，零样本预测能接近逐数据集监督训练的最强基线；在 Monash 上比零样本 llmtime 好 25% 以上。<Cite n={[1,7]} />它的关键设计不是更复杂的注意力，而是三件事：**把时序切成 patch 当 token、用因果解码器一次预测一个输出 patch、用随机 patch masking 覆盖任意上下文长度**。<Cite n={1} />
+TimesFM 给出的回答是肯定的：一个 **200M 参数、只在时序数据上从头预训练** 的 decoder-only 模型，在 Monash、Darts、ETT 等未见数据集上，零样本预测能接近逐数据集监督训练的最强基线；在 Monash 上比零样本 llmtime 好 25% 以上<Cite n={[1,7]} />。它的关键设计不是更复杂的注意力，而是三件事：**把时序切成 patch 当 token、用因果解码器一次预测一个输出 patch、用随机 patch masking 覆盖任意上下文长度**<Cite n={1} />。
 
 > 📌 前置：可以和 [Time-LLM](/papers/time-llm)、[GPT4TS（One Fits All）](/papers/one-fits-all)、[TimeHF 2.0](/papers/timehf-2-0) 对照阅读。Time-LLM 和 GPT4TS 是“借预训练主干”，TimesFM 是“从零训时序基础模型”，代表两条不同的路线。
 
 ## 一、动机：时序能不能有自己的 foundation model
 
-时序预测的深度学习模型通常分三类：<Cite n={1} />
+时序预测的深度学习模型通常分三类<Cite n={1} />：
 
 1. **局部单变量模型**：ARIMA、指数平滑、Prophet，每个序列单独训练；
 2. **全局单变量模型**：DeepAR、TCN、N-BEATS，在大量序列上联合训练，但推理时只用自己的历史；
 3. **全局多变量模型**：VAR、TSMixer 等，用所有序列的过去预测所有序列的未来。
 
-这些方法绝大多数是监督学习：每个数据集重新训练、重新调参。即便像 PatchTST 这样做过数据集间迁移，也没有把“一个模型服务所有数据集”作为目标。<Cite n={[1,2]} />与此同时，LLM 已经证明大规模预训练 + 零样本迁移可行；自然的问题就是：**能否用同样的思路，只用时序数据预训练一个通用预测器？**
+这些方法绝大多数是监督学习：每个数据集重新训练、重新调参。即便像 PatchTST 这样做过数据集间迁移，也没有把“一个模型服务所有数据集”作为目标<Cite n={[1,2]} />。与此同时，LLM 已经证明大规模预训练 + 零样本迁移可行；自然的问题就是：**能否用同样的思路，只用时序数据预训练一个通用预测器？**
 
-难点主要有三个：<Cite n={1} />
+难点主要有三个<Cite n={1} />：
 
 - 时序没有统一词表或语法，不同领域的模式差异极大；
 - 模型必须支持变化的 context、horizon 和时间粒度；
 - 公开时序数据的体量远小于文本，需要自己构造大规模预训练语料。
 
-TimesFM 的贡献就是给出一个可工作的配方，并证明在小模型、相对小数据规模下也能获得有竞争力的零样本效果。<Cite n={1} />同期还有 TimeGPT-1 这条零样本时序基础模型路线，但模型细节与评测基准没有公开，难以做严格对比。<Cite n={8} />
+TimesFM 的贡献就是给出一个可工作的配方，并证明在小模型、相对小数据规模下也能获得有竞争力的零样本效果<Cite n={1} />。同期还有 TimeGPT-1 这条零样本时序基础模型路线，但模型细节与评测基准没有公开，难以做严格对比<Cite n={8} />。
 
 ## 二、架构：把 patch 当 token 的因果解码器
 
@@ -39,9 +39,9 @@ $$
 f: y_{1:L}\mapsto \hat y_{L+1:L+H}.
 $$
 
-TimesFM 的架构有三个关键选择：<Cite n={1} />
+TimesFM 的架构有三个关键选择<Cite n={1} />：
 
-**Patching。** 把连续时间点切成不重叠的 patch，每个 patch 通过一个带 skip connection 的 MLP residual block 映射到模型维度，再加上位置编码。一个 patch 相当于语言模型里的一个 token；patch 越长，送进 Transformer 的 token 越少，注意力计算越省。<Cite n={[1,2]} />
+**Patching。** 把连续时间点切成不重叠的 patch，每个 patch 通过一个带 skip connection 的 MLP residual block 映射到模型维度，再加上位置编码。一个 patch 相当于语言模型里的一个 token；patch 越长，送进 Transformer 的 token 越少，注意力计算越省<Cite n={[1,2]} />。
 
 $$
 t_j=\mathrm{InputResidualBlock}\left(\tilde y_j\odot(1-\tilde m_j)\right)+\mathrm{PE}_j.
@@ -49,9 +49,9 @@ $$
 
 其中 $\tilde y_j$ 是第 $j$ 个输入 patch，$\tilde m_j$ 是对应的 mask。
 
-**Decoder-only。** 与 PatchTST 的编码器风格不同，TimesFM 用因果自注意力，按语言模型的方式训练：给定前 $j$ 个 patch，预测第 $j$ 个 patch 之后的 $h$ 个时间点。这样可以在整个上下文上并行训练，又天然支持不同的历史长度。<Cite n={1} />
+**Decoder-only。** 与 PatchTST 的编码器风格不同，TimesFM 用因果自注意力，按语言模型的方式训练：给定前 $j$ 个 patch，预测第 $j$ 个 patch 之后的 $h$ 个时间点。这样可以在整个上下文上并行训练，又天然支持不同的历史长度<Cite n={1} />。
 
-**更长的输出 patch。** LLM 通常一次只生成一个 token；长 horizon 预测如果也一个点一个点自回归，步数会很多。TimesFM 让输出 patch 长度 $h$ 大于输入 patch 长度 $p$（默认 $p=32$、$h=128$），每个输出 token 直接预测未来 128 个点。<Cite n={1} />
+**更长的输出 patch。** LLM 通常一次只生成一个 token；长 horizon 预测如果也一个点一个点自回归，步数会很多。TimesFM 让输出 patch 长度 $h$ 大于输入 patch 长度 $p$（默认 $p=32$、$h=128$），每个输出 token 直接预测未来 128 个点<Cite n={1} />。
 
 $$
 \hat y_{pj+1:pj+h}=\mathrm{OutputResidualBlock}(o_j).
@@ -71,13 +71,13 @@ $$
   </figcaption>
 </figure>
 
-**推理。** 给定长度 $L$ 的历史，模型先预测 $\hat y_{L+1:L+h}$；把预测拼回输入，再预测下一段，直到覆盖目标 horizon。输出 patch 越长，自回归步数越少：例如历史 256、预测 256，输出 patch 为 128 时只需 2 步；如果输出 patch 只有 32，则需要 8 步。<Cite n={1} />
+**推理。** 给定长度 $L$ 的历史，模型先预测 $\hat y_{L+1:L+h}$；把预测拼回输入，再预测下一段，直到覆盖目标 horizon。输出 patch 越长，自回归步数越少：例如历史 256、预测 256，输出 patch 为 128 时只需 2 步；如果输出 patch 只有 32，则需要 8 步<Cite n={1} />。
 
-**Patch masking。** 如果只用完整 patch 训练，模型可能只擅长处理 patch 长度的整数倍。TimesFM 在训练时对每条序列随机采 $r\in[0,p-1]$，把第一个 patch 的前 $r$ 个点 mask 掉；这样同一个样本可以对应从 1 到最大 context 的多种有效长度，模型见过所有可能的上下文长度。<Cite n={1} />
+**Patch masking。** 如果只用完整 patch 训练，模型可能只擅长处理 patch 长度的整数倍。TimesFM 在训练时对每条序列随机采 $r\in[0,p-1]$，把第一个 patch 的前 $r$ 个点 mask 掉；这样同一个样本可以对应从 1 到最大 context 的多种有效长度，模型见过所有可能的上下文长度<Cite n={1} />。
 
 ## 三、预训练数据：真实 + 合成，覆盖频率和模式
 
-TimesFM 的语料由三类来源组成：<Cite n={1} />
+TimesFM 的语料由三类来源组成<Cite n={1} />：
 
 | 来源 | 粒度 | 规模 |
 |---|---|---|
@@ -87,19 +87,19 @@ TimesFM 的语料由三类来源组成：<Cite n={1} />
 | M4 | 小时到年度 | 约 10 万条序列 |
 | Electricity / Traffic / Weather / LibCity | 15 分钟到小时 | 数千条长序列 |
 
-训练时按 80% 真实数据、20% 合成数据混合；真实数据内部对小时+亚小时、日、周、月四个粒度组等权采样。最大 context 一般是 512，周粒度用 256，月及以上粒度用 64。<Cite n={1} />归一化只使用 reversible instance normalization 的标准化部分：用 context 第一个 patch 的均值和标准差缩放整段序列。<Cite n={1} />
+训练时按 80% 真实数据、20% 合成数据混合；真实数据内部对小时+亚小时、日、周、月四个粒度组等权采样。最大 context 一般是 512，周粒度用 256，月及以上粒度用 64<Cite n={1} />。归一化只使用 reversible instance normalization 的标准化部分：用 context 第一个 patch 的均值和标准差缩放整段序列<Cite n={1} />。
 
-合成数据不是可有可无的补充。真实数据集中在小时、日等常见粒度，季度、年度、10 分钟等粒度非常稀疏；合成数据提供 ARMA、不同频率的正弦叠加、线性/指数趋势、阶跃函数等模式，帮助模型覆盖这些欠代表频率。消融显示，去掉合成数据后 Monash 的平均误差变差，15 分钟的 ETTm 数据集受影响尤其明显。<Cite n={1} />
+合成数据不是可有可无的补充。真实数据集中在小时、日等常见粒度，季度、年度、10 分钟等粒度非常稀疏；合成数据提供 ARMA、不同频率的正弦叠加、线性/指数趋势、阶跃函数等模式，帮助模型覆盖这些欠代表频率。消融显示，去掉合成数据后 Monash 的平均误差变差，15 分钟的 ETTm 数据集受影响尤其明显<Cite n={1} />。
 
 ## 四、零样本评测：接近逐数据集监督训练
 
-TimesFM 在三组未见数据集上做零样本评测：<Cite n={1} />
+TimesFM 在三组未见数据集上做零样本评测<Cite n={1} />：
 
-- **Monash**：18 个通过缺失值过滤的数据集，覆盖分钟到年度、金融/需求/天气/交通等领域；<Cite n={6} />
+- **Monash**：18 个通过缺失值过滤的数据集，覆盖分钟到年度、金融/需求/天气/交通等领域<Cite n={6} />；
 - **Darts**：8 个单变量数据集，包含明显的季节性和加性/乘性趋势；
-- **ETT**：4 个电力变压器温度数据集，预测 horizon 96 和 192，context 512。<Cite n={3} />
+- **ETT**：4 个电力变压器温度数据集，预测 horizon 96 和 192，context 512<Cite n={3} />。
 
-所有数据集都没有参与预训练。评测使用各自官方指标；Monash 和 Darts 的 MAE 会先除以 naive baseline（重复最后一个值）的 MAE 做尺度归一化，再取几何平均。<Cite n={1} />
+所有数据集都没有参与预训练。评测使用各自官方指标；Monash 和 Darts 的 MAE 会先除以 naive baseline（重复最后一个值）的 MAE 做尺度归一化，再取几何平均<Cite n={1} />。
 
 <figure className="my-6">
   <img src="./fig2-zeroshot.svg" alt="TimesFM 零样本结果：Monash 18 个数据集上平均 scaled MAE 最低，Darts 上与 ARIMA/llmtime 相当，ETT 的 8 个任务上与 PatchTST 并列最好" className="mx-auto h-auto max-w-full rounded-lg border border-zinc-200 shadow-sm dark:border-zinc-800" />
@@ -109,17 +109,17 @@ TimesFM 在三组未见数据集上做零样本评测：<Cite n={1} />
   </figcaption>
 </figure>
 
-具体结论：<Cite n={1} />
+具体结论<Cite n={1} />：
 
-- **Monash**：TimesFM 是平均 scaled MAE 最好的模型，略优于 N-BEATS 但差距在统计显著性范围内，明显好于 DeepAR 等监督模型，比零样本 llmtime 好 25% 以上。<Cite n={[4,5,7]} />
+- **Monash**：TimesFM 是平均 scaled MAE 最好的模型，略优于 N-BEATS 但差距在统计显著性范围内，明显好于 DeepAR 等监督模型，比零样本 llmtime 好 25% 以上<Cite n={[4,5,7]} />。
 - **Darts**：TimesFM 与最好的 ARIMA / llmtime 在显著性范围内。注意 Darts 只有 8 条序列，置信区间很宽，排序本身不稳定。
-- **ETT**：在 8 个任务上 TimesFM 最好，监督训练的 PatchTST 在显著性范围内；其他长程预测模型即使在这些数据上训练过，也明显更差。<Cite n={2} />
+- **ETT**：在 8 个任务上 TimesFM 最好，监督训练的 PatchTST 在显著性范围内；其他长程预测模型即使在这些数据上训练过，也明显更差<Cite n={2} />。
 
-这组结果的含义不是“零样本全面超过监督模型”，而是：**一个从未见过这些数据集的通用模型，已经能进入逐数据集训练的最强基线附近。** 对很多没有足够数据或算力做专门训练的场景，这已经足够有价值。<Cite n={1} />
+这组结果的含义不是“零样本全面超过监督模型”，而是：**一个从未见过这些数据集的通用模型，已经能进入逐数据集训练的最强基线附近。** 对很多没有足够数据或算力做专门训练的场景，这已经足够有价值<Cite n={1} />。
 
 ## 五、消融：哪些设计真正重要
 
-论文做了四组消融：<Cite n={1} />
+论文做了四组消融<Cite n={1} />：
 
 <figure className="my-6">
   <img src="./fig3-ablation.svg" alt="TimesFM 消融：参数量/FLOPS 增加时误差单调下降；输出 patch 从 8 增到 128 时 MAE 单调下降；输入 patch 16/32 最好；去掉合成数据后 Monash 与 15 分钟 ETTm 变差" className="mx-auto h-auto max-w-full rounded-lg border border-zinc-200 shadow-sm dark:border-zinc-800" />
@@ -129,32 +129,32 @@ TimesFM 在三组未见数据集上做零样本评测：<Cite n={1} />
   </figcaption>
 </figure>
 
-**Scaling。** 训练 17M、70M、200M 三个规模，Monash 上的 scaled MAE 随 FLOPS 单调下降，呈现类似 LLM 的 scaling 趋势。200M 模型在 16 核 TPUv5e 上跑 150 万次迭代约需 2 天。<Cite n={1} />
+**Scaling。** 训练 17M、70M、200M 三个规模，Monash 上的 scaled MAE 随 FLOPS 单调下降，呈现类似 LLM 的 scaling 趋势。200M 模型在 16 核 TPUv5e 上跑 150 万次迭代约需 2 天<Cite n={1} />。
 
-**输出 patch 长度。** 在 ETT 上预测 512 步时，把输出 patch 从 8 增到 128，平均 MAE 单调下降。这验证了“更长输出 patch 减少自回归步数”的设计；但输出 patch 也不能无限长，否则月度、年度这类短序列无法处理。<Cite n={1} />
+**输出 patch 长度。** 在 ETT 上预测 512 步时，把输出 patch 从 8 增到 128，平均 MAE 单调下降。这验证了“更长输出 patch 减少自回归步数”的设计；但输出 patch 也不能无限长，否则月度、年度这类短序列无法处理<Cite n={1} />。
 
-**输入 patch 长度。** 在 Monash 上，输入 patch 从 8 增到 128 时，误差先降后升，16 和 32 最好；32 的训练速度约是 16 的两倍，因此是更实用的选择。patch 太长会让模型从 decoder-only 训练滑向 encoder-decoder 风格。<Cite n={1} />
+**输入 patch 长度。** 在 Monash 上，输入 patch 从 8 增到 128 时，误差先降后升，16 和 32 最好；32 的训练速度约是 16 的两倍，因此是更实用的选择。patch 太长会让模型从 decoder-only 训练滑向 encoder-decoder 风格<Cite n={1} />。
 
-**合成数据。** 去掉合成数据后，Monash 的平均误差变差，因为其中不少数据集是季度、年度、10 分钟等欠代表粒度；ETTh 这类小时粒度几乎不受影响，但 15 分钟的 ETTm 明显变差。这说明合成数据的价值主要在“补齐频率和模式覆盖”，而不是简单增加数据量。<Cite n={1} />
+**合成数据。** 去掉合成数据后，Monash 的平均误差变差，因为其中不少数据集是季度、年度、10 分钟等欠代表粒度；ETTh 这类小时粒度几乎不受影响，但 15 分钟的 ETTm 明显变差。这说明合成数据的价值主要在“补齐频率和模式覆盖”，而不是简单增加数据量<Cite n={1} />。
 
 ## 六、微调、局限与路线对比
 
 ### 6.1 少量微调就能超过 GPT4TS
 
-论文按 GPT4TS 的协议，在 ETT 的 10% 训练集上只微调输入/输出 residual block。结果 TimesFM 在 ETTh1、ETTh2、ETTm1 上分别比 GPT4TS 好 18%、3%、12%，而且 10% 数据微调后的效果已经接近或超过多数用全量数据训练的基线。<Cite n={[1,9]} />这说明从时序数据预训练得到的归纳偏置，比直接拿一个通用语言模型（GPT2）更适配下游预测。
+论文按 GPT4TS 的协议，在 ETT 的 10% 训练集上只微调输入/输出 residual block。结果 TimesFM 在 ETTh1、ETTh2、ETTm1 上分别比 GPT4TS 好 18%、3%、12%，而且 10% 数据微调后的效果已经接近或超过多数用全量数据训练的基线<Cite n={[1,9]} />。这说明从时序数据预训练得到的归纳偏置，比直接拿一个通用语言模型（GPT2）更适配下游预测。
 
 ### 6.2 局限
 
-- **只做点预测。** 论文的主目标是 MSE 点预测；概率预测可以通过分位数输出头或分布似然扩展，但没有作为主要内容展开。<Cite n={1} />
-- **不使用协变量。** 预训练阶段没有动态/静态协变量；在真实业务中，促销、天气、节假日往往很关键。论文提出两种补救：零样本时对残差做协变量回归，或微调时把协变量加进输入/输出 residual block。<Cite n={1} />
-- **可解释性弱。** 相比 ARIMA/ETS，深度基础模型的归因更困难；论文建议用 LOCO、SHAP 等方法分析 lag 重要性，但这不能完全解决问题。<Cite n={1} />
-- **分布外风险。** 和 LLM 一样，模型在没见过的模式上可能给出很差甚至“幻觉”式的预测，关键场景需要人工兜底或微调。<Cite n={1} />
+- **只做点预测。** 论文的主目标是 MSE 点预测；概率预测可以通过分位数输出头或分布似然扩展，但没有作为主要内容展开<Cite n={1} />。
+- **不使用协变量。** 预训练阶段没有动态/静态协变量；在真实业务中，促销、天气、节假日往往很关键。论文提出两种补救：零样本时对残差做协变量回归，或微调时把协变量加进输入/输出 residual block<Cite n={1} />。
+- **可解释性弱。** 相比 ARIMA/ETS，深度基础模型的归因更困难；论文建议用 LOCO、SHAP 等方法分析 lag 重要性，但这不能完全解决问题<Cite n={1} />。
+- **分布外风险。** 和 LLM 一样，模型在没见过的模式上可能给出很差甚至“幻觉”式的预测，关键场景需要人工兜底或微调<Cite n={1} />。
 
 ### 6.3 和 Time-LLM / GPT4TS 的路线差异
 
-站内已经有两篇“借预训练主干”的代表：[Time-LLM](/papers/time-llm) 冻结 Llama，把时序 patch 重编程成语言模型能读的表示；[GPT4TS](/papers/one-fits-all) 冻结 GPT2 的自注意力和 FFN，只训练输入输出接口。<Cite n={[9,10]} />TimesFM 走的是另一条路：完全从零用时序数据预训练，模型只有 200M 参数，却在零样本预测上明显好于用 GPT-3 做提示的 llmtime。<Cite n={[1,7]} />
+站内已经有两篇“借预训练主干”的代表：[Time-LLM](/papers/time-llm) 冻结 Llama，把时序 patch 重编程成语言模型能读的表示；[GPT4TS](/papers/one-fits-all) 冻结 GPT2 的自注意力和 FFN，只训练输入输出接口<Cite n={[9,10]} />。TimesFM 走的是另一条路：完全从零用时序数据预训练，模型只有 200M 参数，却在零样本预测上明显好于用 GPT-3 做提示的 llmtime<Cite n={[1,7]} />。
 
-两条路线各有取舍：借 LLM 可以利用现成的通用表示和生态，但推理成本高、时序与文本的模态鸿沟难消；从头训时序模型更轻、更专注，但需要自己构造大规模语料，也缺少语言模型的世界知识。TimesFM 的结果说明，至少对纯数值预测，**“时序专用预训练”是一条被低估的路线**。<Cite n={1} />
+两条路线各有取舍：借 LLM 可以利用现成的通用表示和生态，但推理成本高、时序与文本的模态鸿沟难消；从头训时序模型更轻、更专注，但需要自己构造大规模语料，也缺少语言模型的世界知识。TimesFM 的结果说明，至少对纯数值预测，**“时序专用预训练”是一条被低估的路线**<Cite n={1} />。
 
 ## 七、工程启示
 
@@ -166,7 +166,7 @@ TimesFM 在三组未见数据集上做零样本评测：<Cite n={1} />
 
 ## 小结
 
-TimesFM 的一句话结论是：**时序可以像语言一样，被切成 patch、用因果解码器预训练，并在未见数据集上零样本预测。** 它的贡献不在于某个新注意力，而在于一套可复现的配方：patch 化输入、更长输出 patch、随机 patch masking、真实+合成的大规模语料，以及一个 200M 参数的 decoder-only 主干。<Cite n={1} />
+TimesFM 的一句话结论是：**时序可以像语言一样，被切成 patch、用因果解码器预训练，并在未见数据集上零样本预测。** 它的贡献不在于某个新注意力，而在于一套可复现的配方：patch 化输入、更长输出 patch、随机 patch masking、真实+合成的大规模语料，以及一个 200M 参数的 decoder-only 主干<Cite n={1} />。
 
 对读者来说，最值得记住的是三个 trade-off：patch 长度决定算力与局部信息的平衡；输出 patch 长度决定长 horizon 的自回归步数；数据覆盖决定零样本能否跨频率泛化。理解这三点，比记住某个 benchmark 数字更重要。
 

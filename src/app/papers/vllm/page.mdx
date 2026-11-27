@@ -67,7 +67,7 @@ export const metadata = paperMetadata(paper);
 
 vLLM 的调度器与内存管理协同设计：块级 KV 管理 + **抢占式调度**（显存耗尽时把请求 swap 出去或丢弃 KV 重算）+ 迭代级 batch 组装；分布式场景支持 tensor parallel，各 worker 的 cache engine 各管各的块<Cite n={1} />。
 
-结果：<Cite n={1} />
+结果<Cite n={1} />：
 
 - 同等延迟下吞吐 **2–4×**（对比 FasterTransformer 与 Orca，含知道真实长度的 Orca-Oracle 上界）；
 - 提升随序列变长、模型变大、解码变复杂而扩大——beam search 场景收益最大（显存共享 + 零浪费叠加）；

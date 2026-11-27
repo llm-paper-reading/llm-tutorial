@@ -7,7 +7,7 @@ export const metadata = paperMetadata(paper);
 
 # Qwen3：混合推理与在线蒸馏
 
-Qwen3 技术报告最值得读的地方，不只是模型家族又变大了，而是它把 **thinking / non-thinking 混合推理、off-policy 蒸馏、强化学习和 on-policy distillation** 放进同一条后训练路线里。<Cite n={1} />对 OPD 来说，Qwen3 是一个很重要的工业证据：当老师已经足够强、学生已经有基础推理能力时，在学生自己的 rollout 上做逐 token 对齐，可能比继续用稀疏奖励 RL 更省算力、更稳。<Cite n={1} />
+Qwen3 技术报告最值得读的地方，不只是模型家族又变大了，而是它把 **thinking / non-thinking 混合推理、off-policy 蒸馏、强化学习和 on-policy distillation** 放进同一条后训练路线里<Cite n={1} />。对 OPD 来说，Qwen3 是一个很重要的工业证据：当老师已经足够强、学生已经有基础推理能力时，在学生自己的 rollout 上做逐 token 对齐，可能比继续用稀疏奖励 RL 更省算力、更稳<Cite n={1} />。
 
 > 📌 前置：建议先读 [OPD 总览](/papers/opd-agarwal)、[Thinking Machines OPD](/papers/tml-opd)、[GRPO 与 DeepSeek-R1](/papers/grpo-deepseek-r1)。Qwen3 不是单纯的方法论文，而是把这些后训练组件放到模型家族里的技术报告。
 
@@ -18,13 +18,13 @@ Qwen3 技术报告最值得读的地方，不只是模型家族又变大了，�
 1. 复杂数学、代码、规划任务需要展开 thinking；
 2. 简单问答、检索整理、常规对话需要快速 non-thinking。
 
-如果把这两种行为交给两个模型，部署和路由都复杂；如果只训一个长思考模型，简单任务会浪费 token；如果只训一个短答模型，高难推理又不够强。Qwen3 的路线是：在一个模型家族里同时维护 thinking 与 non-thinking 能力，并通过后训练把强老师的推理行为迁移到更便宜的学生模型上。<Cite n={1} />
+如果把这两种行为交给两个模型，部署和路由都复杂；如果只训一个长思考模型，简单任务会浪费 token；如果只训一个短答模型，高难推理又不够强。Qwen3 的路线是：在一个模型家族里同时维护 thinking 与 non-thinking 能力，并通过后训练把强老师的推理行为迁移到更便宜的学生模型上<Cite n={1} />。
 
-这也是它和 OPD 的连接点。OPD 不是为了“模仿老师输出长答案”而存在，而是为了在学生真实会走到的前缀状态上，让老师告诉它下一步分布应该怎么偏移。<Cite n={[2,3]} />
+这也是它和 OPD 的连接点。OPD 不是为了“模仿老师输出长答案”而存在，而是为了在学生真实会走到的前缀状态上，让老师告诉它下一步分布应该怎么偏移<Cite n={[2,3]} />。
 
 ## 二、模型家族：Dense 与 MoE 共同服务部署梯度
 
-Qwen3 覆盖 dense 与 MoE 两类模型，报告中的 dense 系列从 0.6B、1.7B、4B、8B、14B 到 32B；MoE 系列包括 Qwen3-30B-A3B 与 Qwen3-235B-A22B。<Cite n={1} />dense 模型更直观、部署栈简单；MoE 模型用较低激活参数承载更高总容量，更适合在高性能与成本之间做折中。上下文长度也分层：较小 dense 模型报告 32K，4B 及以上 dense 与 MoE 模型报告 128K。<Cite n={1} />
+Qwen3 覆盖 dense 与 MoE 两类模型，报告中的 dense 系列从 0.6B、1.7B、4B、8B、14B 到 32B；MoE 系列包括 Qwen3-30B-A3B 与 Qwen3-235B-A22B<Cite n={1} />。dense 模型更直观、部署栈简单；MoE 模型用较低激活参数承载更高总容量，更适合在高性能与成本之间做折中。上下文长度也分层：较小 dense 模型报告 32K，4B 及以上 dense 与 MoE 模型报告 128K<Cite n={1} />。
 
 从 OPD 视角看，这种家族化设计很关键：
 
@@ -38,7 +38,7 @@ Qwen3 覆盖 dense 与 MoE 两类模型，报告中的 dense 系列从 0.6B、1.
 
 ## 三、混合推理：一个模型为什么要同时会想和不想
 
-Qwen3 报告强调 thinking / non-thinking 的混合模式。<Cite n={1} />它背后的产品问题很简单：不是每个请求都值得付出长推理成本。
+Qwen3 报告强调 thinking / non-thinking 的混合模式<Cite n={1} />。它背后的产品问题很简单：不是每个请求都值得付出长推理成本。
 
 - 数学证明、竞赛代码、复杂规划：需要 thinking，模型可以花更多 token 搜索解法。
 - 事实问答、摘要、格式转换：最好 non-thinking，直接给结果。
@@ -48,7 +48,7 @@ Qwen3 报告强调 thinking / non-thinking 的混合模式。<Cite n={1} />它�
 
 ## 四、后训练流水线：从离线蒸馏到在线蒸馏
 
-Qwen3 报告中的 strong-to-weak 蒸馏可以拆成两段：<Cite n={1} />
+Qwen3 报告中的 strong-to-weak 蒸馏可以拆成两段<Cite n={1} />：
 
 | 阶段 | 数据状态 | 老师角色 | 主要问题 |
 |---|---|---|---|
@@ -70,7 +70,7 @@ Qwen3 报告中的 strong-to-weak 蒸馏可以拆成两段：<Cite n={1} />
 
 ## 五、成本账：为什么 OPD 比继续 RL 更高效
 
-Qwen3 报告的表 21 给了一个很有代表性的对比。<Cite n={1} />以 8B 级学生的数学推理后训练为例：
+Qwen3 报告的表 21 给了一个很有代表性的对比<Cite n={1} />。以 8B 级学生的数学推理后训练为例：
 
 | 训练路线 | AIME’24 | AIME’25 | MATH500 | LiveCodeBench v5 | MMLU-Redux | GPQA-Diamond | GPU Hours |
 |---|---:|---:|---:|---:|---:|---:|---:|
@@ -78,13 +78,13 @@ Qwen3 报告的表 21 给了一个很有代表性的对比。<Cite n={1} />以 8
 | + Reinforcement Learning | 67.6 | 55.5 | 94.8 | 52.9 | 86.9 | 61.3 | 17,920 |
 | + On-policy Distillation | 74.4 | 65.5 | 97.0 | 60.3 | 88.3 | 63.3 | 1,800 |
 
-报告表中 AIME 还同时给出 pass@64：OPD 对 AIME’24 为 93.3，AIME’25 为 86.7。<Cite n={1} />这里的比较从同一个 off-policy distilled 8B checkpoint 出发，主要面向 math/code-related queries，因此不能外推成“所有任务上 OPD 都优于 RL”。
+报告表中 AIME 还同时给出 pass@64：OPD 对 AIME’24 为 93.3，AIME’25 为 86.7<Cite n={1} />。这里的比较从同一个 off-policy distilled 8B checkpoint 出发，主要面向 math/code-related queries，因此不能外推成“所有任务上 OPD 都优于 RL”。
 
 RL 的优势是探索：模型可能发现 teacher 没有覆盖的新策略。OPD 的优势是复制：当已有强策略值得继承时，它把稀疏的结果偏好变成 dense token-level 指导。
 
 ## 六、和 Thinking Machines OPD 的关系
 
-[Thinking Machines OPD](/papers/tml-opd) 把这件事讲成更工程化的 recipe：学生 rollout，老师打分，把 sampled-token reverse KL 写成 token-level advantage，再复用 RL 风格的训练循环。<Cite n={2} />
+[Thinking Machines OPD](/papers/tml-opd) 把这件事讲成更工程化的 recipe：学生 rollout，老师打分，把 sampled-token reverse KL 写成 token-level advantage，再复用 RL 风格的训练循环<Cite n={2} />。
 
 Qwen3 报告提供的是模型技术报告里的证据：
 
@@ -93,7 +93,7 @@ Qwen3 报告提供的是模型技术报告里的证据：
 3. 在数学推理上，OPD 的成本 / 效果比足以进入工业报告主线；
 4. 评估要同时看分数和 GPU hours，而不是只看 benchmark 峰值。
 
-这也解释了为什么 OPD 在 2025—2026 年突然变热：它不是新瓶装旧 SFT，而是补上了“强策略已经存在，但继续 RL 太贵”的训练空位。<Cite n={[2,3]} />
+这也解释了为什么 OPD 在 2025—2026 年突然变热：它不是新瓶装旧 SFT，而是补上了“强策略已经存在，但继续 RL 太贵”的训练空位<Cite n={[2,3]} />。
 
 ## 七、结果该怎么读
 
@@ -106,7 +106,7 @@ Qwen3 报告提供的是模型技术报告里的证据：
 - student 是 dense 还是 MoE；
 - teacher 与 student 是否同家族。
 
-所以 Qwen3 的 OPD 结果最好不要被读成单点排行榜，而应读成一条训练经验：当目标是把强 teacher 的推理偏好迁移到学生模型时，on-policy 的状态覆盖和 token-level 的密集监督可以显著改善成本结构。<Cite n={[1,2]} />
+所以 Qwen3 的 OPD 结果最好不要被读成单点排行榜，而应读成一条训练经验：当目标是把强 teacher 的推理偏好迁移到学生模型时，on-policy 的状态覆盖和 token-level 的密集监督可以显著改善成本结构<Cite n={[1,2]} />。
 
 ## 八、局限：OPD 不是免费增强器
 

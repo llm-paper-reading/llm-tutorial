@@ -7,15 +7,15 @@ export const metadata = paperMetadata(paper);
 
 # Time-LLM：把时序重编程成 LLM 的「外语」
 
-2024 年 ICLR 上，Monash、蚂蚁集团、IBM 等机构的联合工作提出 Time-LLM：不改 Llama-7B 的任何参数，把时序 patch「翻译」成文本原型空间，再附上一段用自然语言写的任务说明，让冻结的 LLM 直接做预测。<Cite n={1} />只训练输入重编程与输出投影，重编程网络不到 660 万参数（约 Llama-7B 的 0.2%），却在长程、短期、少样本、零样本预测上超过 PatchTST、TimesNet、GPT4TS 等专用模型。<Cite n={1} />这篇笔记拆三件事：为什么要「重编程」而不是微调、文本原型与 Prompt-as-Prefix 怎么配合、以及它在成本与边界上留下了什么。
+2024 年 ICLR 上，Monash、蚂蚁集团、IBM 等机构的联合工作提出 Time-LLM：不改 Llama-7B 的任何参数，把时序 patch「翻译」成文本原型空间，再附上一段用自然语言写的任务说明，让冻结的 LLM 直接做预测<Cite n={1} />。只训练输入重编程与输出投影，重编程网络不到 660 万参数（约 Llama-7B 的 0.2%），却在长程、短期、少样本、零样本预测上超过 PatchTST、TimesNet、GPT4TS 等专用模型<Cite n={1} />。这篇笔记拆三件事：为什么要「重编程」而不是微调、文本原型与 Prompt-as-Prefix 怎么配合、以及它在成本与边界上留下了什么。
 
 > 📌 前置：同一「借用预训练模型」路线的另一支是 [One Fits All](/papers/one-fits-all)（冻结 Transformer 块、只微调接口）；LLM 主干背景见 [Llama 3](/papers/llama3) 与 [Attention Is All You Need](/papers/attention-transformer)。如果想看「从零训时序基础模型」的路线，可以读 [TimesFM](/papers/timesfm)、[MOMENT](/papers/moment)、[Moirai](/papers/moirai)；外生变量场景见 [TimeXer](/papers/timexer)。
 
 ## 一、动机：一个任务一个模型，还是让 LLM 学会「读」时序？
 
-时序预测的现状是高度专用化：ARIMA 面向单变量，LSTM 面向序列建模，TCN 与 Transformer 面向长依赖，每换一个领域或任务就要重新设计模型。<Cite n={1} />而 LLM 提供了五点吸引力：跨任务泛化、数据效率、模式识别与推理、跨模态知识、以及「训练一次、到处适配」的低优化成本。<Cite n={1} />
+时序预测的现状是高度专用化：ARIMA 面向单变量，LSTM 面向序列建模，TCN 与 Transformer 面向长依赖，每换一个领域或任务就要重新设计模型<Cite n={1} />。而 LLM 提供了五点吸引力：跨任务泛化、数据效率、模式识别与推理、跨模态知识、以及「训练一次、到处适配」的低优化成本<Cite n={1} />。
 
-难点在模态鸿沟。LLM 处理的是离散 token，时序是连续值；时序可以被分段、归一化、embedding，却很难像图像或语音那样「无损地描述成一段话」。<Cite n={1} />论文把三条路线摆在一起比较（Figure 1）：(a) 任务专用模型，每类任务单独训练；(b) 模型微调，在时序上继续训练预训练模型；(c) 模型重编程，主干完全冻结，只学习一个从目标模态到源模态的轻量映射。<Cite n={1} />Time-LLM 走的是第三条：不改 LLM，改它「看到的输入」。
+难点在模态鸿沟。LLM 处理的是离散 token，时序是连续值；时序可以被分段、归一化、embedding，却很难像图像或语音那样「无损地描述成一段话」<Cite n={1} />。论文把三条路线摆在一起比较（Figure 1）：(a) 任务专用模型，每类任务单独训练；(b) 模型微调，在时序上继续训练预训练模型；(c) 模型重编程，主干完全冻结，只学习一个从目标模态到源模态的轻量映射<Cite n={1} />。Time-LLM 走的是第三条：不改 LLM，改它「看到的输入」。
 
 <figure className="my-6">
   <img src="./fig-1-paradigm.svg" alt="三种范式对比：任务专用学习为每个任务单独训练模型；模型微调在时序上继续训练预训练模型；模型重编程保持语言模型冻结，只学习输入重编程与轻量头，具备轻量、高效、上下文引导与跨模态能力" className="mx-auto h-auto max-w-full rounded-lg border border-zinc-200 shadow-sm dark:border-zinc-800" />
@@ -27,7 +27,7 @@ export const metadata = paperMetadata(paper);
 
 ## 二、方法：重编程三件套
 
-整体流程是「归一化与分块 → patch 重编程 → Prompt-as-Prefix → 冻结 LLM → 输出投影」，见图 2。<Cite n={1} />每个通道（单变量序列）独立处理，论文沿用 PatchTST 的 channel-independent 设定。<Cite n={[1,3]} />
+整体流程是「归一化与分块 → patch 重编程 → Prompt-as-Prefix → 冻结 LLM → 输出投影」，见图 2<Cite n={1} />。每个通道（单变量序列）独立处理，论文沿用 PatchTST 的 channel-independent 设定<Cite n={[1,3]} />。
 
 <figure className="my-6">
   <img src="./fig-2-framework.svg" alt="Time-LLM 框架：输入文本经 tokenization 与冻结的 token embedder 得到提示嵌入；时序经实例归一化、patching 与 patch embedder 后，通过多头交叉注意力用文本原型重编程；两路拼接后送入冻结的 LLM，输出 patch 表示再展平投影为预测值" className="mx-auto h-auto max-w-full rounded-lg border border-zinc-200 shadow-sm dark:border-zinc-800" />
@@ -37,23 +37,23 @@ export const metadata = paperMetadata(paper);
   </figcaption>
 </figure>
 
-**第一步，把时序变成 patch。** 每条序列先做可逆实例归一化（RevIN）缓解分布漂移，再按长度 $L_p$、步长 $S$ 切块，patch 数为 $P=\lfloor (T-L_p)/S\rfloor+2$；每个 patch 经一个线性层投影到 $d_m$ 维。<Cite n={[1,3]} />patching 既保留局部语义，又把长序列压缩成较短的 token 串，降低 Transformer 的计算量。<Cite n={1} />
+**第一步，把时序变成 patch。** 每条序列先做可逆实例归一化（RevIN）缓解分布漂移，再按长度 $L_p$、步长 $S$ 切块，patch 数为 $P=\lfloor (T-L_p)/S\rfloor+2$；每个 patch 经一个线性层投影到 $d_m$ 维<Cite n={[1,3]} />。patching 既保留局部语义，又把长序列压缩成较短的 token 串，降低 Transformer 的计算量<Cite n={1} />。
 
-**第二步，用文本原型重编程 patch。** 直接拿 LLM 的完整词表做映射，空间太大且大部分词与时序无关。论文的做法是先用一个线性层从预训练词嵌入 $E\in\mathbb{R}^{V\times D}$ 里「探测」出一小套文本原型 $E'\in\mathbb{R}^{V'\times D}$（$V'\ll V$，长程任务默认 1000 个，短期任务 100 个）。<Cite n={1} />然后以 patch 嵌入为 query、文本原型为 key/value 做多头交叉注意力：
+**第二步，用文本原型重编程 patch。** 直接拿 LLM 的完整词表做映射，空间太大且大部分词与时序无关。论文的做法是先用一个线性层从预训练词嵌入 $E\in\mathbb{R}^{V\times D}$ 里「探测」出一小套文本原型 $E'\in\mathbb{R}^{V'\times D}$（$V'\ll V$，长程任务默认 1000 个，短期任务 100 个）<Cite n={1} />。然后以 patch 嵌入为 query、文本原型为 key/value 做多头交叉注意力：
 
 $$
 Z_k^{(i)}=\operatorname{softmax}\!\left(\frac{Q_k^{(i)}K_k^{(i)\top}}{\sqrt{d_k}}\right)V_k^{(i)},\qquad Q_k^{(i)}=\hat X_P^{(i)}W_k^Q,\; K_k^{(i)}=E'W_k^K,\; V_k^{(i)}=E'W_k^V
 $$
 
-聚合各头并做线性投影后得到 $O^{(i)}\in\mathbb{R}^{P\times D}$，正好是 LLM 的输入维度。<Cite n={1} />直觉上，每个 patch 被表示成「short up」「steady down」这类语言线索的组合——既留在语言模型熟悉的表示空间里，又因为原型数量少而保持了映射的效率。
+聚合各头并做线性投影后得到 $O^{(i)}\in\mathbb{R}^{P\times D}$，正好是 LLM 的输入维度<Cite n={1} />。直觉上，每个 patch 被表示成「short up」「steady down」这类语言线索的组合——既留在语言模型熟悉的表示空间里，又因为原型数量少而保持了映射的效率。
 
-**第三步，Prompt-as-Prefix（PaP）。** 在重编程后的 patch 前面拼接一段自然语言前缀，包含三部分：数据集背景（domain knowledge）、任务指令（instruction）、输入统计量（如趋势、滞后等）。<Cite n={1} />这些文本由冻结的 token embedder 编码成嵌入，与 patch 嵌入拼成一条序列送入 LLM。前缀的作用不是「解释数据」，而是给 LLM 一个声明式的转换指令：现在要做什么、这批数据的背景是什么、应该关注哪些统计特征。
+**第三步，Prompt-as-Prefix（PaP）。** 在重编程后的 patch 前面拼接一段自然语言前缀，包含三部分：数据集背景（domain knowledge）、任务指令（instruction）、输入统计量（如趋势、滞后等）<Cite n={1} />。这些文本由冻结的 token embedder 编码成嵌入，与 patch 嵌入拼成一条序列送入 LLM。前缀的作用不是「解释数据」，而是给 LLM 一个声明式的转换指令：现在要做什么、这批数据的背景是什么、应该关注哪些统计特征。
 
-**第四步，冻结主干，只训接口。** 默认主干是 Llama-7B（32 层），整个前向过程中 LLM 参数不变<Cite n={[1,2]} />；LLM 输出的前缀部分被丢弃，余下的 patch 表示展平后经线性层投影成 $H$ 步预测。<Cite n={1} />需要训练的只有 patch embedder、文本原型线性探测、重编程交叉注意力与输出投影——合计不到 660 万参数，约为 Llama-7B 的 0.2%。<Cite n={1} />
+**第四步，冻结主干，只训接口。** 默认主干是 Llama-7B（32 层），整个前向过程中 LLM 参数不变<Cite n={[1,2]} />；LLM 输出的前缀部分被丢弃，余下的 patch 表示展平后经线性层投影成 $H$ 步预测<Cite n={1} />。需要训练的只有 patch embedder、文本原型线性探测、重编程交叉注意力与输出投影——合计不到 660 万参数，约为 Llama-7B 的 0.2%<Cite n={1} />。
 
 ## 三、为什么不是让 LLM 直接「写出」预测值？
 
-一个自然的疑问是：既然 LLM 能生成文本，为什么不把它当成语言任务，直接让它输出数字？论文把这条路叫 Patch-as-Prefix，并指出两个问题：LLM 对高精度数字不敏感，长预测区间容易失准；不同 LLM 的分词方式不同，同一个 0.61 可能被切成 `['0','.','6','1']` 或 `['0','.','61']`，需要为每个模型写后处理。<Cite n={1} />Prompt-as-Prefix 则避开了数字生成，让 LLM 在表示层完成转换，再由一个线性头统一输出数值——这是 Time-LLM 与「LLM 直接预测」路线最关键的分野。
+一个自然的疑问是：既然 LLM 能生成文本，为什么不把它当成语言任务，直接让它输出数字？论文把这条路叫 Patch-as-Prefix，并指出两个问题：LLM 对高精度数字不敏感，长预测区间容易失准；不同 LLM 的分词方式不同，同一个 0.61 可能被切成 `['0','.','6','1']` 或 `['0','.','61']`，需要为每个模型写后处理<Cite n={1} />。Prompt-as-Prefix 则避开了数字生成，让 LLM 在表示层完成转换，再由一个线性头统一输出数值——这是 Time-LLM 与「LLM 直接预测」路线最关键的分野。
 
 <figure className="my-6">
   <img src="./fig-3-reprogram.svg" alt="Patch 重编程示意：左侧用文本原型把时序 patch 表示成原型组合；右侧对比 Patch-as-Prefix（LLM 直接生成 0.6 这类数字 token）与 Prompt-as-Prefix（LLM 只做表示转换，预测由一个投影层输出）" className="mx-auto h-auto max-w-full rounded-lg border border-zinc-200 shadow-sm dark:border-zinc-800" />
@@ -63,11 +63,11 @@ $$
   </figcaption>
 </figure>
 
-消融也支持这套设计：去掉 patch 重编程或去掉 PaP，ETTh1 在 96 步上的 MSE 从 0.362 分别升到 0.410 与 0.398；再去掉数据集背景、任务指令或统计量中的任意一项，长程与少样本结果都会变差。<Cite n={1} />
+消融也支持这套设计：去掉 patch 重编程或去掉 PaP，ETTh1 在 96 步上的 MSE 从 0.362 分别升到 0.410 与 0.398；再去掉数据集背景、任务指令或统计量中的任意一项，长程与少样本结果都会变差<Cite n={1} />。
 
 ## 四、实验结果：专用模型被一个冻结主干超过
 
-实验沿用 TimesNet 的统一评测配置，长程预测的输入长度设为 512。<Cite n={[1,4]} />
+实验沿用 TimesNet 的统一评测配置，长程预测的输入长度设为 512<Cite n={[1,4]} />。
 
 | 设置 | Time-LLM 结果 | 对比基线 | 结论 |
 |---|---|---|---|
@@ -77,26 +77,26 @@ $$
 | 少样本 5% | 平均 MSE 比 GPT4TS 低 5% 以上 | 比 PatchTST / DLinear / TimesNet 低 20% 以上 | 数据越少优势越明显 |
 | 零样本 | 跨 ETT 数据集平均 MSE 比第二名低 14.2% | 比 GPT4TS 低 22%、比 LLMTime 低 75% 以上 | 低资源场景优势最大 |
 
-表中数字来自论文 Table 1–5。<Cite n={1} />几个细节值得单独看：
+表中数字来自论文 Table 1–5<Cite n={1} />。几个细节值得单独看：
 
-- **长程预测**：输入长度 512、预测长度 96–720，ETTh1 上 MSE 0.408 对 PatchTST 的 0.413，ILI 上 1.435 对 1.443，Traffic 上 0.388 对 0.390——赢是赢了，但差距已经很小；对 GPT4TS 与 TimesNet 的领先才是两位数百分比。<Cite n={1} />
-- **短期预测**：M4 上 SMAPE 11.983，优于 N-HiTS 的 12.035 与 GPT4TS 的 12.69；论文称相对 GPT4TS 提升 8.7%。<Cite n={1} />
-- **少样本**：只取前 10% 或 5% 训练步数时，LLM 的预训练知识被激活得更充分，相对专用模型的优势从长程的个位数百分比放大到 20%–33%。<Cite n={1} />
-- **零样本**：在 ETTh1/ETTh2/ETTm1/ETTm2 之间做 8 组跨数据集迁移，Time-LLM 平均 MSE 全部低于 GPT4TS、DLinear、PatchTST、TimesNet，论文报告相对第二名降低 14.2%。<Cite n={1} />
+- **长程预测**：输入长度 512、预测长度 96–720，ETTh1 上 MSE 0.408 对 PatchTST 的 0.413，ILI 上 1.435 对 1.443，Traffic 上 0.388 对 0.390——赢是赢了，但差距已经很小；对 GPT4TS 与 TimesNet 的领先才是两位数百分比<Cite n={1} />。
+- **短期预测**：M4 上 SMAPE 11.983，优于 N-HiTS 的 12.035 与 GPT4TS 的 12.69；论文称相对 GPT4TS 提升 8.7%<Cite n={1} />。
+- **少样本**：只取前 10% 或 5% 训练步数时，LLM 的预训练知识被激活得更充分，相对专用模型的优势从长程的个位数百分比放大到 20%–33%<Cite n={1} />。
+- **零样本**：在 ETTh1/ETTh2/ETTm1/ETTm2 之间做 8 组跨数据集迁移，Time-LLM 平均 MSE 全部低于 GPT4TS、DLinear、PatchTST、TimesNet，论文报告相对第二名降低 14.2%<Cite n={1} />。
 
-与 [One Fits All](/papers/one-fits-all)（论文中的 GPT4TS）对照最能说明路线差异：GPT4TS 冻结的是块内参数，但位置嵌入与 LayerNorm 仍要训练；Time-LLM 则把整个 LLM 连同词嵌入一起冻住，只学习输入映射与输出投影。<Cite n={[1,5]} />两者在长程预测上相差 12%，而在少样本、零样本上差距扩大到 22%，说明「把时序翻译进语言空间」的做法在低资源场景更有优势。
+与 [One Fits All](/papers/one-fits-all)（论文中的 GPT4TS）对照最能说明路线差异：GPT4TS 冻结的是块内参数，但位置嵌入与 LayerNorm 仍要训练；Time-LLM 则把整个 LLM 连同词嵌入一起冻住，只学习输入映射与输出投影<Cite n={[1,5]} />。两者在长程预测上相差 12%，而在少样本、零样本上差距扩大到 22%，说明「把时序翻译进语言空间」的做法在低资源场景更有优势。
 
 ## 五、消融、可解释性与成本
 
-**主干越大越好。** 在 ETTh1-96 上，Llama-7B 全 32 层的 MSE 为 0.362，只保留 8 层升到 0.389；换成 GPT-2（12 层）为 0.385、GPT-2（6 层）为 0.394。<Cite n={1} />论文据此认为 scaling law 在重编程后仍然成立——冻结的 LLM 不是「随便一个 Transformer」就行，预训练规模本身带来了增益。
+**主干越大越好。** 在 ETTh1-96 上，Llama-7B 全 32 层的 MSE 为 0.362，只保留 8 层升到 0.389；换成 GPT-2（12 层）为 0.385、GPT-2（6 层）为 0.394<Cite n={1} />。论文据此认为 scaling law 在重编程后仍然成立——冻结的 LLM 不是「随便一个 Transformer」就行，预训练规模本身带来了增益。
 
-**重编程空间可以看。** 论文把 48 个 patch 对 100 个文本原型的注意力可视化（Figure 5）：优化后只有少数原型被高频使用，不同 patch 由不同原型组合表示；被选中的原型对应 `periodic`、`seasonal`、`quantile`、`average` 这类描述时序性质的词。<Cite n={1} />这说明原型不是随机词表，而是学到了一套「时序语汇」。
+**重编程空间可以看。** 论文把 48 个 patch 对 100 个文本原型的注意力可视化（Figure 5）：优化后只有少数原型被高频使用，不同 patch 由不同原型组合表示；被选中的原型对应 `periodic`、`seasonal`、`quantile`、`average` 这类描述时序性质的词<Cite n={1} />。这说明原型不是随机词表，而是学到了一套「时序语汇」。
 
-**成本要分两笔算。** 可训练参数确实很少：重编程网络不到 6.6M，约 0.2%；但显存与时间由冻结主干决定。论文在 ETTh1-96 上的测量是：Llama-7B 全量 3404M 参数、32,136 MiB、0.517 s/iter；8 层版本 976M、11,370 MiB、0.184 s/iter；不用 LLM 的纯重编程网络只有 6.4M、3,678 MiB、0.046 s/iter。<Cite n={1} />所以「轻量」指的是可训练参数与任务适配成本，不是端到端推理成本——这也是所有 LLM-for-time-series 方法共同要面对的账。
+**成本要分两笔算。** 可训练参数确实很少：重编程网络不到 6.6M，约 0.2%；但显存与时间由冻结主干决定。论文在 ETTh1-96 上的测量是：Llama-7B 全量 3404M 参数、32,136 MiB、0.517 s/iter；8 层版本 976M、11,370 MiB、0.184 s/iter；不用 LLM 的纯重编程网络只有 6.4M、3,678 MiB、0.046 s/iter<Cite n={1} />。所以「轻量」指的是可训练参数与任务适配成本，不是端到端推理成本——这也是所有 LLM-for-time-series 方法共同要面对的账。
 
 ## 六、局限与后续
 
-论文自己列出的方向包括：寻找更优的重编程表示、用持续预训练给 LLM 注入显式时序知识、以及走向时序与自然语言的联合多模态推理。<Cite n={1} />从实践角度看还有几条隐含边界：
+论文自己列出的方向包括：寻找更优的重编程表示、用持续预训练给 LLM 注入显式时序知识、以及走向时序与自然语言的联合多模态推理<Cite n={1} />。从实践角度看还有几条隐含边界：
 
 - **显存门槛**：7B 主干是主要成本，量化、蒸馏或更小的主干是落地前提；论文也提到可结合量化等现成技术压缩。
 - **通道独立**：每个变量单独建模，变量之间的相关性没有被显式利用；这在多变量强耦合场景可能限制上限。

@@ -7,13 +7,13 @@ export const metadata = paperMetadata(paper);
 
 # Kimi K3：开源 3T 的混合注意力与 LatentMoE
 
-2026 年 7 月，月之暗面发布了 Kimi K3：2.78T 总参数、每 token 激活 104.2B 的 MoE 模型——**世界首个开源的 3T 级模型**，原生多模态、1M token 上下文。<Cite n={1} />它整体落后 Claude Fable 5 与 GPT-5.6 Sol，但领先其余开源与多数闭源模型，官方口径是「开源最强」。这篇笔记拆解它相对 [K2](/papers/kimi-k2) 的三处架构跃迁：**KDA 线性注意力与 MLA 的混合**、把注意力搬进深度方向的 **AttnRes**、以及在 896 专家的极端稀疏下稳住优化的 **Stable LatentMoE**——三件事合计换来约 **2.5× scaling efficiency**。<Cite n={[1,2,3]} />
+2026 年 7 月，月之暗面发布了 Kimi K3：2.78T 总参数、每 token 激活 104.2B 的 MoE 模型——**世界首个开源的 3T 级模型**，原生多模态、1M token 上下文<Cite n={1} />。它整体落后 Claude Fable 5 与 GPT-5.6 Sol，但领先其余开源与多数闭源模型，官方口径是「开源最强」。这篇笔记拆解它相对 [K2](/papers/kimi-k2) 的三处架构跃迁：**KDA 线性注意力与 MLA 的混合**、把注意力搬进深度方向的 **AttnRes**、以及在 896 专家的极端稀疏下稳住优化的 **Stable LatentMoE**——三件事合计换来约 **2.5× scaling efficiency**<Cite n={[1,2,3]} />。
 
 > 📌 前置：K3 是 [Kimi K2](/papers/kimi-k2) 的直接续作（Muon 优化器、agentic 数据合成、joint RL 全部继承）；RL 部分与 [Kimi K1.5](/papers/kimi-k15) 一脉相承。稀疏注意力路线可对照 [DeepSeek-V3.2](/papers/deepseek-v3-2) 的 DSA 阅读。
 
 ## 一、动机：3T 级模型撞上的三堵墙
 
-K2 的答案（超稀疏 MoE + MuonClip）解决「1T 训练稳不稳」；K3 要解决「再往上翻 2.7 倍，哪些部件先碎」。<Cite n={[1,2]} />报告的诊断：纯 softmax 注意力在 1M 上下文下计算与显存都不可行；残差连接把全部历史压进一个向量，深模型的信息流有瓶颈；MoE 专家数逼近千级时，激活爆炸与负载均衡双双失灵。对应的三个解法是混合 KDA–MLA、AttnRes 与 Stable LatentMoE。先看 K2 → K3 的架构账本（论文 Table 1）:<Cite n={1} />
+K2 的答案（超稀疏 MoE + MuonClip）解决「1T 训练稳不稳」；K3 要解决「再往上翻 2.7 倍，哪些部件先碎」<Cite n={[1,2]} />。报告的诊断：纯 softmax 注意力在 1M 上下文下计算与显存都不可行；残差连接把全部历史压进一个向量，深模型的信息流有瓶颈；MoE 专家数逼近千级时，激活爆炸与负载均衡双双失灵。对应的三个解法是混合 KDA–MLA、AttnRes 与 Stable LatentMoE。先看 K2 → K3 的架构账本（论文 Table 1）<Cite n={1} />:
 
 | 配置 | Kimi K2 | Kimi K3 | Δ |
 |---|---|---|---|
@@ -40,7 +40,7 @@ K2 的答案（超稀疏 MoE + MuonClip）解决「1T 训练稳不稳」；K3 �
 
 ### 2.1 递归：delta rule + 通道级遗忘门
 
-KDA（Kimi Delta Attention）是线性注意力：维护一个固定大小的循环状态 $\mathbf{S}_t \in \mathbb{R}^{d_k \times d_v}$，读写都是 O(1)，序列方向天然线性。<Cite n={[1,3]} />它的特别之处是在 vanilla 线性注意力的加性更新 $S_t = S_{t-1} + k_t v_t^\top$（只加不减）之前，先做一步**擦除**:
+KDA（Kimi Delta Attention）是线性注意力：维护一个固定大小的循环状态 $\mathbf{S}_t \in \mathbb{R}^{d_k \times d_v}$，读写都是 O(1)，序列方向天然线性<Cite n={[1,3]} />。它的特别之处是在 vanilla 线性注意力的加性更新 $S_t = S_{t-1} + k_t v_t^\top$（只加不减）之前，先做一步**擦除**:
 
 $$
 \mathbf{S}_t=\big(\mathbf{I}-\beta_t\mathbf{k}_t\mathbf{k}_t^\top\big)\operatorname{Diag}(\mathbf{\alpha}_t)\,\mathbf{S}_{t-1}+\beta_t\mathbf{k}_t\mathbf{v}_t^\top,\qquad \tilde{\mathbf{o}}_t=\mathbf{S}_t^\top\mathbf{q}_t
@@ -50,12 +50,12 @@ $$
 
 两个 K3 特有的修正：
 
-- **下界对数衰减**：Kimi Linear 用 $-\mathrm{Softplus}$ 映射，log-decay 无下界；K3 改为缩放 sigmoid $\mathbf{g}_t = g_{\min}\operatorname{Sigmoid}(e^A\mathbf{z}_t) \in (g_{\min}, 0)$($g_{\min}=-5$)。<Cite n={1} />有界区间让 chunkwise 计算的所有因果 tile 都能走稠密 Tensor Core 矩阵乘，而不是逐位置对的特殊计算；
+- **下界对数衰减**：Kimi Linear 用 $-\mathrm{Softplus}$ 映射，log-decay 无下界；K3 改为缩放 sigmoid $\mathbf{g}_t = g_{\min}\operatorname{Sigmoid}(e^A\mathbf{z}_t) \in (g_{\min}, 0)$($g_{\min}=-5$)<Cite n={1} />。有界区间让 chunkwise 计算的所有因果 tile 都能走稠密 Tensor Core 矩阵乘，而不是逐位置对的特殊计算；
 - **满秩输出门**：输出从 Kimi Linear 的低秩门换成满秩投影 $\mathbf{y}_t=\mathbf{W}_o\big[\operatorname{Sigmoid}(\mathbf{W}_g\mathbf{x}_t)\odot\operatorname{RMSNorm}(\tilde{\mathbf{o}}_t)\big]$——数据相关的逐通道门控，先 RMSNorm 再门控，防循环状态幅值漂移。
 
 ### 2.2 混合配比：每 3 层 KDA 配 1 层 Gated MLA
 
-线性注意力省算力但有损；K3 的做法是 69 层 KDA 与 24 层 Gated MLA 周期交错（**每个块 3 KDA + 1 MLA**）。<Cite n={1} />MLA 层提供全局精确交互，KDA 层提供位置敏感、偏重近期的序列混合。更彻底的是**位置编码整个扔掉**：K3 对所有 MLA 层用 NoPE（无显式位置编码），位置信息由 KDA 的门控与衰减机制隐式承载——因此上下文从 128K 扩到 1M，**不需要任何 RoPE 缩放或插值**。
+线性注意力省算力但有损；K3 的做法是 69 层 KDA 与 24 层 Gated MLA 周期交错（**每个块 3 KDA + 1 MLA**）<Cite n={1} />。MLA 层提供全局精确交互，KDA 层提供位置敏感、偏重近期的序列混合。更彻底的是**位置编码整个扔掉**：K3 对所有 MLA 层用 NoPE（无显式位置编码），位置信息由 KDA 的门控与衰减机制隐式承载——因此上下文从 128K 扩到 1M，**不需要任何 RoPE 缩放或插值**。
 
 配 KCP（KDA Context Parallelism）做序列维切分，百万 token 训练才成为可能：段间转移矩阵可以并行求值再合并，每段的精确初始状态可恢复。
 
@@ -103,7 +103,7 @@ print("加性更新把所有历史混叠在一起;擦除 + 衰减让状态保持
 
 ## 三、AttnRes：残差连接的注意力化
 
-标准残差把所有前层信息压进单个 $\mathbf{h}_l$——报告的类比很妙：这相当于「深度方向的 RNN」。<Cite n={1} />既然序列方向上 [Transformer](/papers/attention-transformer) 用注意力取代了 RNN，深度方向也可以照搬：**AttnRes 让第 $l$ 层选择性检索所有前层的表示，而不是均匀累加**。每层学一个伪查询 $\mathbf{q}_l=\mathbf{w}_l$，键值取前层输出 $\mathbf{k}_i=\mathbf{v}_i=f_i(\mathbf{h}_i)$（含第 0 层的词嵌入），注意力核带 RMSNorm 防大层主导：
+标准残差把所有前层信息压进单个 $\mathbf{h}_l$——报告的类比很妙：这相当于「深度方向的 RNN」<Cite n={1} />。既然序列方向上 [Transformer](/papers/attention-transformer) 用注意力取代了 RNN，深度方向也可以照搬：**AttnRes 让第 $l$ 层选择性检索所有前层的表示，而不是均匀累加**。每层学一个伪查询 $\mathbf{q}_l=\mathbf{w}_l$，键值取前层输出 $\mathbf{k}_i=\mathbf{v}_i=f_i(\mathbf{h}_i)$（含第 0 层的词嵌入），注意力核带 RMSNorm 防大层主导：
 
 $$
 \phi(\mathbf{q},\mathbf{k})=\exp\big(\mathbf{q}^\top\operatorname{RMSNorm}(\mathbf{k})\big),\qquad
@@ -117,14 +117,14 @@ $$
 
 ### 4.1 潜空间路由 + 两个失效模式
 
-激活 16/896（sparsity 56）的极端稀疏带来一个问题：常规 MoE 每个被选专家都吃全宽 $d$=7168 的 token 表示，通信量随路由倍数暴涨。**LatentMoE** 的解法是分层：共享专家（2 个）保留全宽通路做通用变换，路由专家全部工作在 $\ell$=3584 的潜空间（0.5× 宽）:<Cite n={1} />
+激活 16/896（sparsity 56）的极端稀疏带来一个问题：常规 MoE 每个被选专家都吃全宽 $d$=7168 的 token 表示，通信量随路由倍数暴涨。**LatentMoE** 的解法是分层：共享专家（2 个）保留全宽通路做通用变换，路由专家全部工作在 $\ell$=3584 的潜空间（0.5× 宽）<Cite n={1} />:
 
 $$
 \mathbf{u}=\sum_{i\in\mathcal{T}_k(\mathbf{x})}p_i\,E_i^{\mathrm{routed}}(\mathbf{W}^{\downarrow}\mathbf{x}),\qquad
 \mathbf{y}=\sum_{j=1}^{N_s}E_j^{\mathrm{shared}}(\mathbf{x})+\mathbf{W}^{\uparrow}\operatorname{RMSNorm}(\mathbf{u})
 $$
 
-但 $W^{\downarrow}$ → 门控多分支 FFN → $W^{\uparrow}$ 近乎**四个连续矩阵乘**的链，在 2.8T 参数量级上直接激活爆炸；同时 896 个专家也超出了既有无辅助损失均衡的适用域。Stable LatentMoE 用三个组件逐一压制：<Cite n={1} />
+但 $W^{\downarrow}$ → 门控多分支 FFN → $W^{\uparrow}$ 近乎**四个连续矩阵乘**的链，在 2.8T 参数量级上直接激活爆炸；同时 896 个专家也超出了既有无辅助损失均衡的适用域。Stable LatentMoE 用三个组件逐一压制<Cite n={1} />：
 
 1. **上投影前加 RMSNorm**（见上式）——爆炸的内部激活先被归一化再升维；
 2. **SiTU-GLU 激活**:$\big[\beta_1\tanh(\mathbf{W}_g\mathbf{x}/\beta_1)\odot\operatorname{Sigmoid}(\mathbf{W}_g\mathbf{x})\big]\odot\big[\beta_2\tanh(\mathbf{W}_u\mathbf{x}/\beta_2)\big]$，取 $\beta_1=4,\beta_2=25$，逐点输出有界($|f|\le\beta_1\beta_2=100$)，而 SwiGLU 无界；$\beta\to\infty$ 时退回 SwiGLU;
@@ -195,7 +195,7 @@ print("QB:一步逼近均衡,无学习率类超参数")
 
 ## 五、训练与后训练
 
-**预训练**：Muon 升级为 **Per-Head Muon**——Q/K/V 投影的动量按头切分、逐头正交化，避免大梯度头主导共享更新方向，Newton-Schulz 在窄块上也更便宜；沿用 K2 的权重裁剪。<Cite n={[1,2]} />学习率用**余弦衰减**——scaling law 研究发现余弦与 WSD 的最优超参差异显著，固定最小学习率对比下余弦始终占优。上下文四阶段爬升（预训练 8K→64K、cooldown 256K→1M），长上下文数据靠合成补足。视觉塔 **MoonViT-V2**（401M，27 层，patch 14）**从头用 next-token prediction 训练**——放弃 SigLIP 初始化的原因是稳定性：预训练编码器接上 LLM 后联合优化梯度尖峰频繁；从头训练反而更稳，文本视觉从头混合训练（原生多模态，非后接编码器）。<Cite n={1} />
+**预训练**：Muon 升级为 **Per-Head Muon**——Q/K/V 投影的动量按头切分、逐头正交化，避免大梯度头主导共享更新方向，Newton-Schulz 在窄块上也更便宜；沿用 K2 的权重裁剪<Cite n={[1,2]} />。学习率用**余弦衰减**——scaling law 研究发现余弦与 WSD 的最优超参差异显著，固定最小学习率对比下余弦始终占优。上下文四阶段爬升（预训练 8K→64K、cooldown 256K→1M），长上下文数据靠合成补足。视觉塔 **MoonViT-V2**（401M，27 层，patch 14）**从头用 next-token prediction 训练**——放弃 SigLIP 初始化的原因是稳定性：预训练编码器接上 LLM 后联合优化梯度尖峰频繁；从头训练反而更稳，文本视觉从头混合训练（原生多模态，非后接编码器）<Cite n={1} />。
 
 论文原版的 scaling law 曲线：同等验证损失下，K3 的训练 FLOPs 约为 K2 的一半以下（2.5× 效率）:
 
@@ -207,7 +207,7 @@ print("QB:一步逼近均衡,无学习率类超参数")
   </figcaption>
 </figure>
 
-**后训练**是「专家网络 + 蒸馏」的放大版：RL 在通用 / agentic / coding 三域 × （low, high， max） 三档推理强度上各训一个专家（共 9 个），再用 **MOPD 多教师在线蒸馏**合并回单模型——蒸馏奖励是对数比 $\operatorname{clip}(\mathrm{sg}(\log\pi_{\text{teacher}}/\pi_\theta), -R_{\max}, R_{\max})$，按域和强度切换教师。<Cite n={[1,5]} />三个值得记的设计：
+**后训练**是「专家网络 + 蒸馏」的放大版：RL 在通用 / agentic / coding 三域 × （low, high， max） 三档推理强度上各训一个专家（共 9 个），再用 **MOPD 多教师在线蒸馏**合并回单模型——蒸馏奖励是对数比 $\operatorname{clip}(\mathrm{sg}(\log\pi_{\text{teacher}}/\pi_\theta), -R_{\max}, R_{\max})$，按域和强度切换教师<Cite n={[1,5]} />。三个值得记的设计：
 
 - **Reasoning Effort RL**：每道题按冷启动模型估一个 token 预算 $b_0(x)$，轨迹总 token 超过 $\tau\cdot b_0(x)$ 则奖励直接记 −1；$\tau$ 从大到小退火，产出低/高/最大三档强度的专家——「想多久」变成可训练的旋钮；
 - **Agentic GRM**：不可验证任务沿用 K2 的锦标赛式两两比较，但 judge 被强制走四步协议（读产出 → 生成 rubric → 逐项打分 → 记分板），并配冗长度控制——超过 $\sigma\ell_0$ 的候选自动输掉比较，专防「长即好」的 reward hacking;
@@ -217,7 +217,7 @@ print("QB:一步逼近均衡,无学习率类超参数")
 
 ## 六、RL 任务合成：知识图谱引导
 
-K2 已经证明 agentic 数据要「造环境」；K3 把「造任务」也工程化了。<Cite n={[1,2]} />**知识图谱引导的任务合成**维护一棵自演化的分层 DAG：粗粒度种子节点出发，每个节点派一个 agent 做多轮网络检索、查重去重后挂上更细的子节点，直到概念足够原子；再按目标分布采样节点（单个或相关组合）生成关键词，连祖先上下文一起检索源材料，最后选任务类型合成题目。合成出的任务覆盖知识密集与编码两个域，供 RL 直接消费。
+K2 已经证明 agentic 数据要「造环境」；K3 把「造任务」也工程化了<Cite n={[1,2]} />。**知识图谱引导的任务合成**维护一棵自演化的分层 DAG：粗粒度种子节点出发，每个节点派一个 agent 做多轮网络检索、查重去重后挂上更细的子节点，直到概念足够原子；再按目标分布采样节点（单个或相关组合）生成关键词，连祖先上下文一起检索源材料，最后选任务类型合成题目。合成出的任务覆盖知识密集与编码两个域，供 RL 直接消费。
 
 论文原版的合成管线总览——分层知识图谱 → 关键词集 → 材料检索 → 任务合成：
 
@@ -233,7 +233,7 @@ K2 已经证明 agentic 数据要「造环境」；K3 把「造任务」也工�
 
 ## 七、关键数字与定位
 
-K3（max 强度）与两个闭源旗舰对照（论文 Table 2 节选）:<Cite n={1} />
+K3（max 强度）与两个闭源旗舰对照（论文 Table 2 节选）<Cite n={1} />:
 
 | 基准 | Kimi K3 | Claude Fable 5 | GPT-5.6 Sol | GLM-5.2 |
 |---|---|---|---|---|
@@ -247,7 +247,7 @@ K3（max 强度）与两个闭源旗舰对照（论文 Table 2 节选）:<Cite n
 | OmniDocBench | **91.1** | 89.8 | 85.8 | — |
 | Video-MME(w/ sub) | **90.0** | — | 89.5 | — |
 
-模式很清晰：**长程 agentic 与多模态文档理解上 K3 拿到多个最优**（SWE-Marathon、BrowseComp、MCPMark、OmniDocBench、Video-MME），知识密集与深度推理（CritPt、HLE、FrontierSWE）仍落后两个闭源旗舰。成本侧是另一看点：BrowseComp 最优 91.2 分只花 $2.03/题（Sol 的一半）；Kimi Code Bench 2.0 落后 Fable 5 四分但成本 38%；GDPval 比 Fable 5 便宜 2.6×。<Cite n={1} />**性价比前沿**而非绝对性能前沿，是 3T 开源模型对闭源旗舰的现实定位。
+模式很清晰：**长程 agentic 与多模态文档理解上 K3 拿到多个最优**（SWE-Marathon、BrowseComp、MCPMark、OmniDocBench、Video-MME），知识密集与深度推理（CritPt、HLE、FrontierSWE）仍落后两个闭源旗舰。成本侧是另一看点：BrowseComp 最优 91.2 分只花 $2.03/题（Sol 的一半）；Kimi Code Bench 2.0 落后 Fable 5 四分但成本 38%；GDPval 比 Fable 5 便宜 2.6×<Cite n={1} />。**性价比前沿**而非绝对性能前沿，是 3T 开源模型对闭源旗舰的现实定位。
 
 ## 八、局限与批判
 

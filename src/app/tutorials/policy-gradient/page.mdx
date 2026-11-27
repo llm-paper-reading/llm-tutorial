@@ -19,7 +19,7 @@ export const metadata = tutorialMetadata("policy-gradient");
 
 ## 核心思想：让好动作更可能
 
-我们要最大化期望回报 $J(\theta)=\mathbb{E}_{\tau\sim\pi_\theta}[R(\tau)]$。**策略梯度定理**给出了它的梯度（用「对数导数技巧」把梯度挪进期望里）：<Cite n={[1,5]} />
+我们要最大化期望回报 $J(\theta)=\mathbb{E}_{\tau\sim\pi_\theta}[R(\tau)]$。**策略梯度定理**给出了它的梯度（用「对数导数技巧」把梯度挪进期望里）<Cite n={[1,5]} />：
 
 $$
 \nabla_\theta J(\theta) = \mathbb{E}_{\tau\sim\pi_\theta}\Big[\sum_t \nabla_\theta \log \pi_\theta(a_t\mid s_t)\; G_t\Big]
@@ -30,7 +30,7 @@ $$
 > 💡 妙处在于：公式里只出现 $\nabla\log\pi_\theta$，**不需要对环境求导**。环境哪怕是个黑箱（不可导的游戏引擎），照样能优化策略。上面这个定理怎么来的？为什么能把梯度挪进期望？为什么权重是 $G_t$ 而不是整条轨迹的回报？为什么减一个基线能降方差却不偏？下面把这条推导链一次走完。
 ## 策略梯度定理：从期望到可采样梯度
 
-策略梯度定理（Sutton et al.， 1999 <Cite n={5} />；现代讲法见 Spinning Up <Cite n={1} />）是整篇的基石。它要回答一个问题：**$\nabla_\theta J(\theta)$ 里有个对轨迹的期望，而轨迹分布 $\pi_\theta(\tau)$ 依赖 $\theta$，梯度该怎么估？** 直接对 $\pi_\theta(\tau)$ 求导看似要懂环境动力学，实则不然——下面四步把梯度挪成一个**可用采样估的期望**。<Cite n={[1,5]} />
+策略梯度定理（Sutton et al.， 1999<Cite n={5} />；现代讲法见 Spinning Up<Cite n={1} />）是整篇的基石。它要回答一个问题：**$\nabla_\theta J(\theta)$ 里有个对轨迹的期望，而轨迹分布 $\pi_\theta(\tau)$ 依赖 $\theta$，梯度该怎么估？** 直接对 $\pi_\theta(\tau)$ 求导看似要懂环境动力学，实则不然——下面四步把梯度挪成一个**可用采样估的期望**<Cite n={[1,5]} />。
 
 ### 第一步：轨迹似然的三因子分解
 
@@ -84,7 +84,7 @@ $$
 \nabla_\theta J = \mathbb{E}\!\Big[\sum_t \nabla\log\pi_\theta(a_t\mid s_t)\,\big(R(\tau)-b\big)\Big].
 $$
 
-减去 $b$ 凭什么不偏？靠一条引理，Spinning Up 称之为 **EGLP（Expected Grad-Log-Prob）引理** <Cite n={1} />：对任何参数化分布 $P_\theta(x)$，
+减去 $b$ 凭什么不偏？靠一条引理，Spinning Up 称之为 **EGLP（Expected Grad-Log-Prob）引理**<Cite n={1} />：对任何参数化分布 $P_\theta(x)$，
 
 $$
 \mathbb{E}_{x\sim P_\theta}\!\big[\nabla_\theta\log P_\theta(x)\big] = 0.
@@ -102,11 +102,11 @@ $$
 \mathbb{E}_{a_t\sim\pi_\theta}\!\big[\nabla_\theta\log\pi_\theta(a_t\mid s_t)\,b(s_t)\big] = 0.
 $$
 
-所以减去 $b(s_t)$ 对期望**毫无贡献**（零均值），却把信号从「绝对回报」平移成「相对基准的好坏」，方差大幅下降。理论上最优的 $b(s_t)$ 正是 $V^{\pi}(s_t)$ <Cite n={1} /><Cite n={3} />——这就是后面 Actor-Critic 让 Critic 学 $V_\psi$ 当基线的根据。<Cite n={[1,3]} />
+所以减去 $b(s_t)$ 对期望**毫无贡献**（零均值），却把信号从「绝对回报」平移成「相对基准的好坏」，方差大幅下降。理论上最优的 $b(s_t)$ 正是 $V^{\pi}(s_t)$<Cite n={[1,3]} />——这就是后面 Actor-Critic 让 Critic 学 $V_\psi$ 当基线的根据<Cite n={[1,3]} />。
 
 ### 第四步：因果性——用 reward-to-go 削掉一整片噪声
 
-还有第二处可以降方差。第三步的权重是**整条轨迹** $R(\tau)=\sum_{t'}\gamma^{t'}r_{t'}$，但仔细想：第 $t$ 步的动作 $a_t$ **不可能影响**它之前的奖励 $r_{t'<t}$——用「过去的运气」去评价「现在的动作」，只会加噪声。EGLP 的一个推广（Wikipedia 给出的形式 <Cite n={3} />）保证：只要 $\Psi_i$ 独立于 $a_t$ 及其之后的状态动作（即 $\Psi_i$ 只依赖 $t$ 之前的历史），则
+还有第二处可以降方差。第三步的权重是**整条轨迹** $R(\tau)=\sum_{t'}\gamma^{t'}r_{t'}$，但仔细想：第 $t$ 步的动作 $a_t$ **不可能影响**它之前的奖励 $r_{t'<t}$——用「过去的运气」去评价「现在的动作」，只会加噪声。EGLP 的一个推广（Wikipedia 给出的形式<Cite n={3} />）保证：只要 $\Psi_i$ 独立于 $a_t$ 及其之后的状态动作（即 $\Psi_i$ 只依赖 $t$ 之前的历史），则
 
 $$
 \mathbb{E}\!\big[\nabla_\theta\log\pi_\theta(a_t\mid s_t)\,\Psi_i\big] = 0.
@@ -208,7 +208,7 @@ print("三个均值都在 0.535 附近(无偏),方差从 6.6 -> 3.1 -> 0.8 逐�
 下一篇 [DDPG 到 SAC 的连续控制](/tutorials/continuous-control)会把这个定理搬到连续动作空间：那里 $\pi_\theta$ 是高斯/确定性策略，$\nabla\log\pi$ 换成 $\nabla\log\mathcal N$ 或确定性策略梯度定理的 $\nabla_a Q\cdot\nabla_\theta\mu$，但**对数导数技巧 + EGLP + 因果性**这三块基石完全不变。
 ## REINFORCE：最朴素的策略梯度
 
-把上面的期望用采样近似，就得到最基础的算法 **REINFORCE**(Sutton & Barto《RL:An Introduction》Ch.13 <Cite n={3} />)：跑完一整条轨迹，用实际回报 $G_t$ 当权重更新一次。<Cite n={3} />下面在多臂老虎机上跑它，看策略概率如何从均匀集中到最优臂：
+把上面的期望用采样近似，就得到最基础的算法 **REINFORCE**(Sutton & Barto《RL:An Introduction》Ch.13<Cite n={3} />)：跑完一整条轨迹，用实际回报 $G_t$ 当权重更新一次<Cite n={3} />。下面在多臂老虎机上跑它，看策略概率如何从均匀集中到最优臂：
 
 <PolicyGradientViz />
 
@@ -308,7 +308,7 @@ print("总方差   有基线:", round(g_b.var(0).sum(), 4), " ← 明显更小")
 > 💡 别被「MSE 最优」绑架：这里的权衡不是去找让均方误差最小的 $\lambda$（那往往落在 $\lambda\to0$），而是**用偏大的 $\lambda$ 把偏差压下去**——因为策略梯度的方向错误（高偏差）比走得晃荡（高方差）更致命，方差可以靠 PPO 裁剪和多次采样扛住，方向错了再多样本也救不回来。所以实践中 $\lambda$ 取 $0.9\sim0.95$ 偏向无偏端，把方差问题交给算法层面的裁剪与批量大小去消化。
 
 **Q：reward-to-go 里的折扣到底写成 $\gamma^{t'}$ 还是 $\gamma^{t'-t}$？**
-写 **$\gamma^{t'}$**（原指数）。reward-to-go 是「把第 $t$ 步之前的项删掉」，不是「把时间原点重置到 $t$」。若误写成 $\gamma^{t'-t}$，会引入 $\gamma^{-t}$ 的缩放因子，把无偏估计变成有偏——本页「策略梯度定理」小节的 CodeRunner 里专门留了这处对照。Spinning Up <Cite n={1} /> 原文用未折扣的 $R(\tau)=\sum r_t$、$\hat R_t=\sum_{t'\ge t}r_{t'}$，两者一致；一旦 $R(\tau)$ 带了 $\gamma^{t'}$，reward-to-go 就得跟着带 $\gamma^{t'}$。
+写 **$\gamma^{t'}$**（原指数）。reward-to-go 是「把第 $t$ 步之前的项删掉」，不是「把时间原点重置到 $t$」。若误写成 $\gamma^{t'-t}$，会引入 $\gamma^{-t}$ 的缩放因子，把无偏估计变成有偏——本页「策略梯度定理」小节的 CodeRunner 里专门留了这处对照。Spinning Up<Cite n={1} /> 原文用未折扣的 $R(\tau)=\sum r_t$、$\hat R_t=\sum_{t'\ge t}r_{t'}$，两者一致；一旦 $R(\tau)$ 带了 $\gamma^{t'}$，reward-to-go 就得跟着带 $\gamma^{t'}$。
 
 **Q：PPO 里的 $\varepsilon$ 怎么选？**
 常用 $0.1\sim0.3$。太小则每步几乎不动、学得慢；太大则失去「拴住」的作用，退化回可能崩溃的原始策略梯度。在 [PPO 教程](/tutorials/ppo) 的交互图里把 $\varepsilon$ 拖大，可见封顶的平台变宽。
@@ -317,7 +317,7 @@ print("总方差   有基线:", round(g_b.var(0).sum(), 4), " ← 明显更小")
 见 [TRPO 教程](/tutorials/trpo)：TRPO 用 KL 硬约束 + 二阶自然梯度，理论可证**单调提升**但工程沉重（Fisher-向量积 + 共轭梯度 + 回溯，超参敏感）；**PPO 是它的一阶近似**——丢掉 Hessian/CG，改用概率比 $r$ 的裁剪把「分布约束」翻译成「$r\in[1-\varepsilon,1+\varepsilon]$」，牺牲严格单调提升的证明，换来实现简单、训练快、调参容易，在绝大多数任务上追平甚至超过 TRPO。一句话：**TRPO 是理论标杆，PPO 是工程赢家。**
 
 **Q：既然 A2C 已经取代了 A3C，为什么还要讲 A3C？现代到底用哪个？**
-A3C（Mnih et al. 2016 <Cite n={2} />）的历史价值在于**首次**证明「并行 worker 去相关 + 异步更新」能稳定训练纯策略方法、还不用 experience replay 和 target network——这是 on-policy 深度 RL 能跑起来的工程奠基。但它的异步无锁更新有 staleness（梯度基于过时参数）、GPU 利用差，工程不如同步批量干净。现代主流是 **A2C 式同步批量采集 + GAE 优势 + PPO 裁剪**（即 PPO 的标准实现 <Cite n={4} />），采集层就是 A2C 那个 coordinator-batch 模式；真正的大规模分布式（如 IMPALA 的 V-trace,Lilian Weng <Cite n={6} /> 有梳理）则在 A2C 基础上加了偏策略修正来容忍 actor 与 learner 之间的轻度 staleness。所以「学 A3C」是理解并行去相关这个机理，「用 A2C/PPO」是工程落地。
+A3C（Mnih et al. 2016<Cite n={2} />）的历史价值在于**首次**证明「并行 worker 去相关 + 异步更新」能稳定训练纯策略方法、还不用 experience replay 和 target network——这是 on-policy 深度 RL 能跑起来的工程奠基。但它的异步无锁更新有 staleness（梯度基于过时参数）、GPU 利用差，工程不如同步批量干净。现代主流是 **A2C 式同步批量采集 + GAE 优势 + PPO 裁剪**（即 PPO 的标准实现<Cite n={4} />），采集层就是 A2C 那个 coordinator-batch 模式；真正的大规模分布式（如 IMPALA 的 V-trace,Lilian Weng<Cite n={6} /> 有梳理）则在 A2C 基础上加了偏策略修正来容忍 actor 与 learner 之间的轻度 staleness。所以「学 A3C」是理解并行去相关这个机理，「用 A2C/PPO」是工程落地。
 ## 动手作业
 
 1. **加基线到 REINFORCE**：在第一个代码框里维护一个滑动平均 `b`，把更新改成 `lr*(r-b)*grad`，对比收敛是否更稳。

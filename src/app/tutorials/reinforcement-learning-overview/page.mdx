@@ -4,7 +4,7 @@ export const metadata = tutorialMetadata("reinforcement-learning-overview");
 
 # 🧭 强化学习总览：从试错到对齐
 
-强化学习最容易学散：一会儿是 Q-learning，一会儿是 PPO，一会儿又变成 RLHF、GRPO、离线 RL。其实它们都在回答同一个问题：**智能体在环境里行动，拿到延迟奖励后，如何把这份反馈变成更好的下一次行动？** Sutton 与 Barto 把强化学习形式化为“智能体通过与环境交互来最大化累积奖励”的学习问题，这也是本系列的主线。<Cite n={1} />
+强化学习最容易学散：一会儿是 Q-learning，一会儿是 PPO，一会儿又变成 RLHF、GRPO、离线 RL。其实它们都在回答同一个问题：**智能体在环境里行动，拿到延迟奖励后，如何把这份反馈变成更好的下一次行动？** Sutton 与 Barto 把强化学习形式化为“智能体通过与环境交互来最大化累积奖励”的学习问题，这也是本系列的主线<Cite n={1} />。
 
 这篇不是替代后面的长文，而是一张地图：先看 RL 的共同骨架，再看本站 15 篇强化学习教程该按什么顺序读、每篇解决哪一个缺口。
 
@@ -18,7 +18,7 @@ export const metadata = tutorialMetadata("reinforcement-learning-overview");
 
 ## 一句话总图
 
-强化学习可以压成四个对象和一个循环：状态 $s$、动作 $a$、奖励 $r$、策略 $\pi(a\mid s)$，以及智能体与环境反复交互得到轨迹 $s_0,a_0,r_1,s_1,\dots$。目标通常是最大化折扣回报 $G_t=\sum_{k=0}^{\infty}\gamma^k r_{t+k+1}$，而价值函数 $V^\pi(s)$ 或 $Q^\pi(s,a)$ 是“从这里开始还能拿多少回报”的估计。<Cite n={1} />
+强化学习可以压成四个对象和一个循环：状态 $s$、动作 $a$、奖励 $r$、策略 $\pi(a\mid s)$，以及智能体与环境反复交互得到轨迹 $s_0,a_0,r_1,s_1,\dots$。目标通常是最大化折扣回报 $G_t=\sum_{k=0}^{\infty}\gamma^k r_{t+k+1}$，而价值函数 $V^\pi(s)$ 或 $Q^\pi(s,a)$ 是“从这里开始还能拿多少回报”的估计<Cite n={1} />。
 
 | 问题 | 核心对象 | 代表路线 | 本站入口 |
 |---|---|---|---|
@@ -41,13 +41,13 @@ export const metadata = tutorialMetadata("reinforcement-learning-overview");
 3. [动态规划](/tutorials/dynamic-programming)：在“模型已知”时用 Bellman backup 精确求解。
 4. [蒙特卡洛方法](/tutorials/monte-carlo)：不用模型，靠完整回合的经验回报估值。
 5. [时序差分学习](/tutorials/temporal-difference)：把动态规划的自举和蒙特卡洛的采样合在一起。
-6. [DQN](/tutorials/dqn)：把 Q 表换成神经网络，用经验回放和目标网络稳住训练。DQN 是深度强化学习的标志性起点，展示了只从像素和游戏分数学习 Atari 控制策略的可行性。<Cite n={2} />
+6. [DQN](/tutorials/dqn)：把 Q 表换成神经网络，用经验回放和目标网络稳住训练。DQN 是深度强化学习的标志性起点，展示了只从像素和游戏分数学习 Atari 控制策略的可行性<Cite n={2} />。
 
 这条线的关键词是 **Bellman 方程**。动态规划是“全量精确 backup”，蒙特卡洛是“等一整局再平均”，TD 是“走一步就自举”，DQN 则是“用神经网络近似巨大 Q 表”。
 
 ## 主线二：策略方法与对齐
 
-策略方法直接优化 $\pi_\theta(a\mid s)$，不一定显式枚举所有动作。策略梯度定理说明：即使环境转移不可微，也能用采样轨迹估计策略参数梯度，这让连续控制、随机策略和大模型 token 策略优化成为可能。<Cite n={3} />
+策略方法直接优化 $\pi_\theta(a\mid s)$，不一定显式枚举所有动作。策略梯度定理说明：即使环境转移不可微，也能用采样轨迹估计策略参数梯度，这让连续控制、随机策略和大模型 token 策略优化成为可能<Cite n={3} />。
 
 | 教程 | 解决的核心问题 | 关键概念 |
 |---|---|---|
@@ -56,7 +56,7 @@ export const metadata = tutorialMetadata("reinforcement-learning-overview");
 | [从 RL 到 RLHF](/tutorials/rlhf) | 如何把人类偏好变成语言模型目标 | 奖励模型、PPO、DPO、反向 KL |
 | [GRPO 与 RLVR](/tutorials/grpo-rlvr) | 如何用可验证奖励训练推理模型 | 组相对优势、verifier、长度偏置、难度偏置 |
 
-PPO 的重要性在于它用裁剪概率比限制单次策略更新幅度，减少策略崩掉的风险；这也是它能从机器人控制一路进入 RLHF 的原因。<Cite n={4} /> 大模型时代的 GRPO 则把 PPO 的 critic 基线换成“同题多回答的组内平均”，用更轻的工程栈训练数学和代码推理。<Cite n={5} />
+PPO 的重要性在于它用裁剪概率比限制单次策略更新幅度，减少策略崩掉的风险；这也是它能从机器人控制一路进入 RLHF 的原因<Cite n={4} />。 大模型时代的 GRPO 则把 PPO 的 critic 基线换成“同题多回答的组内平均”，用更轻的工程栈训练数学和代码推理<Cite n={5} />。
 
 ## 主线三：当交互受限或任务变复杂
 

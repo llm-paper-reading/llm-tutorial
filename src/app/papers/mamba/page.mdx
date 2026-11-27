@@ -7,7 +7,7 @@ export const metadata = paperMetadata(paper);
 
 # Mamba：选择性状态空间与线性时间序列建模
 
-2023 年 12 月，CMU 的 Albert Gu 与 Princeton 的 Tri Dao（[FlashAttention](/papers/flash-attention) 的作者）发布 Mamba<Cite n={1} />——「Transformer 之外」这条线到目前为止最重要的一步。诊断明确：<Cite n={1} />注意力的自回归形式有两个根本缺陷（无法建模有限窗口之外的信息、计算随窗口长度二次增长），而此前的亚二次替代架构（线性注意力、门控卷积、结构化 SSM）在语言上始终追不上注意力，**因为它们缺「基于内容的选择」**。Mamba 用三件事补上：选择机制、硬件感知的并行扫描、极简同构架构——推理吞吐 **5×**、序列线性扩展、每步常数开销（无 KV cache），3B 的语言质量匹配两倍大的 Transformer<Cite n={1} />。
+2023 年 12 月，CMU 的 Albert Gu 与 Princeton 的 Tri Dao（[FlashAttention](/papers/flash-attention) 的作者）发布 Mamba<Cite n={1} />——「Transformer 之外」这条线到目前为止最重要的一步。诊断明确<Cite n={1} />：注意力的自回归形式有两个根本缺陷（无法建模有限窗口之外的信息、计算随窗口长度二次增长），而此前的亚二次替代架构（线性注意力、门控卷积、结构化 SSM）在语言上始终追不上注意力，**因为它们缺「基于内容的选择」**。Mamba 用三件事补上：选择机制、硬件感知的并行扫描、极简同构架构——推理吞吐 **5×**、序列线性扩展、每步常数开销（无 KV cache），3B 的语言质量匹配两倍大的 Transformer<Cite n={1} />。
 
 > 📌 前置：注意力机制见 [Attention Is All You Need](/papers/attention-transformer)；硬件感知算法与 [FlashAttention](/papers/flash-attention) 同一哲学；混合架构的产业化见 Nemotron-H。
 
@@ -15,7 +15,7 @@ export const metadata = paperMetadata(paper);
 
 结构化 SSM（S4 一族）此前在连续信号（音频、视觉）上很强、在 Long Range Arena 霸榜，但在离散且信息密集的文本上不行<Cite n={1} />。论文的诊断聚焦在两个合成任务上——**选择性拷贝**与**归纳头**（大模型 in-context learning 的关键机制，[CoT](/papers/chain-of-thought) 一篇也提到它）：这两类任务都要求模型**按内容决定记住什么、忽略什么**。
 
-问题出在 **LTI（线性时不变）约束**：此前所有高效 SSM 的参数必须固定，才能等价为卷积、才能用 FFT 快速训练。但固定参数意味着对任何位置的输入一视同仁——序列里某个 token 重要与否，模型无法表达。选择性要求参数依赖输入，而选择性与 LTI 数学上互斥：<Cite n={1} />**想要选择，就必须放弃卷积形式的免费午餐**。
+问题出在 **LTI（线性时不变）约束**：此前所有高效 SSM 的参数必须固定，才能等价为卷积、才能用 FFT 快速训练。但固定参数意味着对任何位置的输入一视同仁——序列里某个 token 重要与否，模型无法表达。选择性要求参数依赖输入，而选择性与 LTI 数学上互斥<Cite n={1} />：**想要选择，就必须放弃卷积形式的免费午餐**。
 
 <figure className="my-6">
   <img src="./fig-1-selection.png" alt="选择机制对比示意：上方为 LTI 的 SSM（S4），参数固定、可等价为卷积，无法区分输入内容；下方为选择性的 SSM（S6），参数（Δ、B、C）依赖输入，可按当前 token 决定状态的记住或遗忘，但失去卷积形式" className="mx-auto h-auto max-w-full rounded-lg border border-zinc-200 shadow-sm dark:border-zinc-800" />
@@ -68,7 +68,7 @@ Mamba 把此前 SSM 架构（H3 的门控结构）与 Transformer 的 MLP 块**�
 
 结果分三层<Cite n={1} />：合成任务（拷贝/归纳头可无限外推）；音频与基因组（超 [Long Range Arena] 级的 SOTA，语音生成 FID 减半，性能随上下文增长到百万级）；**语言**——scaling law 拟合到 1B 显示 Mamba 超过包括 LLaMa 配方在内的一系列基线，3B 匹配两倍大的 Transformer（常识推理平均分超 Pythia-3B 四点、甚至超 Pythia-7B），生成吞吐 5×。
 
-但要诚实面对纯 Mamba 的短板：<Cite n={1} />**精确检索**（「大海捞针」式的逐字回忆）与部分 in-context learning 场景仍弱于注意力——状态的固定容量终究会压缩信息。行业的答案是**混合架构**：Jamba（1:7 的注意力:SSM 层比）、Nemotron-H（8B/56B，用少量注意力层补检索）等把 Mamba 块做线性时间主体、注意力层做精确回忆——NVIDIA 这条产品线（站内 Nemotron-H 一节）正是 Mamba 工业化的直接成果。Transformer vs SSM 之争的终局不是谁取代谁，而是分工。
+但要诚实面对纯 Mamba 的短板<Cite n={1} />：**精确检索**（「大海捞针」式的逐字回忆）与部分 in-context learning 场景仍弱于注意力——状态的固定容量终究会压缩信息。行业的答案是**混合架构**：Jamba（1:7 的注意力:SSM 层比）、Nemotron-H（8B/56B，用少量注意力层补检索）等把 Mamba 块做线性时间主体、注意力层做精确回忆——NVIDIA 这条产品线（站内 Nemotron-H 一节）正是 Mamba 工业化的直接成果。Transformer vs SSM 之争的终局不是谁取代谁，而是分工。
 
 ## 小结
 

@@ -4,7 +4,7 @@ export const metadata = tutorialMetadata("multi-agent-rl");
 
 # 🤝 多智能体强化学习：从博弈到合作
 
-前面所有教程都假设环境里只有**一个**学习者：你在网格世界里学 Q 表，环境（转移函数、奖励）是固定不变的。可一旦世界里有**多个智能体同时在学**，事情就变了——你把别人当环境，可别人也在学，你眼里的「环境」就一直在变。这就是多智能体强化学习（Multi-Agent RL, MARL）的核心难点：**非平稳性**（non-stationarity）。<Cite n={10} />
+前面所有教程都假设环境里只有**一个**学习者：你在网格世界里学 Q 表，环境（转移函数、奖励）是固定不变的。可一旦世界里有**多个智能体同时在学**，事情就变了——你把别人当环境，可别人也在学，你眼里的「环境」就一直在变。这就是多智能体强化学习（Multi-Agent RL, MARL）的核心难点：**非平稳性**（non-stationarity）<Cite n={10} />。
 
 MARL 不是「把单智能体 RL 跑 N 遍」那么简单。它要回答三个层层递进的问题：
 
@@ -18,7 +18,7 @@ MARL 不是「把单智能体 RL 跑 N 遍」那么简单。它要回答三个�
 
 单智能体 MDP 由 $(S, A, P, r, \gamma)$ 刻画：状态集 $S$、动作集 $A$、转移 $P(s'|s,a)$、奖励 $r(s,a)$、折扣 $\gamma$。智能体最大化 $V^\pi(s)=\mathbb{E}\bigl[\sum_t \gamma^t r(s_t,a_t)\bigr]$。
 
-多智能体场景把 MDP 推广为**随机博弈**（stochastic game，又名 Markov game），由 $(N, S, A_1,\ldots,A_N, P, r_1,\ldots,r_N, \gamma)$ 刻画[Littman, 1994][2]:<Cite n={2} />
+多智能体场景把 MDP 推广为**随机博弈**（stochastic game，又名 Markov game），由 $(N, S, A_1,\ldots,A_N, P, r_1,\ldots,r_N, \gamma)$ 刻画[Littman, 1994][2]<Cite n={2} />:
 
 - $N$ 个智能体，每个智能体 $i$ 有自己的动作集 $A_i$；
 - **联合动作** $\mathbf{a}=(a_1,\ldots,a_N)$ 是所有智能体动作的拼接；
@@ -46,7 +46,7 @@ $$V_i^{\boldsymbol{\pi}^*}(s) \geq V_i^{(\pi_i',\,\boldsymbol{\pi}_{-i}^*)}(s)$$
 | **完全合作** | $r_1 = r_2 = \cdots = r_N = r$ | 多机器人搬运、MultiAgent particle 协同 | 团队最优 （team-optimal） |
 | **混合博弈** | 一般 $r_i$，既有竞争又有共同利益 | 资源争夺、交通博弈 | 通用纳什均衡 |
 
-零和博弈有最干净的理论保证：双人零和博弈的极小极大值等于纳什均衡值（von Neumann 极小极大定理），且 Littman 1994 证明极小极大 Q-learning 在这类博弈下收敛[Littman， 1994][2]。<Cite n={2} />但真实世界大多是混合或合作场景，理论保证弱得多。
+零和博弈有最干净的理论保证：双人零和博弈的极小极大值等于纳什均衡值（von Neumann 极小极大定理），且 Littman 1994 证明极小极大 Q-learning 在这类博弈下收敛[Littman， 1994][2]<Cite n={2} />。但真实世界大多是混合或合作场景，理论保证弱得多。
 
 ## 非平稳困境：为什么独立 Q-learning 会失败
 
@@ -54,7 +54,7 @@ $$V_i^{\boldsymbol{\pi}^*}(s) \geq V_i^{(\pi_i',\,\boldsymbol{\pi}_{-i}^*)}(s)$$
 
 $$Q_i(s, a_i) \leftarrow Q_i(s, a_i) + \alpha\bigl[r_i + \gamma \max_{a_i'} Q_i(s', a_i') - Q_i(s, a_i)\bigr]$$
 
-听起来合理，但有个致命问题：**别的智能体也在学，它的策略 $\pi_{-i}$ 在变**。于是从 $i$ 的视角看，转移函数 $P(s'|s,a_i)$ 和奖励函数 $r_i(s,a_i)$ 都在随时间漂移——**环境非平稳，马尔可夫性被破坏**。Q-learning 的收敛定理依赖于平稳 MDP，这个前提一垮，收敛保证就失效了[IQL 综述见 Busoniu et al., 2008][10]。<Cite n={10} />
+听起来合理，但有个致命问题：**别的智能体也在学，它的策略 $\pi_{-i}$ 在变**。于是从 $i$ 的视角看，转移函数 $P(s'|s,a_i)$ 和奖励函数 $r_i(s,a_i)$ 都在随时间漂移——**环境非平稳，马尔可夫性被破坏**。Q-learning 的收敛定理依赖于平稳 MDP，这个前提一垮，收敛保证就失效了[IQL 综述见 Busoniu et al., 2008][10]<Cite n={10} />。
 
 下面用最经典的零和博弈——**匹配硬币**（Matching Pennies）——亲眼看两个独立 Q-learner 如何震荡不收敛：
 
@@ -113,7 +113,7 @@ print("这正是非平稳困境: 对手在学 => P1 眼里的「环境」在变 
 
 ## 极小极大 Q：零和博弈的收敛保证
 
-上面说 IQL 在竞争场景「基本必然震荡」，但零和博弈其实有一类**有收敛保证**的算法——最奠基的就是 **极小极大 Q-learning**(Minimax-Q,Littman 1994 [2])。<Cite n={2} />前面 [三种设定](#三种设定竞争合作混合) 一节提到过「零和博弈有最干净的理论保证」，这里把它展开：在双人零和随机博弈中，Minimax-Q 收敛到纳什均衡。
+上面说 IQL 在竞争场景「基本必然震荡」，但零和博弈其实有一类**有收敛保证**的算法——最奠基的就是 **极小极大 Q-learning**(Minimax-Q,Littman 1994 [2])<Cite n={2} />。前面 [三种设定](#三种设定竞争合作混合) 一节提到过「零和博弈有最干净的理论保证」，这里把它展开：在双人零和随机博弈中，Minimax-Q 收敛到纳什均衡。
 
 ### 算法：把 max 换成 minimax
 
@@ -234,7 +234,7 @@ print("  在双人零和博弈下, minimax-Q 收敛到纳什均衡 (Littman 1994
 
 ## CTDE：集中训练，分布执行
 
-**集中训练，分布执行**（Centralized Training, Decentralized Execution, CTDE）是深度 MARL 的事实标准范式。<Cite n={[5,7,13]} />核心思想：
+**集中训练，分布执行**（Centralized Training, Decentralized Execution, CTDE）是深度 MARL 的事实标准范式<Cite n={[5,7,13]} />。核心思想：
 
 - **训练阶段集中**：允许算法在训练时访问**全局信息**——所有智能体的观测、动作、奖励,甚至真实环境状态.这样训练时面对的是平稳的（因为全局信息已包含所有智能体行为）学习问题.
 - **执行阶段分布**：训练完成后,每个智能体只能用自己的**局部观测** $o_i$ 决策,不依赖全局信息,也不依赖通信.
@@ -252,17 +252,17 @@ $$\arg\max_{\mathbf{a}} Q_{\text{tot}}(s,\mathbf{a}) = \bigl(\arg\max_{a_1} Q_1(
 
 这样执行时每个智能体只需 $\arg\max_{a_i} Q_i$，无需协调。这个性质叫**单调性**（monotonicity）。
 
-**VDN(Value-Decomposition Networks)**[Sunehag et al.， 2018][3] 用最朴素的加法分解：<Cite n={3} />
+**VDN(Value-Decomposition Networks)**[Sunehag et al.， 2018][3] 用最朴素的加法分解<Cite n={3} />：
 
 $$Q_{\text{tot}}(s,\mathbf{a}) = \sum_{i=1}^{N} Q_i(s, a_i;\theta_i)$$
 
 每个智能体一个独立网络 $Q_i$，总 Q 是各 $Q_i$ 之和，用团队奖励直接对 $Q_{\text{tot}}$ 做 TD 学习，梯度通过求和回传到各 $Q_i$。简单有效，但**加法假设太强**：真实合作任务里智能体间往往有非线性交互（比如两个机器人必须同时按按钮门才开），加法分解表达不了。
 
-**QMIX**[Rashid et al.， 2018][4] 放松到**单调混合**：<Cite n={4} />
+**QMIX**[Rashid et al.， 2018][4] 放松到**单调混合**<Cite n={4} />：
 
 $$Q_{\text{tot}}(s,\mathbf{a}) = f_{\text{mix}}\bigl(Q_1(s,a_1),\ldots,Q_N(s,a_N);\,\theta_{\text{mix}}(s)\bigr)$$
 
-$f_{\text{mix}}$ 是一个带**非负权重**的前馈网络（通过绝对值或线性变换保证权重 $\geq 0$）。非负权重保证 $Q_{\text{tot}}$ 对每个 $Q_i$ 单调递增，于是局部 $\arg\max$ 仍等于全局 $\arg\max$——分布执行依然合法。同时 $f_{\text{mix}}$ 可以是任意单调非线性，能表达「协同放大」（多个智能体同时做对动作，总收益超线性增长）这种 VDN 表达不了的交互。QMIX 在 StarCraft Multi-Agent Challenge(SMAC)上长期是强基线。<Cite n={4} />
+$f_{\text{mix}}$ 是一个带**非负权重**的前馈网络（通过绝对值或线性变换保证权重 $\geq 0$）。非负权重保证 $Q_{\text{tot}}$ 对每个 $Q_i$ 单调递增，于是局部 $\arg\max$ 仍等于全局 $\arg\max$——分布执行依然合法。同时 $f_{\text{mix}}$ 可以是任意单调非线性，能表达「协同放大」（多个智能体同时做对动作，总收益超线性增长）这种 VDN 表达不了的交互。QMIX 在 StarCraft Multi-Agent Challenge(SMAC)上长期是强基线<Cite n={4} />。
 
 QMIX 的局限在于：单调性**排除了**非单调的价值交互（某些任务需要「智能体 A 做动作 X 时，智能体 B 最好做动作 Y 而非 Z」，但全局最优里 B 该做 Z）。QPLEX 等后续工作进一步放松了这个约束。
 
@@ -374,7 +374,7 @@ print("QPLEX: 进一步放松单调性, 兼顾非单调交互")
 
 合作任务有价值分解这条干净路线，但**混合博弈**（竞争+合作并存，或一般和博弈）里没有「团队总奖励」可分解，得回到策略梯度。
 
-**MADDPG(Multi-Agent Deep Deterministic Policy Gradient)**[Lowe et al.， 2017][5] 是混合博弈的标杆：<Cite n={5} />
+**MADDPG(Multi-Agent Deep Deterministic Policy Gradient)**[Lowe et al.， 2017][5] 是混合博弈的标杆<Cite n={5} />：
 
 - 每个智能体有**分散的 actor** $\mu_i(o_i)$（确定性策略，只用局部观测）；
 - 同时有**集中的 critic** $Q_i(s, a_1,\ldots,a_N)$（评估时用全局状态 + 所有人的动作）；
@@ -392,7 +392,7 @@ MADDPG 论文 Figure 1 的概览图就是这个「分散 actor、集中 critic�
   </figcaption>
 </figure>
 
-**COMA(Counterfactual Multi-Agent)**[Foerster et al.， 2018][6] 针对**合作任务**的信用分配难题：团队拿到一个总奖励，$N$ 个智能体里谁的贡献大？<Cite n={6} />COMA 用**反事实基线**（counterfactual baseline）：对智能体 $i$，把它的实际动作 $a_i$ 换成「其他动作的平均效果」，差值就是 $i$ 的贡献：
+**COMA(Counterfactual Multi-Agent)**[Foerster et al.， 2018][6] 针对**合作任务**的信用分配难题：团队拿到一个总奖励，$N$ 个智能体里谁的贡献大<Cite n={6} />？COMA 用**反事实基线**（counterfactual baseline）：对智能体 $i$，把它的实际动作 $a_i$ 换成「其他动作的平均效果」，差值就是 $i$ 的贡献：
 
 $$A_i(s,\mathbf{a}) = Q(s,\mathbf{a}) - \sum_{a_i'} \pi_i(a_i'\mid o_i)\, Q(s, (a_i', \mathbf{a}_{-i}))$$
 
@@ -419,13 +419,13 @@ for i in range(N):                          # 对每个智能体
 
 关键都在「集中 critic」这一步：它训练时吃全局信息，把每个智能体眼中「对手在变」的非平稳问题变回平稳；执行时 critic 撤掉，只剩看局部观测的 actor——这就是 CTDE「集中训练、分布执行」的落地方式。
 
-**MAPPO(Multi-Agent PPO)**[Yu et al.， 2022][7] 则把单智能体 PPO 直接搬到多智能体：分散 actor $\pi_i(a_i\mid o_i)$ + **单一共享的集中 critic** $V(s)$。<Cite n={7} />结构极简，但 Yu et al. 2022 发现它在 SMAC 上**出人意料地强**——精心调参后超越 QMIX 等专门设计的算法。这篇文章的启示是：MARL 的很多「专门设计」可能是在补单智能体基线没调好的坑；把 PPO 调好，简单的集中 critic 就够了。
+**MAPPO(Multi-Agent PPO)**[Yu et al.， 2022][7] 则把单智能体 PPO 直接搬到多智能体：分散 actor $\pi_i(a_i\mid o_i)$ + **单一共享的集中 critic** $V(s)$<Cite n={7} />。结构极简，但 Yu et al. 2022 发现它在 SMAC 上**出人意料地强**——精心调参后超越 QMIX 等专门设计的算法。这篇文章的启示是：MARL 的很多「专门设计」可能是在补单智能体基线没调好的坑；把 PPO 调好，简单的集中 critic 就够了。
 
 ## 超越 CTDE：对对手学习建模（LOLA）
 
 CTDE（MADDPG/MAPPO）用一个**集中的 critic** 绕开了非平稳性：训练时 critic 看到所有人的动作，面对的是平稳学习问题。但 CTDE 有个微妙的假设——它把对手策略当成**训练时固定的**数据分布来拟合，并不主动建模「对手下一步会怎么学」。这在对手也在学的场景下会吃亏：你学到的最优反应，对手一调整就过时了。
 
-**LOLA(Learning with Opponent-Learning Awareness)**[Foerster et al.， 2017][11] 走得更远：与其把对手的学习当成噪声，不如**显式预测对手下一步会怎么更新参数，再对自己的目标求导**。<Cite n={11} />
+**LOLA(Learning with Opponent-Learning Awareness)**[Foerster et al.， 2017][11] 走得更远：与其把对手的学习当成噪声，不如**显式预测对手下一步会怎么更新参数，再对自己的目标求导**<Cite n={11} />。
 
 设两个智能体参数 $\theta_1, \theta_2$，各自目标 $J_1, J_2$。**朴素学习者**（naive learner）只做一阶优化，假设对手参数固定：
 
@@ -552,11 +552,11 @@ LOLA 与 CTDE 的关系：CTDE 用集中 critic 把对手策略当**固定分布
 
 ## 平均场 MARL：当智能体数量巨大
 
-前面所有方法（MADDPG / QMIX / MAPPO）面对的智能体数量都不大——SMAC 通常是十几个智能体，因此联合动作 $\mathbf a=(a_1,\ldots,a_N)$ 虽然大，集中 critic 还勉强学得动。但当 $N$ 上涨到**数十、数百甚至上千**（交通流、人群疏散、大规模无人机集群、化学反应分子），联合动作空间 $|A|^N$ **指数爆炸**：50 个二值动作的智能体就有 $2^{50}\approx 10^{15}$ 种联合动作，任何集中式方法都无能为力。<Cite n={12} />这时需要一个完全不同的近似——**平均场 MARL**(Mean Field MARL, Yang et al., 2018)[12]。
+前面所有方法（MADDPG / QMIX / MAPPO）面对的智能体数量都不大——SMAC 通常是十几个智能体，因此联合动作 $\mathbf a=(a_1,\ldots,a_N)$ 虽然大，集中 critic 还勉强学得动。但当 $N$ 上涨到**数十、数百甚至上千**（交通流、人群疏散、大规模无人机集群、化学反应分子），联合动作空间 $|A|^N$ **指数爆炸**：50 个二值动作的智能体就有 $2^{50}\approx 10^{15}$ 种联合动作，任何集中式方法都无能为力<Cite n={12} />。这时需要一个完全不同的近似——**平均场 MARL**(Mean Field MARL, Yang et al., 2018)[12]。
 
 ### 平均场近似：把「对所有人」换成「对均值」
 
-直觉来自统计物理：**当粒子数极多时，单个粒子感受到的不是每个其它粒子的精确作用，而是它们的平均效应**。Yang et al. 2018 把这个思想搬进 MARL：智能体 $i$ 不再与全联合动作 $\mathbf a_{-i}$ 交互，而是与**邻居动作的均值** $\bar a_i$ 交互[12]:<Cite n={12} />
+直觉来自统计物理：**当粒子数极多时，单个粒子感受到的不是每个其它粒子的精确作用，而是它们的平均效应**。Yang et al. 2018 把这个思想搬进 MARL：智能体 $i$ 不再与全联合动作 $\mathbf a_{-i}$ 交互，而是与**邻居动作的均值** $\bar a_i$ 交互[12]<Cite n={12} />:
 
 $$\bar a_i \;=\; \frac{1}{|N_i|}\sum_{j\in N_i} a_j$$
 
@@ -576,7 +576,7 @@ $$Q_i(s,a_i,\bar a_i) \;\leftarrow\; r_i + \gamma\,\mathbb E\!\left[Q_i(s',\,a_i
 
 ### 与统计物理同构：Ising model
 
-Yang et al. 的招牌实验是把平均场 MARL 用来解 **Ising model**——统计物理里自旋对齐的经典模型，并声称是**首个 model-free RL 解 Ising model**[12]。<Cite n={12} />Ising model 里每个智能体是一个自旋 $a_i\in\{+1,-1\}$，奖励鼓励与邻居对齐（铁磁耦合 $J$）+ 外场 $h$ 偏向某方向：
+Yang et al. 的招牌实验是把平均场 MARL 用来解 **Ising model**——统计物理里自旋对齐的经典模型，并声称是**首个 model-free RL 解 Ising model**[12]<Cite n={12} />。Ising model 里每个智能体是一个自旋 $a_i\in\{+1,-1\}$，奖励鼓励与邻居对齐（铁磁耦合 $J$）+ 外场 $h$ 偏向某方向：
 
 $$r_i \;=\; J\,a_i\,\bar a_i \;+\; h\,a_i$$
 
@@ -653,7 +653,7 @@ print(f"复杂度降低倍数: ~{2**N / (2*NB):.1e}")
 
 ### RIAL：通信当作离散 RL 动作
 
-最朴素的思路是 **RIAL(Reinforced Inter-Agent Learning, Foerster et al., 2016)**[13]：把「发什么消息」当成和「做什么动作」一样的**离散动作**，用 deep Q-learning 学。<Cite n={13} />智能体 $i$ 的 Q 函数条件化于自己的观测 $o_i$ 和**收到的消息**，输出既选实际动作 $a_i$ 也选发送的消息 $m_i$：
+最朴素的思路是 **RIAL(Reinforced Inter-Agent Learning, Foerster et al., 2016)**[13]：把「发什么消息」当成和「做什么动作」一样的**离散动作**，用 deep Q-learning 学<Cite n={13} />。智能体 $i$ 的 Q 函数条件化于自己的观测 $o_i$ 和**收到的消息**，输出既选实际动作 $a_i$ 也选发送的消息 $m_i$：
 
 $$Q_i(o_i,\,m_{\text{recv}},\,a_i,\,m_i) \;\xrightarrow{\text{DQN}}\; r_i$$
 
@@ -661,7 +661,7 @@ $$Q_i(o_i,\,m_{\text{recv}},\,a_i,\,m_i) \;\xrightarrow{\text{DQN}}\; r_i$$
 
 ### DIAL：可微信道，梯度跨智能体流动
 
-**DIAL(Differentiable Inter-Agent Learning, Foerster et al., 2016)**[13] 的洞察是：**训练时**不必要离散化。<Cite n={13} />speaker 输出消息的**连续概率分布/连续向量**，$\tilde m_i\in\mathbb R^d$，listener 直接用这个连续向量算动作，于是误差能从 listener 的损失**反向传播穿过信道**到 speaker:
+**DIAL(Differentiable Inter-Agent Learning, Foerster et al., 2016)**[13] 的洞察是：**训练时**不必要离散化<Cite n={13} />。speaker 输出消息的**连续概率分布/连续向量**，$\tilde m_i\in\mathbb R^d$，listener 直接用这个连续向量算动作，于是误差能从 listener 的损失**反向传播穿过信道**到 speaker:
 
 $$\tilde m_i = f_{\text{speaker}}(o_i;\theta_i),\qquad a_i = f_{\text{listener}}(o_i,\,\tilde m_{\text{recv}};\phi_i),\qquad \nabla_{\theta_i} J \;\text{含}\; \frac{\partial a_i}{\partial \tilde m_{\text{recv}}}\cdot\frac{\partial \tilde m_{\text{recv}}}{\partial \theta_j}$$
 
@@ -671,7 +671,7 @@ $$\tilde m_i = f_{\text{speaker}}(o_i;\theta_i),\qquad a_i = f_{\text{listener}}
 
 ### CommNet：连续广播，无显式协议
 
-**CommNet(Sukhbaatar et al., 2016)**[14] 走另一条路：**全程连续广播通信**，没有离散消息。<Cite n={14} />每个智能体每步输出一个**通信向量** $h_i\in\mathbb R^d$，广播给邻居；邻居的通信向量**取平均**后注入自己的隐藏状态更新[14]:
+**CommNet(Sukhbaatar et al., 2016)**[14] 走另一条路：**全程连续广播通信**，没有离散消息<Cite n={14} />。每个智能体每步输出一个**通信向量** $h_i\in\mathbb R^d$，广播给邻居；邻居的通信向量**取平均**后注入自己的隐藏状态更新[14]:
 
 $$h_i^{t+1} \;=\; \sigma\!\left(W_1\, h_i^t \;+\; W_2\,\frac{1}{|N_i|}\sum_{j\in N_i} h_j^t\right)$$
 
@@ -796,13 +796,13 @@ print("      DIAL 论文优势在部分可观测序列任务的协调探索, 单
 
 另一条主线是**自博弈**（self-play）：智能体与自己的历史版本（或自己的拷贝）对练。AlphaGo/AlphaZero 的核心就是自博弈——没有人类对手数据时，自己跟自己下出超越人类的棋。
 
-自博弈的诱惑在于它自动生成**课程**（curriculum）：早期双方都弱，智能体学基础；随着双方变强，难度自然升级。这种对手共同进化的机制叫**自动课程**（autocurriculum）。OpenAI 的**捉迷藏**（Hide-and-Seek）[Baker et al.， 2019][8] 是经典案例：两个智能体群体（躲藏者 vs 寻找者）在物理环境里对抗，自发涌现出六阶段策略升级——躲藏者学会用盒子搭堡垒、寻找者学会用斜坡翻越、躲藏者又学会把斜坡锁起来……每一步都是被对手的策略「逼」出来的。<Cite n={8} />这种涌现式能力被认为是通往复杂行为的重要路径。
+自博弈的诱惑在于它自动生成**课程**（curriculum）：早期双方都弱，智能体学基础；随着双方变强，难度自然升级。这种对手共同进化的机制叫**自动课程**（autocurriculum）。OpenAI 的**捉迷藏**（Hide-and-Seek）[Baker et al.， 2019][8] 是经典案例：两个智能体群体（躲藏者 vs 寻找者）在物理环境里对抗，自发涌现出六阶段策略升级——躲藏者学会用盒子搭堡垒、寻找者学会用斜坡翻越、躲藏者又学会把斜坡锁起来……每一步都是被对手的策略「逼」出来的<Cite n={8} />。这种涌现式能力被认为是通往复杂行为的重要路径。
 
 自博弈也有风险：**策略循环**（strategy cycling,A 克制 B,B 克制 C,C 克制 A）和**灾难性遗忘**（forgetting，学了新策略忘了怎么应对旧策略）。主流对策是保留历史模型池，训练时随机采样历史对手（Fictitious Self-Play / PSRO 等算法）。
 
 ### PSRO：策略池 + 元 Nash + best response 的自博弈算法
 
-上面一句话带过的「PSRO 历史策略池」其实是自博弈最系统化的算法框架。**PSRO**(Policy-Space Response Oracles,Lanctot et al., 2017)[15] 把自博弈变成一个**博弈论求解流程**：不直接让两个智能体互相对练，而是**逐步扩张一个策略池**，直到池上的元博弈（meta-game）的纳什均衡就是原博弈的近似均衡。<Cite n={15} />
+上面一句话带过的「PSRO 历史策略池」其实是自博弈最系统化的算法框架。**PSRO**(Policy-Space Response Oracles,Lanctot et al., 2017)[15] 把自博弈变成一个**博弈论求解流程**：不直接让两个智能体互相对练，而是**逐步扩张一个策略池**，直到池上的元博弈（meta-game）的纳什均衡就是原博弈的近似均衡<Cite n={15} />。
 
 **主循环五步**：
 
@@ -927,7 +927,7 @@ print("Double Oracle: pool stops growing when no new BR is found -> pool = suppo
 | **懦夫博弈** | 互相让步最优，但谁先让谁吃亏 | 对抗升级 | 道路抢行、边缘政策 |
 | **猎鹿博弈** | 合作收益最高，但需相信对方不退而求其次 | 合作需协调 | 标准制定、联盟 |
 
-这些是**单步**社交困境。Leibo et al. 2017 把它们推广到**序贯**（sequential）设定——多智能体在时间延伸的环境里反复交互——提出**序贯社交困境**（Sequential Social Dilemma, SSD）[Leibo et al.， 2017][9]。<Cite n={9} />SSD 里「合作 vs 背叛」不再是单次选择，而是在整个回合中累积：比如苹果采集场景里，智能体可以合作维持苹果树再生，也可以互相劈树抢光（短期高收益、长期枯竭）。SSD 揭示了 MARL 智能体天然倾向于剥削公共资源（公地悲剧），需要专门的合作激励机制（如社会惩罚、声誉）才能维持合作。
+这些是**单步**社交困境。Leibo et al. 2017 把它们推广到**序贯**（sequential）设定——多智能体在时间延伸的环境里反复交互——提出**序贯社交困境**（Sequential Social Dilemma, SSD）[Leibo et al.， 2017][9]<Cite n={9} />。SSD 里「合作 vs 背叛」不再是单次选择，而是在整个回合中累积：比如苹果采集场景里，智能体可以合作维持苹果树再生，也可以互相劈树抢光（短期高收益、长期枯竭）。SSD 揭示了 MARL 智能体天然倾向于剥削公共资源（公地悲剧），需要专门的合作激励机制（如社会惩罚、声誉）才能维持合作。
 
 ## 典型案例
 

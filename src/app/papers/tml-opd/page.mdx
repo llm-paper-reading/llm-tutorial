@@ -7,9 +7,9 @@ export const metadata = paperMetadata(paper);
 
 # Thinking Machines OPD：用 1/10 RL 成本复制推理能力
 
-2025 年 10 月，Thinking Machines Lab 的 Kevin Lu 发布博客 *On-Policy Distillation*，把 OPD 从“论文里的蒸馏概念”讲成了一套很清晰的后训练 recipe：学生自己采样，老师逐 token 打分，把 reverse KL 写成 advantage，然后用 RL 的 importance-sampling loss 更新学生。<Cite n={1} />它最吸引人的不是公式，而是实验数字：Qwen3 报告里 OPD 用约 **1,800 GPU hours** 达到 AIME’24 **74.4**，而 RL 用约 **17,920 GPU hours** 达到 **67.6**。<Cite n={2} />
+2025 年 10 月，Thinking Machines Lab 的 Kevin Lu 发布博客 *On-Policy Distillation*，把 OPD 从“论文里的蒸馏概念”讲成了一套很清晰的后训练 recipe：学生自己采样，老师逐 token 打分，把 reverse KL 写成 advantage，然后用 RL 的 importance-sampling loss 更新学生<Cite n={1} />。它最吸引人的不是公式，而是实验数字：Qwen3 报告里 OPD 用约 **1,800 GPU hours** 达到 AIME’24 **74.4**，而 RL 用约 **17,920 GPU hours** 达到 **67.6**<Cite n={2} />。
 
-> 📌 前置：这篇和 [MiniLLM](/papers/minillm-gu) 同属 reverse-KL OPD 路线；和 [GRPO](/papers/grpo-deepseek-r1) 的关系是：两者都用学生 rollout，但 GRPO 等最终 reward，OPD 让老师给每个 token 一个密集信号。<Cite n={[1,3]} />
+> 📌 前置：这篇和 [MiniLLM](/papers/minillm-gu) 同属 reverse-KL OPD 路线；和 [GRPO](/papers/grpo-deepseek-r1) 的关系是：两者都用学生 rollout，但 GRPO 等最终 reward，OPD 让老师给每个 token 一个密集信号<Cite n={[1,3]} />。
 
 ## 一、动机：小模型专家化缺的是低成本后训练
 
@@ -27,11 +27,11 @@ export const metadata = paperMetadata(paper);
 | SFT / off-policy distillation | 每个 token 都有监督 | 数据来自老师或固定语料，学生跑偏后没见过 |
 | OPD | on-policy + dense supervision | 需要 teacher 在线打分，工程栈更复杂 |
 
-Thinking Machines 的观点是：OPD 正好站在中间。它不让老师替学生写答案，而是让老师在学生已经走到的状态上“批改下一步”。<Cite n={1} />
+Thinking Machines 的观点是：OPD 正好站在中间。它不让老师替学生写答案，而是让老师在学生已经走到的状态上“批改下一步”<Cite n={1} />。
 
 ## 二、算法：reverse KL 变成逐 token advantage
 
-博客使用的核心信号是 sampled-token reverse KL：<Cite n={1} />
+博客使用的核心信号是 sampled-token reverse KL<Cite n={1} />：
 
 $$
 D_t=\log\pi_\theta(y_t\mid s_t)-\log\pi_T(y_t\mid s_t)
@@ -49,7 +49,7 @@ $$
 - 学生说了一个 token，老师觉得它很离谱：奖励为负；
 - 每个 token 都有这个信号，所以 credit assignment 远比终局奖励密集。
 
-这就是博客伪代码里的结构：<Cite n={1} />
+这就是博客伪代码里的结构<Cite n={1} />：
 
 ```python
 trajectories = do_group_rollout(student_client, ...)
@@ -60,7 +60,7 @@ trajectories["advantages"] = -reverse_kl
 training_client.forward_backward(trajectories, loss_fn="importance_sampling")
 ```
 
-这段代码说明 OPD 可以复用 RL 基础设施：rollout、logprob、importance sampling、policy update 都还是那一套；只是 reward 从“答案对错”变成“老师逐 token 是否认可”。<Cite n={[1,4]} />
+这段代码说明 OPD 可以复用 RL 基础设施：rollout、logprob、importance sampling、policy update 都还是那一套；只是 reward 从“答案对错”变成“老师逐 token 是否认可”<Cite n={[1,4]} />。
 
 <figure className="my-6">
   <img src="./fig-opd-loop.svg" alt="Thinking Machines OPD 训练循环：学生 rollout 并记录 sampled logprob，老师对同一轨迹计算 logprob，两者差值形成逐 token advantage，再用 RL 风格的 importance-sampling loss 更新学生" className="mx-auto h-auto max-w-full rounded-lg border border-zinc-200 shadow-sm dark:border-zinc-800" />
@@ -72,7 +72,7 @@ training_client.forward_backward(trajectories, loss_fn="importance_sampling")
 
 ## 三、数学实验：从 400K SFT 到 AIME 70%
 
-博客的主实验是数学推理：<Cite n={1} />
+博客的主实验是数学推理<Cite n={1} />：
 
 | 项目 | 设置 |
 |---|---|
@@ -82,13 +82,13 @@ training_client.forward_backward(trajectories, loss_fn="importance_sampling")
 | 起点 | 400K prompts full fine-tuning checkpoint |
 | 起点成绩 | AIME’24 约 60% |
 
-继续做 off-policy SFT，曲线近似 log-linear，外推到约 2M prompts 才能达到 70%。<Cite n={1} />OPD 从 400K SFT checkpoint 出发，约 150 steps 达到 70%；150 steps 约等于 77K prompts，每个 prompt 采样 4 条 rollout。<Cite n={1} />
+继续做 off-policy SFT，曲线近似 log-linear，外推到约 2M prompts 才能达到 70%<Cite n={1} />。OPD 从 400K SFT checkpoint 出发，约 150 steps 达到 70%；150 steps 约等于 77K prompts，每个 prompt 采样 4 条 rollout<Cite n={1} />。
 
 这不是说 OPD 永远比 SFT 快，而是在这个设置里，继续喂老师标准答案的边际收益已经下降；让学生自己暴露错误，再让老师逐 token 纠正，收益更高。
 
 ## 四、成本账：为什么说 9—30×？
 
-博客给出的粗略 FLOPs 对比如下：<Cite n={1} />
+博客给出的粗略 FLOPs 对比如下<Cite n={1} />：
 
 | 方法 | AIME’24 | Teacher FLOPs | Student FLOPs | 相对 SFT-2M |
 |---|---:|---:|---:|---:|
@@ -96,9 +96,9 @@ training_client.forward_backward(trajectories, loss_fn="importance_sampling")
 | SFT-2M 外推 | ~70% | 3.4×10²¹ | 1.5×10²¹ | 1× |
 | OPD | 70% | 8.4×10¹⁹ | 8.2×10¹⁹ | 9—30× |
 
-9× 和 30× 的差别来自口径：如果 SFT 数据已经生成好，只比较追加训练，OPD 省约 9×；如果把 off-policy SFT 里老师生成 2M 条答案的成本也算进去，OPD 约省 30×。<Cite n={1} />博客还指出 teacher logprob scoring 比 teacher sampling 更容易并行，因此按 GPU hours 看，优势可能接近 18×。<Cite n={1} />
+9× 和 30× 的差别来自口径：如果 SFT 数据已经生成好，只比较追加训练，OPD 省约 9×；如果把 off-policy SFT 里老师生成 2M 条答案的成本也算进去，OPD 约省 30×<Cite n={1} />。博客还指出 teacher logprob scoring 比 teacher sampling 更容易并行，因此按 GPU hours 看，优势可能接近 18×<Cite n={1} />。
 
-Qwen3 技术报告里的对比更直接：<Cite n={2} />
+Qwen3 技术报告里的对比更直接<Cite n={2} />：
 
 | 方法 | AIME’24 | GPQA-Diamond | GPU hours |
 |---|---:|---:|---:|
@@ -110,20 +110,20 @@ Qwen3 技术报告里的对比更直接：<Cite n={2} />
 
 ## 五、自蒸馏：先用 RL 探索，再用 OPD 复制
 
-博客还做了一个更能说明机制的实验：<Cite n={1} />
+博客还做了一个更能说明机制的实验<Cite n={1} />：
 
 1. 从 Qwen3-8B-Base 开始；
 2. 在 DeepMath 上跑 RL，使用 LoRA rank 128；
 3. 把 RL 后的模型当 teacher；
 4. 再把这个 teacher OPD 回原始 base model。
 
-结果是：OPD 约用 7—10× 更少 gradient steps 达到 RL teacher 水平，综合 compute 约低 50—100×。<Cite n={1} />
+结果是：OPD 约用 7—10× 更少 gradient steps 达到 RL teacher 水平，综合 compute 约低 50—100×<Cite n={1} />。
 
 这很符合直觉：RL 的贵，贵在探索和信用分配；一旦某个好策略已经被 RL 找到了，OPD 不需要重新探索，只需要让学生在自己轨迹上对齐这个好策略。换句话说，RL 更像“发明做法”，OPD 更像“把做法教会另一个学生”。
 
 ## 六、一个 prompt 也能学：OPD 为什么不只是记答案
 
-博客里有个有趣实验：只用一个数学 prompt，连续训练 20 steps，每 step 256 rollouts，总共 5120 条被老师打分的序列，仍能大致恢复 teacher 的 AIME’24 表现。<Cite n={1} />
+博客里有个有趣实验：只用一个数学 prompt，连续训练 20 steps，每 step 256 rollouts，总共 5120 条被老师打分的序列，仍能大致恢复 teacher 的 AIME’24 表现<Cite n={1} />。
 
 如果这是普通 SFT，很容易被理解成“记住这道题答案”。但 OPD 的信号不是最终答案字符串，而是 teacher 对学生生成的完整 trajectory 的逐 token 偏好。不同 rollout 会走到不同前缀，老师在这些前缀上给出局部方向，所以 prompt 少不等于监督状态少。
 
@@ -139,7 +139,7 @@ Qwen3 技术报告里的对比更直接：<Cite n={2} />
 
 ## 七、个性化：学新知识后，再蒸回旧行为
 
-最后一个实验面向公司内部助手。目标是让模型学内部文档，同时不丢掉原有指令遵循能力。<Cite n={1} />
+最后一个实验面向公司内部助手。目标是让模型学内部文档，同时不丢掉原有指令遵循能力<Cite n={1} />。
 
 起点是 Qwen3-8B，评测包括：
 

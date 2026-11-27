@@ -9,7 +9,7 @@ export const metadata = tutorialMetadata("multi-armed-bandit");
 - **利用（exploit）**：拉你目前觉得最好的那台.但你的估计可能不准,也许真正最好的机器你还没试够.
 - **探索（explore）**：拉一台不确定的,牺牲眼前收益换信息——信息能在未来帮你做出更好的选择.
 
-这道题叫**多臂老虎机（k-armed bandit）**。Sutton & Barto 的经典教材把它放在全书第二章、所有 RL 理论之前，正是因为它把「探索-利用」这个贯穿整个 RL 的根本矛盾，放在一个没有干扰的纯净环境里讲透。<Cite n={4} />理解了它，你再看 [Q-learning 的 ε-贪心](/tutorials/reinforcement-learning)、[DQN 的目标网络](/tutorials/dqn)、甚至 [RLHF 的采样多样性](/tutorials/rlhf)，会发现都是同一道题的回响。
+这道题叫**多臂老虎机（k-armed bandit）**。Sutton & Barto 的经典教材把它放在全书第二章、所有 RL 理论之前，正是因为它把「探索-利用」这个贯穿整个 RL 的根本矛盾，放在一个没有干扰的纯净环境里讲透<Cite n={4} />。理解了它，你再看 [Q-learning 的 ε-贪心](/tutorials/reinforcement-learning)、[DQN 的目标网络](/tutorials/dqn)、甚至 [RLHF 的采样多样性](/tutorials/rlhf)，会发现都是同一道题的回响。
 
 > 📚 **术语**：每台机器叫一个**臂（arm）**，拉一次叫一个**动作（action）** $a\in\{1,\dots,K\}$，拉到的奖金叫**奖励（reward）** $r$。第 $k$ 臂的奖励服从某个固定分布，其**期望**记作 $\mu_k$ 或 $q_*(a)$。**最优臂** $\mu_*=\max_k \mu_k$，它对应的动作记作 $a^*$。
 
@@ -94,7 +94,7 @@ $$
 A_t = \begin{cases} \text{随机臂(均匀)} & \text{以概率 }\varepsilon \\ \arg\max_a Q_t(a) & \text{以概率 }1-\varepsilon \end{cases}
 $$
 
-ε-贪心保证每个臂都被无限次试探（$\varepsilon/K$ 的恒定探索率），所以 $Q$ 估计最终收敛到真值、能锁定最优臂。但代价是：即便已经学准了，它**仍然**以 $\varepsilon$ 的概率乱拉——这部分永远在浪费。结果是**后悔值线性增长** $O(T)$：<Cite n={4} />
+ε-贪心保证每个臂都被无限次试探（$\varepsilon/K$ 的恒定探索率），所以 $Q$ 估计最终收敛到真值、能锁定最优臂。但代价是：即便已经学准了，它**仍然**以 $\varepsilon$ 的概率乱拉——这部分永远在浪费。结果是**后悔值线性增长** $O(T)$<Cite n={4} />：
 
 $$
 \rho_{\varepsilon\text{-greedy}}(T) \;\approx\; \varepsilon\Big(1-\tfrac{1}{K}\Big)\,\overline{\Delta}\,T \;=\; O(T)
@@ -118,7 +118,7 @@ $$
 
 ## UCB：乐观面对不确定性
 
-ε-贪心的探索是**盲目**的——随机挑一台，不管它是「没试够、还拿不准」还是「已知很差、试了多次都低」。后者明显不值得再试。**上置信界（Upper Confidence Bound, UCB）** 换个思路：**乐观面对不确定性**——给每臂的估计值加一个「不确定性奖励」，专挑那些**没试够**的臂。<Cite n={3} />
+ε-贪心的探索是**盲目**的——随机挑一台，不管它是「没试够、还拿不准」还是「已知很差、试了多次都低」。后者明显不值得再试。**上置信界（Upper Confidence Bound, UCB）** 换个思路：**乐观面对不确定性**——给每臂的估计值加一个「不确定性奖励」，专挑那些**没试够**的臂<Cite n={3} />。
 
 $$
 A_t = \arg\max_a \Big[\underbrace{Q_t(a)}_{\text{利用:目前多好}} + \underbrace{c\,\sqrt{\tfrac{\ln t}{N_t(a)}}}_{\text{探索:多久没试了}}\Big]
@@ -132,7 +132,7 @@ $$
   - 分子 $\ln t$：随总步数缓慢增长，保证即便到了后期，任何长期没被拉的臂的探索项都会被 $\ln t$ 顶上去、重新获得机会——探索**永不放弃**.
   - 系数 $c>0$：探索强度。$c$ 大更敢试新，$c\to 0$ 退化成纯贪心。
 
-妙处在于探索项是**定向的**：它只奖励「不确定」的臂，而不会浪费在「已知很差」的臂上（那种臂 $Q$ 低、探索项也小，总和上不去）。随着 $N_t(a)$ 增大探索项收缩，算法自然把注意力收束到最优臂。结果是**对数后悔**：<Cite n={3} />
+妙处在于探索项是**定向的**：它只奖励「不确定」的臂，而不会浪费在「已知很差」的臂上（那种臂 $Q$ 低、探索项也小，总和上不去）。随着 $N_t(a)$ 增大探索项收缩，算法自然把注意力收束到最优臂。结果是**对数后悔**<Cite n={3} />：
 
 $$
 \rho_{\text{UCB}}(T) = O\!\big(\sqrt{KT\ln T}\big) \;\text{(通用上界)},\qquad \text{特定问题下 } O(\log T)
@@ -175,7 +175,7 @@ $$
 
 ## Thompson sampling：贝叶斯概率匹配
 
-**Thompson sampling（汤普森采样）** 是第三条路，干脆**贝叶斯**到底：给每臂的未知中奖率 $\theta_k$ 维护一个**后验分布**，每步从各臂后验里**各采一个样本**，选采样值最大的那台。<Cite n={5} />
+**Thompson sampling（汤普森采样）** 是第三条路，干脆**贝叶斯**到底：给每臂的未知中奖率 $\theta_k$ 维护一个**后验分布**，每步从各臂后验里**各采一个样本**，选采样值最大的那台<Cite n={5} />。
 
 对 0/1 奖励（伯努利），最自然的是 **Beta 分布**作先验（与伯努利似然共轭，后验仍是 Beta，更新极简）：
 
@@ -211,7 +211,7 @@ print(f"Thompson 把绝大多数尝试集中到第 {int(N.argmax())} 台(真实�
 print("-> 无需探索参数,靠'从后验采样'自动在试新与用旧间权衡")
 `} />
 
-Thompson 的后悔同样是 $O(\log T)$ 量级，且在多种意义下**渐近最优**。更妙的是它**无需调参**（UCB 要调 $c$、ε-greedy 要调 $\varepsilon$ 与衰减），并且天然延伸到上下文特征（把 Beta 换成贝叶斯线性回归）、连续奖励（换成正态后验）。<Cite n={5} />这也是它在推荐系统、A/B 测试里比 UCB 更流行的原因。
+Thompson 的后悔同样是 $O(\log T)$ 量级，且在多种意义下**渐近最优**。更妙的是它**无需调参**（UCB 要调 $c$、ε-greedy 要调 $\varepsilon$ 与衰减），并且天然延伸到上下文特征（把 Beta 换成贝叶斯线性回归）、连续奖励（换成正态后验）<Cite n={5} />。这也是它在推荐系统、A/B 测试里比 UCB 更流行的原因。
 
 Thompson 采样教程（Russo et al.）里有一张经典对比图：三臂 Bernoulli bandit($\theta=(0.9,0.8,0.7)$)、均匀先验、一万次独立仿真。左图是贪心算法，右图是 Thompson 采样，每个点是「该时刻选中某动作的仿真比例」——贪心会被早期运气锁死在次优臂上，而 TS 先铺开探索、随数据积累收敛到最优臂：
 
@@ -245,7 +245,7 @@ Thompson 采样教程（Russo et al.）里有一张经典对比图：三臂 Bern
 
 ## 渐近下界：为什么 $O(\log T)$ 不可改进
 
-上面反复出现「UCB / Thompson 渐近 $O(\log T)$、渐近最优」的说法。但「最优」凭什么？有没有可能存在更聪明的策略做到 $O(\sqrt{\log T})$ 甚至 $O(1)$？**Lai-Robbins 下界**（Lai & Robbins 1985 [14]）给出了否定的回答：对一类广泛的策略（consistent 策略），对数后悔是**信息论的硬下界**，再聪明也压不下去。<Cite n={14} />这一节把这个下界讲清楚——它是上面所有「$O(\log T)$ 最优」论断的根。
+上面反复出现「UCB / Thompson 渐近 $O(\log T)$、渐近最优」的说法。但「最优」凭什么？有没有可能存在更聪明的策略做到 $O(\sqrt{\log T})$ 甚至 $O(1)$？**Lai-Robbins 下界**（Lai & Robbins 1985 [14]）给出了否定的回答：对一类广泛的策略（consistent 策略），对数后悔是**信息论的硬下界**，再聪明也压不下去<Cite n={14} />。这一节把这个下界讲清楚——它是上面所有「$O(\log T)$ 最优」论断的根。
 
 ### consistent 策略：有资格谈渐近最优的门槛
 
@@ -268,7 +268,7 @@ $$
 下界常数 $C_{LR}=\sum_{a:\Delta>0}\Delta_a/D(\mu_a\|\mu_*)$ 是渐近最优的「靶心」。哪些算法能打中？
 
 - **UCB1(Auer 2002 [3])**：置信半径用 Hoeffding 界 $\sqrt{2\ln t/N_a}$,渐近常数约为 $8(K-1)$（与 gap 无关）,**远松于** $C_{LR}$——有限步有 $\sqrt{}$ 保证,但渐近非最优.
-- **KL-UCB(Garivier & Cappé 2011 [15])**：把置信半径从 Hoeffding $\sqrt{}$ 换成 KL 球——找最大的 $\mu$ 使 $D(\hat\mu_a\|\mu)\le \ln t/N_a$.这一替换让渐近常数**精确趋近** $C_{LR}$,是渐近最优.<Cite n={15} />
+- **KL-UCB(Garivier & Cappé 2011 [15])**：把置信半径从 Hoeffding $\sqrt{}$ 换成 KL 球——找最大的 $\mu$ 使 $D(\hat\mu_a\|\mu)\le \ln t/N_a$.这一替换让渐近常数**精确趋近** $C_{LR}$,是渐近最优<Cite n={15} />.
 - **Thompson 采样**：后验采样在指数族下渐近达 $C_{LR}$（Agrawal & Goyal 2012;Kaufmann et al. 2012）,与 KL-UCB 同阶.
 
 UCB1 的松来自 Hoeffding 界用 $\sqrt{}$ 近似 KL（对小 gap,$D(\mu_a\|\mu_*)\approx\Delta_a^2/2\sigma^2$，而 Hoeffding 给 $\Delta_a^2/2$，损失了分布形状信息）。KL-UCB 直接用 KL，把这层浪费省掉。
@@ -431,7 +431,7 @@ $$
 H_{t+1}(a) = H_t(a) - \alpha\,(R_t - \bar R_t)\,\pi_t(a), \quad a \neq A_t
 $$
 
-其中 $\bar R_t$ 是**基线**（到 $t$ 为止的平均奖励）。<Cite n={4} />直觉：**若这一步奖励高于基线**（$R_t > \bar R_t$，说明「这次不错」），就**抬高**刚选的臂 $A_t$ 的偏好、**压低**其他臂；反之则相反。$(1-\pi_t(A_t))$ 和 $\pi_t(a)$ 是 softmax 梯度归一化出来的系数。
+其中 $\bar R_t$ 是**基线**（到 $t$ 为止的平均奖励）<Cite n={4} />。直觉：**若这一步奖励高于基线**（$R_t > \bar R_t$，说明「这次不错」），就**抬高**刚选的臂 $A_t$ 的偏好、**压低**其他臂；反之则相反。$(1-\pi_t(A_t))$ 和 $\pi_t(a)$ 是 softmax 梯度归一化出来的系数。
 
 > 💡 注意这个更新和「价值」无关——$H$ 不是「臂有多好」的估计，只是「选它的偏好」。这一点它和 [策略梯度 REINFORCE](/tutorials/policy-gradient) 是**同一个东西**的最小版本：REINFORCE 把 $H$ 换成 $\theta^\top \phi(s)$、把 bandit 的单步扩展成带状态的轨迹，梯度上升的骨架完全一致。**基线 $\bar R_t$ 降方差**的思想也是从这里一路传到 Actor-Critic 的 advantage baseline。所以理解了梯度老虎机，你已半只脚踏进策略梯度。
 
@@ -464,7 +464,7 @@ print("-> 没学价值表, 直接把'好动作'的概率推高了 —— 这就�
 
 效果：一开始每个臂都「看似最优」，贪心会挑其中一个；拉到奖励（比如 1）后，增量更新 $Q \leftarrow Q + \tfrac1n(r-Q)$ 把它往下拉；几轮后这台的 $Q$ 跌到真实附近，贪心就转向**下一个还高高在上的**臂。如此自动轮流试遍所有臂，**完全不用 ε、不用探索项**——乐观本身驱动了探索。
 
-它适合**平稳（stationary）**问题：臂的真实 $\mu$ 不变，初期试一遍、后期收敛纯贪心，效果很好。但**非平稳**问题里（臂的 $\mu$ 会随时间漂移），乐观初值会失效——初期播下的「乐观」被消耗光后，无法再生，后续漂移就探测不到了。<Cite n={4} />这时需要常数步长 $\alpha$（让旧观测指数衰减）配合 ε-greedy 或 UCB 这种「持续探索」机制。
+它适合**平稳（stationary）**问题：臂的真实 $\mu$ 不变，初期试一遍、后期收敛纯贪心，效果很好。但**非平稳**问题里（臂的 $\mu$ 会随时间漂移），乐观初值会失效——初期播下的「乐观」被消耗光后，无法再生，后续漂移就探测不到了<Cite n={4} />。这时需要常数步长 $\alpha$（让旧观测指数衰减）配合 ε-greedy 或 UCB 这种「持续探索」机制。
 
 <CodeRunner defaultCode={`
 import numpy as np
@@ -510,7 +510,7 @@ $$
 
 ### 线性回报假设与岭回归估计
 
-**LinUCB**（Li et al., 2010 [1]）给这个条件函数一个最简参数化：**线性回报假设**——每臂 $a$ 有一个未知参数向量 $\theta_a\in\mathbb R^d$，给定上下文 $x$ 时奖励的期望是线性函数：<Cite n={1} />
+**LinUCB**（Li et al., 2010 [1]）给这个条件函数一个最简参数化：**线性回报假设**——每臂 $a$ 有一个未知参数向量 $\theta_a\in\mathbb R^d$，给定上下文 $x$ 时奖励的期望是线性函数<Cite n={1} />：
 
 $$
 \mathbb E[r_{t,a}\mid x_{t,a}] = \theta_a^\top x_{t,a}
@@ -536,7 +536,7 @@ $$
 
 纯 UCB 的探索项是 $\sqrt{\ln t/N_t(a)}$——「拉得少就给高分」。LinUCB 把它推广到**向量参数**：估计 $\hat\theta_a$ 不只是个点，还带一个**置信椭球**，椭球形状由 $A_a^{-1}$ 决定。
 
-在奖励噪声有界/次高斯的假设下，可以证明以至少 $1-\delta$ 的概率（Li et al. 2010 [1];Abbasi-Yadkori et al. 2011 [2]）：<Cite n={[1,2]} />
+在奖励噪声有界/次高斯的假设下，可以证明以至少 $1-\delta$ 的概率（Li et al. 2010 [1];Abbasi-Yadkori et al. 2011 [2]）<Cite n={[1,2]} />：
 
 $$
 \|\hat\theta_a - \theta_a\|_{A_a} \;\le\; \alpha\sqrt{\log(1/\delta)},\qquad \|v\|_{A_a} \triangleq \sqrt{v^\top A_a\, v}
@@ -587,7 +587,7 @@ print("   LinUCB 因此会在 x 接近 [0,1] 的用户上多试这个臂, 在 x�
 
 ### OFUL：置信椭球的 $\beta_t$ 到底该取多大
 
-上面这个椭球断言把探索项 $\alpha\sqrt{x^\top A_a^{-1}x}$ 的「形状」讲清楚了（椭球长轴指向数据稀疏方向），但留了一个最实际的问题没答：**$\alpha$ 该取多大？** 取小了椭球罩不住真值、LinUCB 会高估次优臂；取大了又过度探索、利用不足。Li et al. 2010 [1] 给了经验值，而 **Abbasi-Yadkori, Pál & Szepesvári 2011 [2]** 给出了**可计算的闭式**——这套算法叫 **OFUL**(Optimism in the Face of Uncertainty for Linear bandits)，它的关键是一把**自归一化的尺子**。<Cite n={2} />
+上面这个椭球断言把探索项 $\alpha\sqrt{x^\top A_a^{-1}x}$ 的「形状」讲清楚了（椭球长轴指向数据稀疏方向），但留了一个最实际的问题没答：**$\alpha$ 该取多大？** 取小了椭球罩不住真值、LinUCB 会高估次优臂；取大了又过度探索、利用不足。Li et al. 2010 [1] 给了经验值，而 **Abbasi-Yadkori, Pál & Szepesvári 2011 [2]** 给出了**可计算的闭式**——这套算法叫 **OFUL**(Optimism in the Face of Uncertainty for Linear bandits)，它的关键是一把**自归一化的尺子**<Cite n={2} />。
 
 **自归一化鞅界。** 把奖励噪声 $\varepsilon_k = y_k - x_k^\top\theta_a$ 看成一个条件 $R$-次高斯的鞅差序列，累积噪声向量 $S_t=\sum_{k=1}^t \varepsilon_k x_k$ 是个向量值鞅。朴素的分析会用「每项噪声都有界、求和再放缩」的路线，得到一个带 $\sqrt{\log t}$ 的多余因子。Abbasi-Yadkori et al. 的核心定理 [2] 用**自归一化**技巧给出更紧的界：以至少 $1-\delta$ 的概率，**同时对所有 $t$** 成立
 
@@ -735,7 +735,7 @@ $$
 \rho(T) = O\!\big(d\sqrt{T}\big)
 $$
 
-注意它**不依赖臂数 $K$**（在 disjoint 模型里 $K$ 只乘进常数），只随特征维数 $d$ 和时间 $T$ 增长——这正是「上下文」的价值：有了特征，$d\sqrt T$ 比 $d$ 个独立臂各自的 $O(\log T)$ 之和更省，因为特征**共享了跨臂、跨用户的信息**（相似用户拉过某臂，推一个新用户就能用上）。在 Yahoo！ 新闻推荐的真实线上实验里，LinUCB 相对「无上下文」策略带来约 **12.5% 的点击提升**（33M 事件，[1]）——这是把 RL 塞进真实产品最稳的入口：**简单（线性+闭式）、可解释（每臂参数有含义）、有后悔保证、增量更新**。<Cite n={1} />新闻推荐、广告、个性化搜索的大规模早期落地，基本都是上下文 bandit。
+注意它**不依赖臂数 $K$**（在 disjoint 模型里 $K$ 只乘进常数），只随特征维数 $d$ 和时间 $T$ 增长——这正是「上下文」的价值：有了特征，$d\sqrt T$ 比 $d$ 个独立臂各自的 $O(\log T)$ 之和更省，因为特征**共享了跨臂、跨用户的信息**（相似用户拉过某臂，推一个新用户就能用上）。在 Yahoo！ 新闻推荐的真实线上实验里，LinUCB 相对「无上下文」策略带来约 **12.5% 的点击提升**（33M 事件，[1]）——这是把 RL 塞进真实产品最稳的入口：**简单（线性+闭式）、可解释（每臂参数有含义）、有后悔保证、增量更新**<Cite n={1} />。新闻推荐、广告、个性化搜索的大规模早期落地，基本都是上下文 bandit。
 
 ### 与纯 bandit 的对照
 
@@ -767,7 +767,7 @@ $$f(x;\theta)=\sqrt m\,W_L\,\sigma(W_{L-1}\,\sigma(\cdots\sigma(W_1 x)\cdots))$$
 
 ### NeuralUCB：乐观原则的非线性推广
 
-**NeuralUCB**（Zhou, Li & Gu, 2020 [12]）把 LinUCB 的「均值 + 椭球半宽」直接搬过来，只是把特征 $x$ 换成雅可比 $g$、把参数 $\theta_a$ 换成网络参数 $\theta$：<Cite n={12} />
+**NeuralUCB**（Zhou, Li & Gu, 2020 [12]）把 LinUCB 的「均值 + 椭球半宽」直接搬过来，只是把特征 $x$ 换成雅可比 $g$、把参数 $\theta_a$ 换成网络参数 $\theta$<Cite n={12} />：
 
 - **置信矩阵** $Z_t=\lambda I+\sum_{k=1}^{t}g(x_{k,a_k};\theta_{k-1})\,g(x_{k,a_k};\theta_{k-1})^\top/m$（对应 LinUCB 的 $A_a=\lambda I+\sum xx^\top$，$/m$ 来自 NTK 的尺度归一）
 - **UCB 指数** $U_{t,a}=f(x_{t,a};\theta_{t-1})+\gamma_{t-1}\sqrt{g(x_{t,a};\theta_{t-1})^\top Z_{t-1}^{-1}g(x_{t,a};\theta_{t-1})/m}$
@@ -778,7 +778,7 @@ $$f(x;\theta)=\sqrt m\,W_L\,\sigma(W_{L-1}\,\sigma(\cdots\sigma(W_1 x)\cdots))$$
 
 ### Neural Thompson Sampling：后验采样的非线性推广
 
-**Neural Thompson Sampling**（Zhang, Zhou, Li & Gu, 2021 [13]）走的是 Thompson 采样路线，但有一个精巧的设计：**它不采样网络参数 $\theta$，而是采样标量奖励**。<Cite n={13} />
+**Neural Thompson Sampling**（Zhang, Zhou, Li & Gu, 2021 [13]）走的是 Thompson 采样路线，但有一个精巧的设计：**它不采样网络参数 $\theta$，而是采样标量奖励**<Cite n={13} />。
 
 模型假设奖励 $r\sim\mathcal N(h(x),\nu^2)$（$h$ 是真值函数）。每轮对每个臂 $k$：
 
@@ -919,7 +919,7 @@ Last-30-rounds arm distribution:
 
 ### EXP3：指数加权 + 重要性加权估计
 
-**EXP3（Exponential-weight algorithm for Exploration and Exploitation,Auer et al., 2002 [6]）** 是对抗 bandit 的经典算法。<Cite n={6} />核心两招：
+**EXP3（Exponential-weight algorithm for Exploration and Exploitation,Auer et al., 2002 [6]）** 是对抗 bandit 的经典算法<Cite n={6} />。核心两招：
 
 **① 概率混合**——不贪心选当前最优臂，而是按权重以一定概率分配：
 
@@ -1032,7 +1032,7 @@ $$
 
 ### 经典算法：Successive Elimination（逐次淘汰）
 
-最直观的 BAI 算法是**逐次淘汰**（Even-Dar, Mannor & Mansour, 2006 [8]）:<Cite n={8} />
+最直观的 BAI 算法是**逐次淘汰**（Even-Dar, Mannor & Mansour, 2006 [8]）<Cite n={8} />:
 
 > 1. 初始所有臂 active。
 > 2. **轮流**（round-robin）拉每个 active 臂一次，更新各自均值与置信半径 $\mathrm{rad}(n)=\sigma\sqrt{2\ln(2K/\delta)/n}$。
@@ -1156,7 +1156,7 @@ $$
 
 ### CUCB 算法：对每个基础臂维护 UCB，调近似 oracle 选超臂
 
-CUCB（Combinatorial UCB,Chen et al. 2013 [10]）的核心思想：**不为每个超臂维护 UCB（指数级），而是为每个基础臂维护 UCB，然后用一个（近似）优化器选超臂**：<Cite n={10} />
+CUCB（Combinatorial UCB,Chen et al. 2013 [10]）的核心思想：**不为每个超臂维护 UCB（指数级），而是为每个基础臂维护 UCB，然后用一个（近似）优化器选超臂**<Cite n={10} />：
 
 1. 对每个基础臂 $i$，维护其样本均值 $\hat\mu_i$ 和计数 $T_i(t)$，UCB 上界 $\bar\mu_i(t)=\hat\mu_i+\sqrt{\frac{2\ln t}{T_i(t)}}$；
 2. 把 $\{\bar\mu_i\}$ 喂给一个**$(\alpha,\beta)$-近似 oracle**：一个（随机）优化器，返回超臂 $\tilde S_t$，满足 $P\big[R(\tilde S_t)\ge\alpha\cdot R(S^*)\big]\ge\beta$（$\alpha$ 是近似比、$\beta$ 是成功概率）;

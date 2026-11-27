@@ -7,7 +7,7 @@ export const metadata = paperMetadata(paper);
 
 # GPT-3：175B 与 in-context learning 的命名
 
-2020 年 5 月，OpenAI 发布 GPT-3：175B 参数、300B token 训练、上下文 2048，比当时最大的 dense 模型大一个数量级<Cite n={1} />。但这篇论文的真正贡献不是模型本身，而是一个论点的系统论证：<Cite n={1} />**足够大的语言模型可以在不更新任何参数的情况下，仅凭 prompt 里的几个示例完成任务**——作者把它命名为 **in-context learning（ICL）**，并把 zero-shot / one-shot / few-shot 三档设置做成标准评测协议。NLP 的交互方式从此从「收集数据微调模型」转向「写提示词」，这条路线最终通向 ChatGPT。站内整条对齐线（[InstructGPT](/papers/instructgpt) → [DPO](/papers/dpo-rafailov) → …）讨论的都是「这个能力出现在没有对齐的基座上之后，如何让它听话」。
+2020 年 5 月，OpenAI 发布 GPT-3：175B 参数、300B token 训练、上下文 2048，比当时最大的 dense 模型大一个数量级<Cite n={1} />。但这篇论文的真正贡献不是模型本身，而是一个论点的系统论证<Cite n={1} />：**足够大的语言模型可以在不更新任何参数的情况下，仅凭 prompt 里的几个示例完成任务**——作者把它命名为 **in-context learning（ICL）**，并把 zero-shot / one-shot / few-shot 三档设置做成标准评测协议。NLP 的交互方式从此从「收集数据微调模型」转向「写提示词」，这条路线最终通向 ChatGPT。站内整条对齐线（[InstructGPT](/papers/instructgpt) → [DPO](/papers/dpo-rafailov) → …）讨论的都是「这个能力出现在没有对齐的基座上之后，如何让它听话」。
 
 > 📌 前置：建议先读 [Attention Is All You Need](/papers/attention-transformer)（架构基座）与 GPT-2 的设定；scaling 的理论侧可对照 Kaplan et al. (2020)，工程侧对照 [Chinchilla](https://arxiv.org/abs/2203.15556) 与 [Llama 3](/papers/llama3) 的 IsoFLOPs。
 

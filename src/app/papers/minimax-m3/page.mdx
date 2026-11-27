@@ -7,7 +7,7 @@ export const metadata = paperMetadata(paper);
 
 # MiniMax-M3：块稀疏注意力与原生多模态
 
-2026 年 6 月，MiniMax 发布了技术报告「MiniMax Sparse Attention」：在 GQA 骨干上做**块级稀疏注意力**（MSA），配一套专门协同设计的 GPU 内核，在 1M 上下文下把每 token 注意力计算量降为 1/28.4，prefill 提速 14.2×、decode 提速 7.6×（H800 实测），而 109B 实验模型与全注意力基线在绝大多数基准上打平。<Cite n={1} />生产模型 MiniMax-M3（原生多模态、1M 上下文）已随论文开源。<Cite n={3} />这篇笔记拆三件事：Index Branch 怎么选块、训练侧的 KL 对齐与两条落地路线（从头训 vs 续训）、以及内核协同设计怎么把理论省的 FLOPs 变成真实加速——并与 [DeepSeek-V3.2](/papers/deepseek-v3-2) 的 DSA 对照，看两条稀疏注意力路线的分野。
+2026 年 6 月，MiniMax 发布了技术报告「MiniMax Sparse Attention」：在 GQA 骨干上做**块级稀疏注意力**（MSA），配一套专门协同设计的 GPU 内核，在 1M 上下文下把每 token 注意力计算量降为 1/28.4，prefill 提速 14.2×、decode 提速 7.6×（H800 实测），而 109B 实验模型与全注意力基线在绝大多数基准上打平<Cite n={1} />。生产模型 MiniMax-M3（原生多模态、1M 上下文）已随论文开源<Cite n={3} />。这篇笔记拆三件事：Index Branch 怎么选块、训练侧的 KL 对齐与两条落地路线（从头训 vs 续训）、以及内核协同设计怎么把理论省的 FLOPs 变成真实加速——并与 [DeepSeek-V3.2](/papers/deepseek-v3-2) 的 DSA 对照，看两条稀疏注意力路线的分野。
 
 > 📌 前置：需要熟悉 [Transformer 的缩放点积注意力](/papers/attention-transformer)与 GQA；稀疏注意力的另一条路线见 [DeepSeek-V3.2](/papers/deepseek-v3-2)（DSA：token 级选择、MLA 骨干）。
 
@@ -15,7 +15,7 @@ export const metadata = paperMetadata(paper);
 
 Agentic 工作流、仓库级代码理解、持久记忆都要求模型在数十万到百万 token 上联合注意，而 softmax 注意力的 $\mathcal{O}(N^2)$ 成本让这不可行。现有解法各留一个尾巴：线性/递归注意力换掉了精确 softmax；推理时稀疏化（H2O、SnapKV、Quest 等）继承了全注意力的训练成本，且至少有一个推理阶段仍是全注意力速度。
 
-MSA 的立场是**保留精确 softmax、只裁剪感受野，并且让选择器参与预训练**。<Cite n={1} />与最近的同类（DSA、MoBA、NSA）相比，它的两个自我设限恰恰是卖点：① 选择以 **GQA 组**为单位共享——同组 16 个 query 头用同一份块选择，KV 读取保持连续；② 选择是**块级**的($B_k=128$ 个 token 一块)，块粒度让稀疏访存对 GPU 友好。报告的原话：per-GQA-group Top-k 共享 + 块级选择，「multi-group block-granular retrieval while keeping KV reads contiguous」。<Cite n={[1,5]} />
+MSA 的立场是**保留精确 softmax、只裁剪感受野，并且让选择器参与预训练**<Cite n={1} />。与最近的同类（DSA、MoBA、NSA）相比，它的两个自我设限恰恰是卖点：① 选择以 **GQA 组**为单位共享——同组 16 个 query 头用同一份块选择，KV 读取保持连续；② 选择是**块级**的($B_k=128$ 个 token 一块)，块粒度让稀疏访存对 GPU 友好。报告的原话：per-GQA-group Top-k 共享 + 块级选择，「multi-group block-granular retrieval while keeping KV reads contiguous」<Cite n={[1,5]} />。
 
 论文原版的架构总览——左半 Index Branch 用单头轻量索引给全上下文 KV 块打分，右半 Main Branch 只在选中块上做精确注意力：
 
@@ -31,7 +31,7 @@ MSA 的立场是**保留精确 softmax、只裁剪感受野，并且让选择器
 
 ### 2.1 Index Branch：单 KV 头打分 + 块最大池化 + Top-k
 
-设序列长 $N$，块大小 $B_k$，共 $B=\lceil N/B_k\rceil$ 个块。Index Branch 极其轻量——每层只加**两个投影**:<Cite n={1} />
+设序列长 $N$，块大小 $B_k$，共 $B=\lceil N/B_k\rceil$ 个块。Index Branch 极其轻量——每层只加**两个投影**<Cite n={1} />:
 
 $$
 \mathbf{Q}^{\rm idx}=\mathbf{X}\mathbf{W}_{q}^{\rm idx}\in\mathbb{R}^{N\times H_{kv}\times d_{\rm idx}},\qquad
@@ -51,36 +51,36 @@ $$
 \mathcal{I}_{i}^{(r)}=\operatorname{TopK}_{b\in\{1,\dots,B\}}\big(M^{\rm idx,(r)}_{i,\cdot},\,k\big)
 $$
 
-**Main Branch** 只在被选中的块上做标准精确注意力，组内所有 query 头共享同一份选择：<Cite n={1} />
+**Main Branch** 只在被选中的块上做标准精确注意力，组内所有 query 头共享同一份选择<Cite n={1} />：
 
 $$
 \mathbf{O}_{i}^{(h)}=\operatorname{softmax}\Big(\frac{\mathbf{Q}_{i}^{(h)}\big(\mathbf{K}^{(r)}[\mathcal{I}_{i}^{(r)}]\big)^{\top}}{\sqrt{d_{h}}}\Big)\mathbf{V}^{(r)}[\mathcal{I}_{i}^{(r)}],\qquad h\in\mathcal{H}_{r}
 $$
 
-部署配置 $B_k=128$、$k=16$：每个 query（每个 GQA 组）只看 **$16\times128=2{,}048$ 个 KV token**——1M 上下文下，注意力预算不随序列长度增长。<Cite n={1} />复杂度对比：
+部署配置 $B_k=128$、$k=16$：每个 query（每个 GQA 组）只看 **$16\times128=2{,}048$ 个 KV token**——1M 上下文下，注意力预算不随序列长度增长<Cite n={1} />。复杂度对比：
 
 $$
 F_{\rm GQA}(N)=2H_{q}d_{h}N^{2},\qquad
 F_{\rm MSA}(N)=\underbrace{H_{kv}d_{\rm idx}N^{2}}_{\text{Index Branch}}+\underbrace{4H_{q}d_{h}NkB_{k}}_{\text{Main Branch}}
 $$
 
-索引器仍是平方，但 $H_{kv}d_{\rm idx}\ll H_{q}d_{h}$(实验模型 4×$d_{\rm idx}$ vs 64×128)，主注意力从 $\mathcal{O}(N^2)$ 降到 $\mathcal{O}(Nk B_k)$。1M 上下文下合计**每 token 注意力 FLOPs 降为 1/28.4**。<Cite n={1} />
+索引器仍是平方，但 $H_{kv}d_{\rm idx}\ll H_{q}d_{h}$(实验模型 4×$d_{\rm idx}$ vs 64×128)，主注意力从 $\mathcal{O}(N^2)$ 降到 $\mathcal{O}(Nk B_k)$。1M 上下文下合计**每 token 注意力 FLOPs 降为 1/28.4**<Cite n={1} />。
 
 ### 2.2 训练：KL 对齐 + 梯度截断 + 索引器热身
 
-索引器怎么学？不靠语言建模梯度，靠**蒸馏主分支自己的注意力分布**：把 Main Branch 在选中 token 上的组平均分布当教师，索引分布当学生，<Cite n={1} />
+索引器怎么学？不靠语言建模梯度，靠**蒸馏主分支自己的注意力分布**：把 Main Branch 在选中 token 上的组平均分布当教师，索引分布当学生<Cite n={1} />，
 
 $$
 \mathcal{L}_{\rm KL}=\frac{1}{NH_{kv}}\sum_{i=1}^{N}\sum_{r=1}^{H_{kv}}\mathbb{D}_{\mathrm{KL}}\big(\operatorname{stopgrad}(P^{(r)}_{i,\cdot})\,\big\|\,P^{{\rm idx},(r)}_{i,\cdot}\big),\qquad
 \mathcal{L}=\mathcal{L}_{\rm LM}+\lambda\sum_{\rm layers}\mathcal{L}_{\rm KL}
 $$
 
-两个精心的隔离：教师分布 $\operatorname{stopgrad}$，KL 只更新索引器两个投影、不碰主分支；索引器输入也过 $\operatorname{stopgrad}(\mathbf{X})$，辅助损失不向主干回传梯度。**索引器热身**：最初若干迭代双分支都跑全注意力、只用 KL 训索引投影，之后再切换到稀疏模式——避免随机选择器早期把主干带偏。<Cite n={1} />训练动态很健康：KL 损失与选择召回率(block recall / score recall)在稀疏续训全程保持稳定。
+两个精心的隔离：教师分布 $\operatorname{stopgrad}$，KL 只更新索引器两个投影、不碰主分支；索引器输入也过 $\operatorname{stopgrad}(\mathbf{X})$，辅助损失不向主干回传梯度。**索引器热身**：最初若干迭代双分支都跑全注意力、只用 KL 训索引投影，之后再切换到稀疏模式——避免随机选择器早期把主干带偏<Cite n={1} />。训练动态很健康：KL 损失与选择召回率(block recall / score recall)在稀疏续训全程保持稳定。
 
 ### 2.3 两条落地路线：从头训 vs 续训
 
 - **MSA-PT**（from scratch）：从头稀疏预训练，先 40B token 索引器热身，之后全程稀疏；
-- **MSA-CPT**（continued pretrain）：从已训好 2.6T token 的 GQA 全注意力 checkpoint 出发，替换注意力层为 MSA，续训 400B token（同样 40B 热身）。**无需预训练知识迁移，已有稠密 checkpoint 可近无损转换**——这对存量模型是巨大的工程红利。<Cite n={1} />
+- **MSA-CPT**（continued pretrain）：从已训好 2.6T token 的 GQA 全注意力 checkpoint 出发，替换注意力层为 MSA，续训 400B token（同样 40B 热身）。**无需预训练知识迁移，已有稠密 checkpoint 可近无损转换**——这对存量模型是巨大的工程红利<Cite n={1} />。
 
 用 numpy 把 MSA 的「打分 → 块最大池化 → 组内独立 Top-k → 稀疏注意力」走一遍（以最后一个 token 为 query），并对比全注意力的计算量：
 
@@ -136,9 +136,9 @@ print(f"降为 {F_gqa/F_msa:.1f} 分之一 —— 1M 上下文、k=16 时这个�
 
 ## 三、内核协同设计：把 FLOPs 省的变成时间省的
 
-稀疏注意力的经典陷阱：理论省了计算，GPU 上却不快。<Cite n={[1,4]} />MSA 的三个内核决策值得逐条读：
+稀疏注意力的经典陷阱：理论省了计算，GPU 上却不快<Cite n={[1,4]} />。MSA 的三个内核决策值得逐条读：
 
-1. **免 exp 的 Top-k**：softmax 保序($s_i\le s_j \iff \mathrm{softmax}(s)_i\le\mathrm{softmax}(s)_j$)，所以选择直接用原始分，跳过 max/exp/sum。<Cite n={1} />Top-k 本身用每线程寄存器流式维护 k 元素最小堆(32 lane 各扫 1/32 行、共享内存堆、k 轮 shuffle 合并)，部署设置($B=8192$ 块选 16)下比 `torch.topk` 快 5.1×、比 TileLang radix-select 快 3.7×；
+1. **免 exp 的 Top-k**：softmax 保序($s_i\le s_j \iff \mathrm{softmax}(s)_i\le\mathrm{softmax}(s)_j$)，所以选择直接用原始分，跳过 max/exp/sum<Cite n={1} />。Top-k 本身用每线程寄存器流式维护 k 元素最小堆(32 lane 各扫 1/32 行、共享内存堆、k 轮 shuffle 合并)，部署设置($B=8192$ 块选 16)下比 `torch.topk` 快 5.1×、比 TileLang radix-select 快 3.7×；
 2. **KV-outer 迭代 + query 收集**：稀疏 prefill 里每个 query 选的块不同，Q-outer（按 query 外层迭代）无法把 query 拼进大矩阵；KV-outer 反过来按 KV 块外层迭代、收集选中该块的所有 query——同一 tile 的所有 gathered query 共享 KV 操作数，$\lceil 128/G\rceil$ 个 query 位置与它们 G 个头拼成 128×128 的 MMA。算术强度 $\tfrac{2}{3}B_k\approx 85$ 远高于 Q-outer 的 $G=16$;
 3. **热点块预调度**：被几乎所有 query 选中的块（如 sink 块）会让 one-CTA-per-tile 映射失衡；调度内核把热点 KV tile 沿 query 维切成 ~$2kB_k$ 的块分摊到多个 CTA，配 split-K LSE 两阶段合并。
 
@@ -154,9 +154,9 @@ print(f"降为 {F_gqa/F_msa:.1f} 分之一 —— 1M 上下文、k=16 时这个�
 
 ## 四、实验：109B 实验模型，3T token 预算
 
-实验设置：41 层 MoE（前 3 层稠密 + 38 层 MoE），约 **109B 总参 / 6B 激活**，词表 200K，$d_{\rm model}=3072$，64 query 头 / 4 KV 头 / 头维 128 / RoPE 维 64，每 MoE 层 128 路由专家 + 1 共享选 4。<Cite n={1} />三个模型同预算对照：**Full**（全注意力基线）、**MSA-PT**（从头稀疏训）、**MSA-CPT**（2.6T 全注意力 checkpoint 续训 400B）。长上下文扩展实验在 MSA-CPT 上追加约 140B token(128K)。
+实验设置：41 层 MoE（前 3 层稠密 + 38 层 MoE），约 **109B 总参 / 6B 激活**，词表 200K，$d_{\rm model}=3072$，64 query 头 / 4 KV 头 / 头维 128 / RoPE 维 64，每 MoE 层 128 路由专家 + 1 共享选 4<Cite n={1} />。三个模型同预算对照：**Full**（全注意力基线）、**MSA-PT**（从头稀疏训）、**MSA-CPT**（2.6T 全注意力 checkpoint 续训 400B）。长上下文扩展实验在 MSA-CPT 上追加约 140B token(128K)。
 
-主要结果（论文 Table 2 节选）:<Cite n={1} />
+主要结果（论文 Table 2 节选）<Cite n={1} />:
 
 | 基准 | Full | MSA-PT | MSA-CPT |
 |---|---|---|---|
@@ -173,7 +173,7 @@ print(f"降为 {F_gqa/F_msa:.1f} 分之一 —— 1M 上下文、k=16 时这个�
 
 两条路线的画像分明：**MSA-PT 在数学、图像、视频、长上下文检索上最强**——从头稀疏训练让模型表征主动适配稀疏模式；**MSA-CPT 更保守**，文本/代码/PPL 几乎贴住全注意力基线，是「已有稠密 checkpoint 想要稀疏推理」的实用转换路线。剩余差距按基准分散，不集中在某项能力。
 
-长上下文扩展（论文 Table 3）：128K 下 MSA-CPT 的 HELMET Overall 45.93 vs Full 46.53(Δ−0.60),RULER-128K Overall 72.12 vs 72.00（Δ+0.12）——**每个 query 仍只看 2,048 个 KV token**，说明极紧的注意力预算下长上下文能力基本保住了。<Cite n={1} />
+长上下文扩展（论文 Table 3）：128K 下 MSA-CPT 的 HELMET Overall 45.93 vs Full 46.53(Δ−0.60),RULER-128K Overall 72.12 vs 72.00（Δ+0.12）——**每个 query 仍只看 2,048 个 KV token**，说明极紧的注意力预算下长上下文能力基本保住了<Cite n={1} />。
 
 论文原版的长上下文基准图：
 
@@ -187,7 +187,7 @@ print(f"降为 {F_gqa/F_msa:.1f} 分之一 —— 1M 上下文、k=16 时这个�
 
 ## 五、消融：sink 与局部窗口不需要硬编码
 
-附录的消融回答了两个「想当然」的问题：<Cite n={1} />
+附录的消融回答了两个「想当然」的问题<Cite n={1} />：
 
 - **learnable sink 要不要加？** 测试了 GPT-OSS 式可学习 sink logit：它在部分头吸走大量注意力，但**并没有消除首 token 的隐式 sink**——学到少注意力的头里，首 token 仍是主导 sink；下游 PPL 也无一致改善。最终方案不加，首 token 自然承担 sink 角色；
 - **首块与局部窗口要不要强制选？** 早期实验强制选首块（sink）+ 固定局部窗口作稳定机制；去掉之后，训练出的模型**自己学出了这两种结构**（需要时注意力集中在前缀、近邻 token 高频入选），标准质量与长上下文检索几乎不变。最终配方只强制包含 query 自身所在的不完整块。
@@ -196,7 +196,7 @@ print(f"降为 {F_gqa/F_msa:.1f} 分之一 —— 1M 上下文、k=16 时这个�
 
 ## 六、与 DSA 的对照：两条稀疏注意力路线
 
-把 MSA 与 [DeepSeek-V3.2](/papers/deepseek-v3-2) 的 DSA 并排放，2026 年稀疏注意力的设计空间一目了然：<Cite n={[1,2]} />
+把 MSA 与 [DeepSeek-V3.2](/papers/deepseek-v3-2) 的 DSA 并排放，2026 年稀疏注意力的设计空间一目了然<Cite n={[1,2]} />：
 
 | 维度 | MSA（MiniMax） | DSA(DeepSeek) |
 |---|---|---|

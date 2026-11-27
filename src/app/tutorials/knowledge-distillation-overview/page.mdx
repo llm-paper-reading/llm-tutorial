@@ -6,7 +6,7 @@ export const metadata = tutorialMetadata("knowledge-distillation-overview");
 
 知识蒸馏表面上是模型压缩：大模型当老师，小模型当学生。但在大模型时代，它更像一条**能力迁移管道**：把昂贵模型、强化学习阶段或多模型集成里形成的行为，转移到更便宜、更快、更易部署的模型上。
 
-Hinton 等人提出的经典蒸馏用高温 softmax 暴露 teacher 输出分布中的“暗知识”，让 student 不只学习硬标签，而是学习类别之间的相似结构。<Cite n={1} /> 后来，序列级蒸馏把 teacher 的完整生成当成训练目标，成为机器翻译和大模型指令数据生成中的常见做法。<Cite n={2} />
+Hinton 等人提出的经典蒸馏用高温 softmax 暴露 teacher 输出分布中的“暗知识”，让 student 不只学习硬标签，而是学习类别之间的相似结构<Cite n={1} />。 后来，序列级蒸馏把 teacher 的完整生成当成训练目标，成为机器翻译和大模型指令数据生成中的常见做法<Cite n={2} />。
 
 <figure className="my-6">
   <img src="/tutorials/knowledge-distillation-overview/distillation-overview-map.svg" alt="知识蒸馏路线图：从离线蒸馏开始，经过在线蒸馏和混合蒸馏，最后讨论学生超越老师；横向区分老师样本、学生样本、teacher logits、序列级数据和正则化红利" className="mx-auto h-auto max-w-full rounded-lg border border-zinc-200 shadow-sm dark:border-zinc-800" />
@@ -36,7 +36,7 @@ Hinton 等人提出的经典蒸馏用高温 softmax 暴露 teacher 输出分布�
 
 **离线蒸馏** 的 teacher 固定，训练数据也固定。它便宜、可缓存、工程简单：先让 teacher 生成答案或 logits，再训练 student。缺点是 student 训练时看到的是 teacher 或数据集分布，不一定是自己推理时会走到的状态。
 
-**在线蒸馏（on-policy distillation）** 让 student 自己生成序列，teacher 对 student 真实走到的 token 前缀打分。Agarwal 等人的 GKD / OPD 思路强调：暴露偏差来自“训练时看 teacher 轨迹，推理时走 student 轨迹”的分布错位；让 student 在自己的轨迹上学，可以直接修这个错位。<Cite n={3} />
+**在线蒸馏（on-policy distillation）** 让 student 自己生成序列，teacher 对 student 真实走到的 token 前缀打分。Agarwal 等人的 GKD / OPD 思路强调：暴露偏差来自“训练时看 teacher 轨迹，推理时走 student 轨迹”的分布错位；让 student 在自己的轨迹上学，可以直接修这个错位<Cite n={3} />。
 
 **混合蒸馏** 则承认两个极端都有代价：纯离线覆盖不足，纯在线 teacher 调用太贵。GKD 的 mixed 模式、Speculative KD 和 DistiLLM 都在不同层面做折中：一部分样本来自 teacher 或历史缓存，一部分来自 student 当前策略。
 

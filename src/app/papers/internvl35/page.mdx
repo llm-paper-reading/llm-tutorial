@@ -7,7 +7,7 @@ export const metadata = paperMetadata(paper);
 
 # InternVL3.5：级联 RL 与按需分配的视觉预算
 
-2025 年 8 月，上海 AI Lab 发布了 [InternVL3.5](https://arxiv.org/abs/2508.18265)：从 1B Dense 到 241B-A28B MoE（代号 Flash）共十档的视觉语言模型家族，用「原生多模态预训练 → 监督微调 → **级联强化学习**」三阶段训练。<Cite n={1} />论文的三个贡献恰好对应三个工程痛点：**Cascade RL** 回答「RL 后期怎么继续涨」、**Visual Resolution Router** 回答「不同任务到底需要多少视觉 token」、**DvD（视觉语言解耦部署）** 回答「VLM 推理为什么必须背着视觉塔」。<Cite n={1} />旗舰 241B-A28B 在 OpenCompass 等综合榜上超越 Qwen3-235B、GPT-5、Gemini 2.5 Pro，多模态推理较 InternVL3 提升 16%。<Cite n={1} />这篇笔记拆解这三件事。
+2025 年 8 月，上海 AI Lab 发布了 [InternVL3.5](https://arxiv.org/abs/2508.18265)：从 1B Dense 到 241B-A28B MoE（代号 Flash）共十档的视觉语言模型家族，用「原生多模态预训练 → 监督微调 → **级联强化学习**」三阶段训练<Cite n={1} />。论文的三个贡献恰好对应三个工程痛点：**Cascade RL** 回答「RL 后期怎么继续涨」、**Visual Resolution Router** 回答「不同任务到底需要多少视觉 token」、**DvD（视觉语言解耦部署）** 回答「VLM 推理为什么必须背着视觉塔」<Cite n={1} />。旗舰 241B-A28B 在 OpenCompass 等综合榜上超越 Qwen3-235B、GPT-5、Gemini 2.5 Pro，多模态推理较 InternVL3 提升 16%<Cite n={1} />。这篇笔记拆解这三件事。
 
 > 📌 前置：RL 部分与 [GRPO](/papers/grpo-deepseek-r1) 的组内基线一脉相承；架构是经典的 ViT–MLP–LLM，与 [Transformer](/papers/attention-transformer) 对照读即可；RL 基础可参考 [策略梯度](/tutorials/policy-gradient) 与 [GRPO/RLVR](/tutorials/grpo-rlvr)。
 
@@ -19,7 +19,7 @@ InternVL3 到 3.5 的迭代，针对的是多模态 RL 的三个普遍问题：
 2. **视觉预算一刀切**：OCR 类任务需要高分辨率、海量视觉 token；常识问答只需要低分辨率。统一分辨率意味着「简单任务浪费、难任务不够」。
 3. **部署耦合**：视觉塔与 LLM 捆绑部署，视觉编码的算力无法独立伸缩。
 
-模型家族(1B/2B/4B/8B/14B/38B Dense + 9B/12B/30B-A3B/78B-A7B/241B-A28B MoE)全部**参数随机初始化**——不是从 InternVL3 继承权重，而是从头走完「原生多模态预训练 → SFT → Cascade RL」三阶段。<Cite n={1} />这一点值得注意：它是「多模态从预训练第一天就在场」路线的又一次验证，与 Qwen3-VL 的协同训练选择一致。
+模型家族(1B/2B/4B/8B/14B/38B Dense + 9B/12B/30B-A3B/78B-A7B/241B-A28B MoE)全部**参数随机初始化**——不是从 InternVL3 继承权重，而是从头走完「原生多模态预训练 → SFT → Cascade RL」三阶段<Cite n={1} />。这一点值得注意：它是「多模态从预训练第一天就在场」路线的又一次验证，与 Qwen3-VL 的协同训练选择一致。
 
 论文 teaser：十档模型在多模态推理、综合能力、效率三个维度的定位，241B-A28B（Flash）在综合榜上对标并超越 Qwen3-235B、GPT-5、Gemini 2.5 Pro:
 
@@ -33,7 +33,7 @@ InternVL3 到 3.5 的迭代，针对的是多模态 RL 的三个普遍问题：
 
 ## 二、架构：ViT–MLP–LLM，不变的是骨架
 
-架构没有大改：ViT 视觉塔 + 两层 MLP 投影 + LLM(语言侧为 Qwen3 系列或 InternLM 系的 MoE/Dense)。<Cite n={[1,2,5]} />重点反而在于「不变」：三个创新全部落在**训练方法与推理策略**上，而非网络结构。这对读者是个有用的信号——2025 年多模态的边际收益已经从架构创新转移到数据课程与 RL 配方，与纯 LLM 的演进节奏同步。
+架构没有大改：ViT 视觉塔 + 两层 MLP 投影 + LLM(语言侧为 Qwen3 系列或 InternLM 系的 MoE/Dense)<Cite n={[1,2,5]} />。重点反而在于「不变」：三个创新全部落在**训练方法与推理策略**上，而非网络结构。这对读者是个有用的信号——2025 年多模态的边际收益已经从架构创新转移到数据课程与 RL 配方，与纯 LLM 的演进节奏同步。
 
 <figure className="my-6">
   <img src="./fig-2-architecture.svg" alt="InternVL3.5 架构：ViT 视觉编码器提取图像 patch 特征，经两层 MLP 投影对齐到 LLM 的隐藏维，与文本 token 拼接送入语言模型；语言侧可选 Dense 或 MoE" className="mx-auto h-auto max-w-full rounded-lg border border-zinc-200 shadow-sm dark:border-zinc-800" />
@@ -45,11 +45,11 @@ InternVL3 到 3.5 的迭代，针对的是多模态 RL 的三个普遍问题：
 
 ## 三、Cascade RL：离线重放 + 在线优化
 
-级联 RL 分两阶段，共同解决「难度失配」:<Cite n={1} />
+级联 RL 分两阶段，共同解决「难度失配」<Cite n={1} />:
 
-**阶段一（离线，难度驱动重放）**：以 SFT 模型为起点，对任务池按难度做**难度驱动的重放采样**（difficulty-driven replay）——每个任务用当前模型的 pass@k 估计通过率，按「学得动」的难度带重新加权采样，做离线策略优化。<Cite n={1} />直觉：一个任务如果 pass@1 已接近 1，梯度趋零；如果 pass@k 全为 0，也几乎学不到（探索打不穿）；**最优教学区间在两者之间**。
+**阶段一（离线，难度驱动重放）**：以 SFT 模型为起点，对任务池按难度做**难度驱动的重放采样**（difficulty-driven replay）——每个任务用当前模型的 pass@k 估计通过率，按「学得动」的难度带重新加权采样，做离线策略优化<Cite n={1} />。直觉：一个任务如果 pass@1 已接近 1，梯度趋零；如果 pass@k 全为 0，也几乎学不到（探索打不穿）；**最优教学区间在两者之间**。
 
-**阶段二（在线，off-policy 修正）**：切到在线 RL，策略在训练中持续更新，旧样本通过 off-policy 重要性修正复用，新样本按当前策略的难度分布滚动生成——课程随能力自动爬坡。<Cite n={1} />
+**阶段二（在线，off-policy 修正）**：切到在线 RL，策略在训练中持续更新，旧样本通过 off-policy 重要性修正复用，新样本按当前策略的难度分布滚动生成——课程随能力自动爬坡<Cite n={1} />。
 
 用 numpy 把「难度驱动重放」的采样权重实现一遍，感受 pass@k 与采样概率的关系：
 
@@ -105,7 +105,7 @@ print("课程随能力自动爬坡;旧样本靠 off-policy 重要性修正继续
   </figcaption>
 </figure>
 
-Cascade RL 的消融：相比直接在线 RL（或仅离线阶段），两层级联在多模态推理基准上带来明显增益——这也是 +16% 提升的主要来源之一：<Cite n={1} />
+Cascade RL 的消融：相比直接在线 RL（或仅离线阶段），两层级联在多模态推理基准上带来明显增益——这也是 +16% 提升的主要来源之一<Cite n={1} />：
 
 <figure className="my-6">
   <img src="./fig-5-cascade-rl.svg" alt="Cascade RL 消融对比：仅 SFT、仅离线难度驱动重放、完整两阶段级联 RL 三种设置在多模态推理基准上的分数递增，验证级联两阶段的必要性" className="mx-auto h-auto max-w-full rounded-lg border border-zinc-200 shadow-sm dark:border-zinc-800" />
@@ -119,14 +119,14 @@ Cascade RL 的消融：相比直接在线 RL（或仅离线阶段），两层级
 
 第二个创新解决「视觉预算一刀切」。同一个模型服务的任务谱系很宽：OCR/文档解析需要高分辨率，而「这张图里有猫吗」只需要低分辨率。固定分辨率意味着简单任务浪费视觉 token、复杂任务分辨率不够。
 
-**Visual Resolution Router** 的思路：训练一个轻量路由器，按输入（任务与图像）动态决定喂给 LLM 的**视觉 token 预算**——难任务多给 token（高分辨率、细粒度 patch），简单任务少给。<Cite n={1} />设可选预算档位为 $\{B_1 < B_2 < \dots < B_m\}$，路由器 $g_\phi$ 输出每档的偏好，推理时按预算裁剪视觉序列：
+**Visual Resolution Router** 的思路：训练一个轻量路由器，按输入（任务与图像）动态决定喂给 LLM 的**视觉 token 预算**——难任务多给 token（高分辨率、细粒度 patch），简单任务少给<Cite n={1} />。设可选预算档位为 $\{B_1 < B_2 < \dots < B_m\}$，路由器 $g_\phi$ 输出每档的偏好，推理时按预算裁剪视觉序列：
 
 $$
 B^{*} = g_\phi(\text{image},\,\text{task}),\qquad
 \mathbf{V}_{\text{in}} = \mathrm{Crop}\big(\mathbf{V},\, B^{*}\big)
 $$
 
-效果是「同一模型在不同任务上花不同的视觉算力」——综合精度几乎不掉，平均视觉 token 数大幅下降，推理成本随任务难度弹性伸缩。<Cite n={1} />
+效果是「同一模型在不同任务上花不同的视觉算力」——综合精度几乎不掉，平均视觉 token 数大幅下降，推理成本随任务难度弹性伸缩<Cite n={1} />。
 
 用 numpy 模拟一个按任务难度分配 token 预算的路由器：
 
@@ -170,7 +170,7 @@ print("router 分配:      %6d tok  (节省 %.0f%%,难任务仍拿到高预算)"
 
 第三个创新面向部署。常规 VLM 推理时，视觉塔与 LLM 在同一进程/服务里紧耦合——视觉编码的算力无法独立伸缩，升级 LLM 要连视觉塔一起重部署。
 
-**DvD（Decoupled Vision-language Deployment）** 把两者拆开：视觉编码与语言解码作为独立服务，中间以**视觉 token 表示**（而非原始图像）传递。<Cite n={1} />收益是三重的：视觉塔可以单独扩缩容（OCR 流量高峰只扩视觉服务）；语言侧可以独立换模型/量化；缓存友好——同一张图的视觉 token 编码一次、多处复用。论文报告 **4.05× 部署加速**。<Cite n={1} />
+**DvD（Decoupled Vision-language Deployment）** 把两者拆开：视觉编码与语言解码作为独立服务，中间以**视觉 token 表示**（而非原始图像）传递<Cite n={1} />。收益是三重的：视觉塔可以单独扩缩容（OCR 流量高峰只扩视觉服务）；语言侧可以独立换模型/量化；缓存友好——同一张图的视觉 token 编码一次、多处复用。论文报告 **4.05× 部署加速**<Cite n={1} />。
 
 这本质上是把「特征即接口」的微服务思想搬进 VLM：视觉塔输出的 token 序列成为一种稳定的中间协议，上游升级不破坏下游。代价是中间表示体积大于原图（JPEG 压缩率高），网络带宽换算力弹性——在数据中心内部通常划算。
 
@@ -192,7 +192,7 @@ print("router 分配:      %6d tok  (节省 %.0f%%,难任务仍拿到高预算)"
 | 家族宽度 | 10 档（6 Dense + 4 MoE） | 1B 到 241B-A28B 全覆盖 |
 | 初始化 | 参数随机初始化 | 非从 InternVL3 继承，原生多模态三阶段 |
 
-定位一句话：**InternVL3.5 把多模态的边际创新从架构挪到了训练课程与推理策略**——Cascade RL 管「RL 的可持续性」、Router 管「视觉算力的按需分配」、DvD 管「部署的解耦」。与前代相比，它不再堆视觉塔的结构改动，而是让同一副骨架在不同难度、不同任务、不同部署形态下都跑到最优工作点。<Cite n={1} />
+定位一句话：**InternVL3.5 把多模态的边际创新从架构挪到了训练课程与推理策略**——Cascade RL 管「RL 的可持续性」、Router 管「视觉算力的按需分配」、DvD 管「部署的解耦」。与前代相比，它不再堆视觉塔的结构改动，而是让同一副骨架在不同难度、不同任务、不同部署形态下都跑到最优工作点<Cite n={1} />。
 
 ## 七、局限与批判
 

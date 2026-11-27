@@ -11,7 +11,7 @@ export const metadata = tutorialMetadata("temporal-difference");
 - 像[蒙特卡洛](/tutorials/monte-carlo)一样，**不需要模型**，纯从经验（采样到的 $s,a,r,s'$）里学；
 - 像[动态规划](/tutorials/dynamic-programming)一样，**自举（bootstrapping）**——用「下一状态的当前估计」来更新当前状态，不必等到回合结束。
 
-Sutton 有句名言概括它：**「从一个猜测中学习另一个猜测」（learning a guess from a guess）**。[Q-learning、SARSA](/tutorials/reinforcement-learning) 都是 TD 方法——你其实早就见过它，这一篇把它的来龙去脉讲透。<Cite n={6} />
+Sutton 有句名言概括它：**「从一个猜测中学习另一个猜测」（learning a guess from a guess）**。[Q-learning、SARSA](/tutorials/reinforcement-learning) 都是 TD 方法——你其实早就见过它，这一篇把它的来龙去脉讲透<Cite n={6} />。
 
 ## TD(0)：最简单的时序差分
 
@@ -21,7 +21,7 @@ $$
 V(s) \leftarrow V(s) + \alpha\big[\underbrace{r + \gamma V(s')}_{\text{TD 目标}} - \underbrace{V(s)}_{\text{旧估计}}\big]
 $$
 
-方括号里那一项叫 **TD 误差（TD error）** $\delta = r + \gamma V(s') - V(s)$：它衡量「用实际走了一步后的新信息，回头看旧估计差了多少」，然后朝这个方向挪一小步 $\alpha$。<Cite n={6} />
+方括号里那一项叫 **TD 误差（TD error）** $\delta = r + \gamma V(s') - V(s)$：它衡量「用实际走了一步后的新信息，回头看旧估计差了多少」，然后朝这个方向挪一小步 $\alpha$<Cite n={6} />。
 
 对比一下三种方法更新 $V(s)$ 时**用什么当目标**：
 
@@ -35,7 +35,7 @@ TD 既甩掉了 DP 对模型的依赖，又不必像 MC 那样苦等回合结束
 
 ## 亲手实现：随机游走预测
 
-Sutton 的经典例子：一条链 A–B–C–D–E–F–G，两端 A、G 是终点。从中间 D 出发，每步 50% 左 / 50% 右，走到 G 得奖励 1、走到 A 得 0。每个非终点状态的**真实价值 = 从它出发最终走到右端 G 的概率**——B 到 F 恰好是 $\tfrac16,\tfrac26,\tfrac36,\tfrac46,\tfrac56$。<Cite n={[2,6]} />
+Sutton 的经典例子：一条链 A–B–C–D–E–F–G，两端 A、G 是终点。从中间 D 出发，每步 50% 左 / 50% 右，走到 G 得奖励 1、走到 A 得 0。每个非终点状态的**真实价值 = 从它出发最终走到右端 G 的概率**——B 到 F 恰好是 $\tfrac16,\tfrac26,\tfrac36,\tfrac46,\tfrac56$<Cite n={[2,6]} />。
 
 看 TD（0） 如何**不知道任何转移概率**、纯靠随机游走就把这些值估出来：
 
@@ -103,7 +103,7 @@ print("-> TD 用'走一步的新信息'持续微调,方差小、收敛快;MC 要
 
 ## TD（0） 预测的收敛性：自举凭什么不跑偏
 
-上面一直在说「TD 收敛更快、方差更小」，但**凭什么相信** $V(s)\leftarrow V(s)+\alpha[r+\gamma V(s')-V(s)]$ 这个「从一个猜测里学另一个猜测」的更新，最终会逼近真值 $v_\pi(s)$，而不是被自举（用不准的 $V(s')$ 当目标）带进沟里？这是 TD 最深的理论问题，Sutton 1988 首次回答 [6]，Jaakkola、Tsitsiklis、Singh 1994 把它统一进随机逼近框架 [7]。本节把证明的两层结构讲透——它与[下面 Q-learning 的收敛](#q-learning-为何能收敛到最优)是**同一套机制**（压缩算子 + 随机逼近），只是 Q-learning 多了一个 $\max$。<Cite n={[6,7]} />
+上面一直在说「TD 收敛更快、方差更小」，但**凭什么相信** $V(s)\leftarrow V(s)+\alpha[r+\gamma V(s')-V(s)]$ 这个「从一个猜测里学另一个猜测」的更新，最终会逼近真值 $v_\pi(s)$，而不是被自举（用不准的 $V(s')$ 当目标）带进沟里？这是 TD 最深的理论问题，Sutton 1988 首次回答 [6]，Jaakkola、Tsitsiklis、Singh 1994 把它统一进随机逼近框架 [7]。本节把证明的两层结构讲透——它与[下面 Q-learning 的收敛](#q-learning-为何能收敛到最优)是**同一套机制**（压缩算子 + 随机逼近），只是 Q-learning 多了一个 $\max$<Cite n={[6,7]} />。
 
 ### 第一层：Bellman 期望算子是 $\gamma$-压缩
 
@@ -131,7 +131,7 @@ $$
 V(s)\;\leftarrow\;V(s)+\alpha\big[\underbrace{r+\gamma V(s')}_{\text{对 }(T^\pi V)(s)\text{ 的单样本估计}}-V(s)\big]
 $$
 
-方括号里的 $r+\gamma V(s')-V(s)$ 是 $(T^\pi V)(s)-V(s)$ 的**无偏**估计（在 $V$ 固定时，$\mathbb E[r+\gamma V(s')\mid s]=\sum_a\pi(a\mid s)\sum_{s',r}p[r+\gamma V(s')]=(T^\pi V)(s)$）。所以 TD(0) = 「用随机样本逼近一个压缩算子的不动点」——这正是 [Robbins-Monro 1951 [5]]（https://www.jstor.org/stable/2236626） 的随机逼近设定。<Cite n={5} />要把「无偏但有噪声的估计」收敛到真值，学习率 $\alpha_k$ 必须满足 [Robbins-Monro 条件](#q-learning-为何能收敛到最优)（与 Q-learning 同一套）：
+方括号里的 $r+\gamma V(s')-V(s)$ 是 $(T^\pi V)(s)-V(s)$ 的**无偏**估计（在 $V$ 固定时，$\mathbb E[r+\gamma V(s')\mid s]=\sum_a\pi(a\mid s)\sum_{s',r}p[r+\gamma V(s')]=(T^\pi V)(s)$）。所以 TD(0) = 「用随机样本逼近一个压缩算子的不动点」——这正是 [Robbins-Monro 1951 [5]]（https://www.jstor.org/stable/2236626） 的随机逼近设定<Cite n={5} />。要把「无偏但有噪声的估计」收敛到真值，学习率 $\alpha_k$ 必须满足 [Robbins-Monro 条件](#q-learning-为何能收敛到最优)（与 Q-learning 同一套）：
 
 $$
 \sum_{k=1}^{\infty}\alpha_k=\infty,\qquad \sum_{k=1}^{\infty}\alpha_k^2<\infty
@@ -141,9 +141,9 @@ $$
 
 ### 收敛定理与 ODE 直觉
 
-> **TD（0） 预测收敛定理**（Sutton 1988 [6];Jaakkola-Tsitsiklis-Singh 1994 [7]）：在有限 MDP、有界奖励（$|r|\le r_{\max}$）、on-policy 采样（行为策略 = 目标策略 $\pi$）、Robbins-Monro 学习率（$\sum\alpha_k=\infty,\sum\alpha_k^2<\infty$）下，$V_k(s)\xrightarrow{k\to\infty}v_\pi(s)$ **几乎必然**（a.s.）。<Cite n={[6,7]} />
+> **TD（0） 预测收敛定理**（Sutton 1988 [6];Jaakkola-Tsitsiklis-Singh 1994 [7]）：在有限 MDP、有界奖励（$|r|\le r_{\max}$）、on-policy 采样（行为策略 = 目标策略 $\pi$）、Robbins-Monro 学习率（$\sum\alpha_k=\infty,\sum\alpha_k^2<\infty$）下，$V_k(s)\xrightarrow{k\to\infty}v_\pi(s)$ **几乎必然**（a.s.）<Cite n={[6,7]} />。
 
-**ODE 直觉**（Borkar 2008 [8] 系统化的「随机逼近 = 动力系统」视角）：在合适的步长下，随机迭代的**期望轨迹**被一个确定性 ODE $\dot V = \bar T^\pi(V) - V$ 支配（其中 $\bar T^\pi$ 是期望算子 $T^\pi$ 的全期望版本）。<Cite n={8} />这个 ODE 的不动点正是 $v_\pi$，且 $T^\pi$ 的 $\gamma$-压缩性保证了 ODE 在 $v_\pi$ 处**全局渐近稳定**——任意初值都会被「拉回」$v_\pi$。随机噪声则在 $v_\pi$ 附近做幅度 $\propto\sqrt{\alpha_k}$ 的抖动，$\alpha_k\to0$ 时抖动消失。**两层结构**就此清晰：① 压缩算子 $\Rightarrow$ 确定性骨架收敛（ODE 稳定）；② Robbins-Monro $\Rightarrow$ 随机噪声被驯服（抖动消失）。
+**ODE 直觉**（Borkar 2008 [8] 系统化的「随机逼近 = 动力系统」视角）：在合适的步长下，随机迭代的**期望轨迹**被一个确定性 ODE $\dot V = \bar T^\pi(V) - V$ 支配（其中 $\bar T^\pi$ 是期望算子 $T^\pi$ 的全期望版本）<Cite n={8} />。这个 ODE 的不动点正是 $v_\pi$，且 $T^\pi$ 的 $\gamma$-压缩性保证了 ODE 在 $v_\pi$ 处**全局渐近稳定**——任意初值都会被「拉回」$v_\pi$。随机噪声则在 $v_\pi$ 附近做幅度 $\propto\sqrt{\alpha_k}$ 的抖动，$\alpha_k\to0$ 时抖动消失。**两层结构**就此清晰：① 压缩算子 $\Rightarrow$ 确定性骨架收敛（ODE 稳定）；② Robbins-Monro $\Rightarrow$ 随机噪声被驯服（抖动消失）。
 
 下面的演示把这条链条量化：先用确定性 full backup $T^\pi$ 验证「每步误差以 $\gamma$ 倍压缩」（Banach 几何收敛），再看 TD（0） 的随机逼近版在三组学习率下的表现——Robbins-Monro 收敛到 $v_\pi$、固定 $\alpha$ 残留抖动、退火太快学习不足：
 
@@ -226,7 +226,7 @@ print("    Sutton 1988 / Jaakkola-Tsitsiklis-Singh 1994: on-policy + RM + 有界
 
 ## 资格迹与 TD(λ)：在 TD 与 MC 之间连续插值
 
-上面我们把 TD（0） 和 MC 当成两个端点对比，中间只留了一个模糊的「n 步 TD」。但**到底怎么平滑地从一步插值到整条轨迹？** 而且 n 步 TD 要为每个 $n$ 单独存一条回报，**实现上很笨重**——每走一步，$n=1,2,\dots$ 各算各的，内存与计算都翻倍。**资格迹（eligibility traces）** 给出了一个优雅的解法：它用一个**短期记忆向量** $e(s)$，把「该把当前奖励信号分配给哪些过去的状态、各分多少」一并用衰减记录下来，无需为每个 $n$ 单独存数据[1]。它把 TD（0） 与 MC 统一进同一个框架——**TD(λ)**。<Cite n={1} />
+上面我们把 TD（0） 和 MC 当成两个端点对比，中间只留了一个模糊的「n 步 TD」。但**到底怎么平滑地从一步插值到整条轨迹？** 而且 n 步 TD 要为每个 $n$ 单独存一条回报，**实现上很笨重**——每走一步，$n=1,2,\dots$ 各算各的，内存与计算都翻倍。**资格迹（eligibility traces）** 给出了一个优雅的解法：它用一个**短期记忆向量** $e(s)$，把「该把当前奖励信号分配给哪些过去的状态、各分多少」一并用衰减记录下来，无需为每个 $n$ 单独存数据[1]。它把 TD（0） 与 MC 统一进同一个框架——**TD(λ)**<Cite n={1} />。
 
 ### 前向视角：λ-return，离线的「理想目标」
 
@@ -236,7 +236,7 @@ $$
 G_t^\lambda \;=\; (1-\lambda)\sum_{n=1}^{T-t-1}\lambda^{n-1}\,G_{t:t+n} \;+\; \lambda^{T-t-1}\,G_t
 $$
 
-注意**末项 $G_t$ 取全权重 $\lambda^{T-t-1}$** 而不是 $(1-\lambda)\lambda^{T-t-1}$——这是为了让权重之和正好是 1。朴素地写 $(1-\lambda)\sum_{n\ge1}\lambda^{n-1}G_{t:t+n}$ 在 $\lambda<1$ 时没问题，但**在 $\lambda=1$ 时权重和变成 0、目标塌缩到零**（MC 退化失效）；末项取全权重正是修正这个边界，使 $\lambda=1$ 严格还原 MC、$\lambda=0$ 严格还原一步 TD(0)。$\lambda$ 在 $(0,1)$ 时，目标就是「近处用短步回报（低方差）、远处用长步回报（渐近无偏）」的几何混合——偏差随 $\lambda$ 增大而减小、方差随之增大。<Cite n={1} />
+注意**末项 $G_t$ 取全权重 $\lambda^{T-t-1}$** 而不是 $(1-\lambda)\lambda^{T-t-1}$——这是为了让权重之和正好是 1。朴素地写 $(1-\lambda)\sum_{n\ge1}\lambda^{n-1}G_{t:t+n}$ 在 $\lambda<1$ 时没问题，但**在 $\lambda=1$ 时权重和变成 0、目标塌缩到零**（MC 退化失效）；末项取全权重正是修正这个边界，使 $\lambda=1$ 严格还原 MC、$\lambda=0$ 严格还原一步 TD(0)。$\lambda$ 在 $(0,1)$ 时，目标就是「近处用短步回报（低方差）、远处用长步回报（渐近无偏）」的几何混合——偏差随 $\lambda$ 增大而减小、方差随之增大<Cite n={1} />。
 
 前向视角是**离线理论**：它要等回合结束才能算 $G_t^\lambda$（因为要看完整条轨迹）。它能说清「TD（λ） 在朝什么目标收敛」，但没法**在线、每一步**地实现。
 
@@ -273,7 +273,7 @@ $$
 V(s) \;\leftarrow\; V(s) \;+\; \alpha\,\delta_t\, e_t(s),\qquad \delta_t = r_{t+1}+\gamma V(s_{t+1})-V(s_t)
 $$
 
-直觉：走到 $s_t$、发现比预期好（$\delta_t>0$），这个「好」不只奖励 $s_t$，也顺着迹**倒推**给刚走过的 $s_{t-1},s_{t-2},\dots$，但越远分得越少（因为它们的迹已按 $(\gamma\lambda)^k$ 衰减过）。这正是 **信用分配（credit assignment）**——把末步的奖励信号按「多久之前访问过」倒推回去。<Cite n={1} />下面的交互图把这件事画出来：拖 $\lambda$ 看迹衰减快慢如何改变信用分配范围。
+直觉：走到 $s_t$、发现比预期好（$\delta_t>0$），这个「好」不只奖励 $s_t$，也顺着迹**倒推**给刚走过的 $s_{t-1},s_{t-2},\dots$，但越远分得越少（因为它们的迹已按 $(\gamma\lambda)^k$ 衰减过）。这正是 **信用分配（credit assignment）**——把末步的奖励信号按「多久之前访问过」倒推回去<Cite n={1} />。下面的交互图把这件事画出来：拖 $\lambda$ 看迹衰减快慢如何改变信用分配范围。
 
 <EligibilityTraceViz />
 
@@ -307,7 +307,7 @@ print("-> 一个 e 向量 + 一行 V += αδe,就把 n=1..N 的回报全揉进�
 
 ### 前向 = 后向：两种视角的等价
 
-前向视角（λ-return 作目标、离线）和后向视角（资格迹、在线）看似在做不同的事，但**两者在每回合结束时对 $V$ 的累计更新量完全相同**——这是资格迹最深刻的结果[1]：后向视角是前向目标的一个**在线、$O(1)$ 内存**的实现。<Cite n={1} />也就是说，资格迹让我们**不必存整条轨迹、不必算多个 $n$ 步回报**，就能等价地朝 λ-return 收敛。这种「用短期记忆向量替代多条回报链」正是它工程上高效的原因。
+前向视角（λ-return 作目标、离线）和后向视角（资格迹、在线）看似在做不同的事，但**两者在每回合结束时对 $V$ 的累计更新量完全相同**——这是资格迹最深刻的结果[1]：后向视角是前向目标的一个**在线、$O(1)$ 内存**的实现<Cite n={1} />。也就是说，资格迹让我们**不必存整条轨迹、不必算多个 $n$ 步回报**，就能等价地朝 λ-return 收敛。这种「用短期记忆向量替代多条回报链」正是它工程上高效的原因。
 
 ### 累积迹 vs 替换迹
 
@@ -390,7 +390,7 @@ print(f"  -> 印证: 替换迹在「回合内状态反复访问」任务上明�
 
 前面说「前向（λ-return）与后向（资格迹）等价」，但这里藏着一个**关键技术细节**：ordinary 半梯度 TD（λ） 的等价是**离线**的——即「整个回合跑完、回合末一次性把所有更新累加再作用于 $V$」时，前向 λ-return 的总更新量与后向资格迹的总更新量**完全相同**。可一旦改成**在线**更新（每走一步就立即把 $\alpha\delta_t e_t$ 加到 $V$ 上，$V$ 在回合中途就变了），ordinary TD（λ） 就**不再精确等价**前向视角——因为后续步的 $\delta_t$ 用的是「已经被前面更新改过」的 $V$，而前向 λ-return 公式里的 $V(s_{t+n})$ 是回合开始时的旧值。
 
-**真在线 TD(λ)（true online TD(λ)， van Seijen & Sutton 2014 [3]）** 补上这个缺口：它在前向视角与在线更新之间建立**精确**等价（不是近似），靠的是加一个**校正项**修正「$V$ 在每步被改写」带来的偏差。<Cite n={3} />表格型（tabular）更新式：
+**真在线 TD(λ)（true online TD(λ)， van Seijen & Sutton 2014 [3]）** 补上这个缺口：它在前向视角与在线更新之间建立**精确**等价（不是近似），靠的是加一个**校正项**修正「$V$ 在每步被改写」带来的偏差<Cite n={3} />。表格型（tabular）更新式：
 
 $$
 V \;\leftarrow\; V \;+\; \alpha\,\delta_t\, e_t \;+\; \alpha\,\big(V(s_t) - V_{\text{old}}(s_t)\big)\,\big(e_t - x_t\big)
@@ -644,7 +644,7 @@ TD 目标换成 $\max_{a'}Q(s',a')$——**假设下一步走最优动作**。�
 
 ### Q-learning 为何能收敛到最优
 
-Q-learning 用 $\max_{a'}Q(s',a')$ 作 TD 目标，这看起来很「贪心」——一步 $\max$ 就把所有未来决策都假设成最优。凭什么相信 $Q_k$ 最终会收敛到真最优 $Q^*$，而不是被这个 $\max$ 带偏？这是 Q-learning 最深的理论问题，Watkins 在 1989 年博士论文里首次回答，Watkins & Dayan 1992 [4] 给出严格证明。<Cite n={4} />
+Q-learning 用 $\max_{a'}Q(s',a')$ 作 TD 目标，这看起来很「贪心」——一步 $\max$ 就把所有未来决策都假设成最优。凭什么相信 $Q_k$ 最终会收敛到真最优 $Q^*$，而不是被这个 $\max$ 带偏？这是 Q-learning 最深的理论问题，Watkins 在 1989 年博士论文里首次回答，Watkins & Dayan 1992 [4] 给出严格证明<Cite n={4} />。
 
 **核心洞察：Q-learning 是随机逼近**。把更新式重写成 $Q_{k+1}(s,a)=Q_k(s,a)+\alpha_k[\text{TD target}-Q_k(s,a)]$，它是对「Bellman 最优性方程 $Q^*(s,a)=\mathbb E[r+\gamma\max_{a'}Q^*(s',a')]$」的**随机逼近求解**——TD target 是 Bellman 最优性算子 $T^*Q$ 在某个转移样本上的无偏估计。关键在于 $T^*$ 是 **$\gamma$-压缩**（$\|T^*Q_1-T^*Q_2\|_\infty\le\gamma\|Q_1-Q_2\|_\infty$），所以 $T^*$ 有唯一不动点 $Q^*$，迭代 $T^*$ 几何收敛。Q-learning 的 $\max$ 之所以不破坏收敛，正是因为它对应的是**压缩算子**的不动点，而非任意放大。
 
@@ -654,7 +654,7 @@ $$\sum_{k=1}^{\infty}\alpha_k=\infty,\qquad \sum_{k=1}^{\infty}\alpha_k^2<\infty
 
 第一条「总和发散」保证学习步数足够多——否则后期 $\alpha_k\to0$ 太快，还没学到就停了；第二条「平方和收敛」保证方差可和——否则随机噪声的累积方差发散，估计永远抖动。$\alpha_k=1/\sqrt{k}$ 是满足两条件的经典选择（$\sum 1/\sqrt{k}=\infty$ 发散、$\sum 1/k<\infty$ 收敛）；$\alpha_k=1/k$ 也满足。固定 $\alpha$ 违反第二条（$\sum\alpha^2=\infty$），在随机环境下会残留抖动、不严格收敛到 $Q^*$。
 
-**Q-learning 收敛定理**（Watkins & Dayan, 1992 [4]）：在有限 MDP、有界奖励（$|r|\le r_{\max}$）下，若满足：① **GLIE 探索**（每个 $(s,a)$ 无限次访问，见[蒙特卡洛篇](/tutorials/monte-carlo#控制glie无限探索下的贪心收敛)的 GLIE 条件）；② **Robbins-Monro 学习率**（$\sum\alpha_k=\infty,\sum\alpha_k^2<\infty$），则 $Q_k(s,a)\xrightarrow{k\to\infty}Q^*(s,a)$ **几乎必然**（a.s.）。<Cite n={[4,5]} />
+**Q-learning 收敛定理**（Watkins & Dayan, 1992 [4]）：在有限 MDP、有界奖励（$|r|\le r_{\max}$）下，若满足：① **GLIE 探索**（每个 $(s,a)$ 无限次访问，见[蒙特卡洛篇](/tutorials/monte-carlo#控制glie无限探索下的贪心收敛)的 GLIE 条件）；② **Robbins-Monro 学习率**（$\sum\alpha_k=\infty,\sum\alpha_k^2<\infty$），则 $Q_k(s,a)\xrightarrow{k\to\infty}Q^*(s,a)$ **几乎必然**（a.s.）<Cite n={[4,5]} />。
 
 下面的演示把三条学习率条件的差异量化出来——在同一随机转移 toy 上跑 Q-learning，看 Robbins-Monro 退火收敛、固定 $\alpha$ 残留抖动、退火太快不收敛：
 
@@ -706,7 +706,7 @@ print("Watkins&Dayan 1992: GLIE + Robbins-Monro + 有界奖励 => Q_k -> Q* a.s.
 
 ### 经典对照：悬崖行走（cliff walking）
 
-这个区别最经典的展示是 Sutton & Barto 的悬崖行走 [2]：$4\times12$ 网格，左下角起点、右下角终点，中间一段悬崖（掉下去 -100 并弹回起点），其余每步 -1。<Cite n={2} />
+这个区别最经典的展示是 Sutton & Barto 的悬崖行走 [2]：$4\times12$ 网格，左下角起点、右下角终点，中间一段悬崖（掉下去 -100 并弹回起点），其余每步 -1<Cite n={2} />。
 
 | | 学到的贪心路径 | 平均回报 | 为何 |
 |---|---|---|---|
@@ -814,7 +814,7 @@ $$
 \text{TD 目标}=R_{t+1}+\gamma\sum_{a'}\pi(a'\mid s')\,Q(s',a')
 $$
 
-不再依赖「这一步恰好采样到哪个 $a'$」，而是按 $\pi$ 的概率加权所有可能动作。好处是**降方差**——采样单个 $a'$ 会引入额外噪声，期望把这个噪声平均掉。代价是每次更新多算一次 $\sum$（动作多时成本上升）。它 on/off-policy 皆可：行为策略 = 目标策略时是 on-policy；若 $\pi$ 是目标策略而行为策略是另一个（如 ε-greedy 采样、估贪心），则 off-policy。实践中 Expected SARSA 常被忽视，却在方差大、探索代价高的任务上比 SARSA 与 Q-learning 都稳 [2]。<Cite n={2} />
+不再依赖「这一步恰好采样到哪个 $a'$」，而是按 $\pi$ 的概率加权所有可能动作。好处是**降方差**——采样单个 $a'$ 会引入额外噪声，期望把这个噪声平均掉。代价是每次更新多算一次 $\sum$（动作多时成本上升）。它 on/off-policy 皆可：行为策略 = 目标策略时是 on-policy；若 $\pi$ 是目标策略而行为策略是另一个（如 ε-greedy 采样、估贪心），则 off-policy。实践中 Expected SARSA 常被忽视，却在方差大、探索代价高的任务上比 SARSA 与 Q-learning 都稳 [2]<Cite n={2} />。
 
 ### 三兄弟怎么选
 
@@ -921,7 +921,7 @@ print("   替换迹重访即重置=1, 有上界 <=1, 比 accumulating 更稳 (Sa
 
 ### 多巴胺神经元编码的就是 TD 误差
 
-1997 年，Schultz、Dayan 与 Montague 在猕猴实验里记录了腹侧被盖区（VTA）和黑质致密部（SNc）多巴胺神经元的放电模式[9][10]，发现它们编码的正是**奖励预测误差（RPE）**——而非奖励本身：<Cite n={[9,10]} />
+1997 年，Schultz、Dayan 与 Montague 在猕猴实验里记录了腹侧被盖区（VTA）和黑质致密部（SNc）多巴胺神经元的放电模式[9][10]，发现它们编码的正是**奖励预测误差（RPE）**——而非奖励本身<Cite n={[9,10]} />：
 
 - **意外获得奖励** → 多巴胺神经元在奖励时刻**相位性激增**（正 RPE，基线以上）；
 - **预测到奖励**（条件刺激 CS 已学会预示奖励）→ 多巴胺响应从奖励时刻**前移到 CS 时刻**，奖励时刻反而**归零**（已被预测，无误差）；
@@ -931,7 +931,7 @@ print("   替换迹重访即重置=1, 有上界 <=1, 比 accumulating 更稳 (Sa
 
 ### TD-Gammon：自我博弈 + 价值函数的先声
 
-TD-Gammon 是 Tesauro 在 1992 年[11]/1995 年[12]用 TD（λ） 学西洋双陆棋（backgammon）策略的工作，是 RL 第一次在**真实复杂博弈**（约 $10^{20}$ 状态）上达到世界顶级水准——比 DQN（Atari, 2015）早 22 年，比 AlphaZero（2017）早 25 年。<Cite n={[11,12]} />它的三大要素日后成了深度 RL 的模板：
+TD-Gammon 是 Tesauro 在 1992 年[11]/1995 年[12]用 TD（λ） 学西洋双陆棋（backgammon）策略的工作，是 RL 第一次在**真实复杂博弈**（约 $10^{20}$ 状态）上达到世界顶级水准——比 DQN（Atari, 2015）早 22 年，比 AlphaZero（2017）早 25 年<Cite n={[11,12]} />。它的三大要素日后成了深度 RL 的模板：
 
 1. **价值函数而非策略**：网络输入棋盘特征，输出的是**赢棋概率** $P(\text{win})$（一个标量价值），而非直接输出落子策略。这让学习目标变成回归，信号稠密、稳定。
 2. **自我博弈产生数据**：不依赖人类棋谱，程序自己和自己下，对称对弈。后期版本加 1-ply / 2-ply minimax 搜索 + 神经网络评估，已经是 AlphaZero「搜索 + 神经网络」思想的雏形。

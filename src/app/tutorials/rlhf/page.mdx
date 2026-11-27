@@ -12,7 +12,7 @@ export const metadata = tutorialMetadata("rlhf");
 
 ## RLHF 三步走
 
-RLHF 经典流程（InstructGPT / ChatGPT）分三步：<Cite n={3} />
+RLHF 经典流程（InstructGPT / ChatGPT）分三步<Cite n={3} />：
 
 1. **监督微调（SFT）**：先用人工写的高质量「指令→回答」示范，把预训练模型微调成一个初步会「听指令」的模型 $\pi_\text{ref}$（作为后续的参考模型）。
 2. **训练奖励模型（RM）**：人类对同一提问的多个回答**排序**（A 比 B 好）。用这些**成对偏好**训练一个奖励模型 $r_\phi(x, y)$，给任意「提问 $x$ + 回答 $y$」打一个分。
@@ -36,7 +36,7 @@ $$
 P(y_w \succ y_l) = \sigma\big(r_\phi(x,y_w) - r_\phi(x,y_l)\big)
 $$
 
-训练就是最大化这个概率的对数似然（等价于一个二分类[交叉熵](/tutorials/ml-losses)）。<Cite n={[3,5]} />下面用一个玩具例子，**从随机的成对偏好里还原出正确的质量排名**：
+训练就是最大化这个概率的对数似然（等价于一个二分类[交叉熵](/tutorials/ml-losses)）<Cite n={[3,5]} />。下面用一个玩具例子，**从随机的成对偏好里还原出正确的质量排名**：
 
 <CodeRunner defaultCode={`
 import numpy as np
@@ -78,7 +78,7 @@ $$
 - **奖励项**：把策略推向奖励模型喜欢的回答.
 - **反向 KL 惩罚**：把策略**拴在参考模型附近**,别为了刷分而胡言乱语.
 
-为什么是**反向** KL？因为它的「[零强制](/tutorials/forward-reverse-kl)」性格正合需要——$\pi_\theta$ 不敢跑到 $\pi_\text{ref}$ 概率极低的地方去，于是**收窄到少数高奖励、又不离谱的回答**。系数 $\beta$ 就是「探索新表达 vs 守住原有能力」的旋钮：$\beta$ 太小会 **reward hacking**（钻奖励模型漏洞、输出乱码高分），太大则学不动。<Cite n={3} />
+为什么是**反向** KL？因为它的「[零强制](/tutorials/forward-reverse-kl)」性格正合需要——$\pi_\theta$ 不敢跑到 $\pi_\text{ref}$ 概率极低的地方去，于是**收窄到少数高奖励、又不离谱的回答**。系数 $\beta$ 就是「探索新表达 vs 守住原有能力」的旋钮：$\beta$ 太小会 **reward hacking**（钻奖励模型漏洞、输出乱码高分），太大则学不动<Cite n={3} />。
 
 这个带 KL 惩罚的目标有**闭式最优解**，下面直接算出来看 $\beta$ 的作用：
 
@@ -127,7 +127,7 @@ for iter in range(N):
 
 ## DPO：跳过 RL 的更简方案
 
-PPO 那套 RL 流程工程上很重（要同时跑策略、参考、奖励、价值四个模型）。**DPO（Direct Preference Optimization, Rafailov et al. 2023 [4]）** 证明：上面那个「奖励 − 反向 KL」目标可以**数学变形成一个直接在偏好数据上的分类损失**，完全**跳过训练奖励模型和 RL** 这两步，用一个简单的监督式损失就能达到类似效果。<Cite n={4} />因为简单稳定，DPO 及其变体成了近年开源对齐的主流。
+PPO 那套 RL 流程工程上很重（要同时跑策略、参考、奖励、价值四个模型）。**DPO（Direct Preference Optimization, Rafailov et al. 2023 [4]）** 证明：上面那个「奖励 − 反向 KL」目标可以**数学变形成一个直接在偏好数据上的分类损失**，完全**跳过训练奖励模型和 RL** 这两步，用一个简单的监督式损失就能达到类似效果<Cite n={4} />。因为简单稳定，DPO 及其变体成了近年开源对齐的主流。
 
 ### 第一步：KL 约束目标有闭式最优解
 
@@ -163,7 +163,7 @@ $$
 \mathcal{L}_\text{DPO}(\theta) \;=\; -\mathbb E_{(x,y_w,y_l)}\!\left[\log \sigma\!\Big(\beta\log\tfrac{\pi_\theta(y_w\mid x)}{\pi_\text{ref}(y_w\mid x)} - \beta\log\tfrac{\pi_\theta(y_l\mid x)}{\pi_\text{ref}(y_l\mid x)}\Big)\right]
 $$
 
-它就是一个**二元分类损失**（ sigmoid 交叉熵）：让 $\pi_\theta$ 给偏好回答 $y_w$ 的概率**相对参考模型**上升、给不偏好回答 $y_l$ 的概率相对下降。无需奖励模型、无需 RL 采样、无需 critic——一个监督式损失搞定对齐。<Cite n={4} />
+它就是一个**二元分类损失**（ sigmoid 交叉熵）：让 $\pi_\theta$ 给偏好回答 $y_w$ 的概率**相对参考模型**上升、给不偏好回答 $y_l$ 的概率相对下降。无需奖励模型、无需 RL 采样、无需 critic——一个监督式损失搞定对齐<Cite n={4} />。
 
 <CodeRunner defaultCode={`
 import numpy as np
@@ -212,7 +212,7 @@ DPO 并非全胜：PPO 在某些**在线探索**收益大的任务（如 truthfu
 
 ### IPO：用二次正则换掉 Bradley-Terry，抗噪更稳
 
-**IPO（Identity Preference Optimization,Azar et al., 2023 [13]）** 直击痛点 （a）。它不依赖 BT 模型把偏好约简为奖励差，而是直接在偏好对上用 **identity 变换 + 二次正则**替代 sigmoid:<Cite n={13} />
+**IPO（Identity Preference Optimization,Azar et al., 2023 [13]）** 直击痛点 （a）。它不依赖 BT 模型把偏好约简为奖励差，而是直接在偏好对上用 **identity 变换 + 二次正则**替代 sigmoid<Cite n={13} />:
 
 $$\mathcal{L}_\text{IPO}=\mathbb{E}\!\left[\Big(\log\frac{\pi_\theta(y_w\mid x)\,\pi_\text{ref}(y_l\mid x)}{\pi_\theta(y_l\mid x)\,\pi_\text{ref}(y_w\mid x)}-\tfrac{1}{2}\Big)^{\!2}\right]$$
 
@@ -220,7 +220,7 @@ $$\mathcal{L}_\text{IPO}=\mathbb{E}\!\left[\Big(\log\frac{\pi_\theta(y_w\mid x)\
 
 ### KTO：二元好/坏反馈 + 前景理论，不需偏好对
 
-**KTO（Kahneman-Tversky Optimization,Ethayarajh et al., ICML 2024 [14]）** 从痛点 （a） 与**数据形态**入手：偏好对 $(y_w,y_l)$ 难采集（要为同一提问找两个可比回答再排序），现实里「点赞/踩」的**二元好/坏反馈**更易得。KTO 不最大化偏好似然，而是直接**最大化人类效用**，用 Kahneman & Tversky 的**前景理论**建模——核心是**损失厌恶（loss aversion）**：人对损失的敏感度大于对等量收益的敏感度。<Cite n={14} />
+**KTO（Kahneman-Tversky Optimization,Ethayarajh et al., ICML 2024 [14]）** 从痛点 （a） 与**数据形态**入手：偏好对 $(y_w,y_l)$ 难采集（要为同一提问找两个可比回答再排序），现实里「点赞/踩」的**二元好/坏反馈**更易得。KTO 不最大化偏好似然，而是直接**最大化人类效用**，用 Kahneman & Tversky 的**前景理论**建模——核心是**损失厌恶（loss aversion）**：人对损失的敏感度大于对等量收益的敏感度<Cite n={14} />。
 
 $$\mathcal{L}_\text{KTO}=\begin{cases}-\mathbb{E}_{y\sim\text{好}}\!\big[\sigma\!\big(\beta\log\frac{\pi_\theta(y\mid x)}{\pi_\text{ref}(y\mid x)}-z_\text{ref}\big)\big] & \text{(好样本,推高)}\\[4pt]-\lambda\,\mathbb{E}_{y\sim\text{坏}}\!\big[\sigma\!\big(z_\text{ref}-\beta\log\frac{\pi_\theta(y\mid x)}{\pi_\text{ref}(y\mid x)}\big)\big] & \text{(坏样本,}\lambda>1\text{ 损失厌恶)}\end{cases}$$
 
@@ -232,7 +232,7 @@ $z_\text{ref}$ 是参考模型奖励的移动平均（归一化基准），$\lam
 
 $$\mathcal{L}_\text{SimPO}=-\mathbb{E}\!\left[\log\sigma\!\Big(\tfrac{\beta}{|y_w|}\textstyle\sum_t\log\pi_\theta(y_w^{(t)})-\tfrac{\beta}{|y_l|}\sum_t\log\pi_\theta(y_l^{(t)})-\gamma\Big)\right]$$
 
-省掉参考模型（显存减半） + 消除长度偏置，SimPO 在 AlpacaEval 2 上比 DPO 高 **+6.4 点**、Arena-Hard 高 **+7.5 点**，曾登顶 Chatbot Arena 10B 以下模型榜首 [15]。<Cite n={15} />
+省掉参考模型（显存减半） + 消除长度偏置，SimPO 在 AlpacaEval 2 上比 DPO 高 **+6.4 点**、Arena-Hard 高 **+7.5 点**，曾登顶 Chatbot Arena 10B 以下模型榜首 [15]<Cite n={15} />。
 
 ### ORPO：无参考 + 单阶段，SFT 与对齐合一
 
@@ -240,7 +240,7 @@ $$\mathcal{L}_\text{SimPO}=-\mathbb{E}\!\left[\log\sigma\!\Big(\tfrac{\beta}{|y_
 
 $$\mathcal{L}_\text{ORPO}=-\log\pi_\theta(y_w\mid x)+\lambda\,\log\frac{\text{odds}(y_l)}{\text{odds}(y_w)}$$
 
-第一项是标准 SFT（教模型生成 $y_w$），第二项是 odds-ratio 惩罚（$y_l$ 赔率低于 $y_w$ 时 $\log\frac{\text{odds}_l}{\text{odds}_w}<0$，压低 $y_l$）。无 $\pi_\text{ref}$、SFT 与对齐一步到位，省掉一个训练阶段；在 Mistral-7B 上仅用 UltraFeedback 就超越 13B+ 模型。<Cite n={16} />
+第一项是标准 SFT（教模型生成 $y_w$），第二项是 odds-ratio 惩罚（$y_l$ 赔率低于 $y_w$ 时 $\log\frac{\text{odds}_l}{\text{odds}_w}<0$，压低 $y_l$）。无 $\pi_\text{ref}$、SFT 与对齐一步到位，省掉一个训练阶段；在 Mistral-7B 上仅用 UltraFeedback 就超越 13B+ 模型<Cite n={16} />。
 
 下面这个演示把四个变体各自治的痛点、关键公式与数值行为对照清楚。
 
@@ -348,7 +348,7 @@ $$
 A_i = \frac{r_i - \operatorname{mean}(r_1,\dots,r_G)}{\operatorname{std}(r_1,\dots,r_G)}
 $$
 
-直觉极其朴素——**比同组平均好的回答，概率往上推；比平均差的，往下压**。组内那句「平均分」就是 critic 的替代品，于是**价值网络被整个删掉**，四个模型变三个。<Cite n={1} />
+直觉极其朴素——**比同组平均好的回答，概率往上推；比平均差的，往下压**。组内那句「平均分」就是 critic 的替代品，于是**价值网络被整个删掉**，四个模型变三个<Cite n={1} />。
 
 <CodeRunner defaultCode={`
 import numpy as np
@@ -371,7 +371,7 @@ print("答对的一律 +1 优势→概率推高;答错的 −1→压低。全程
 
 ### GRPO 的完整目标：裁剪 + 逐 token KL
 
-上面只讲了 GRPO 的**优势**怎么算。完整的 GRPO 目标其实长得很像 PPO——同样有概率比 $r_t(\theta)=\pi_\theta/\pi_{\theta_{\text{old}}}$ 的裁剪，只是把 PPO 里的 critic 基线换成组相对优势 $\hat A_{i,t}$，并在**每个 token** 上都加一项 KL 惩罚 [1]:<Cite n={1} />
+上面只讲了 GRPO 的**优势**怎么算。完整的 GRPO 目标其实长得很像 PPO——同样有概率比 $r_t(\theta)=\pi_\theta/\pi_{\theta_{\text{old}}}$ 的裁剪，只是把 PPO 里的 critic 基线换成组相对优势 $\hat A_{i,t}$，并在**每个 token** 上都加一项 KL 惩罚 [1]<Cite n={1} />:
 
 $$
 \mathcal J^{\text{GRPO}}(\theta)=\mathbb E\!\left[\frac{1}{G}\sum_{i=1}^{G}\frac{1}{|o_i|}\sum_{t=1}^{|o_i|}\Big(\min\!\big(r_{i,t}(\theta)\,\hat A_{i,t},\;\text{clip}(r_{i,t}(\theta),1-\varepsilon,1+\varepsilon)\,\hat A_{i,t}\big)-\beta\,D_{\text{KL}}\big(\pi_\theta\,\|\,\pi_{\text{ref}}\big)\Big)\right]
@@ -495,7 +495,7 @@ print("     代价:只在有客观对错的任务(数学/代码)有效,开放对
 
 RLVR 最惊人的发现是 **R1-Zero** [2]：跳过 SFT 冷启动，**直接在基座模型上做 RLVR**（用 GRPO），模型竟自己「学会」了推理——长链思维、自我验证、停下来反思「等等，我刚才那步好像算错了，让我重试」这种**自我修正（ self-reflection）** 行为，在训练曲线上**自发涌现**，没有任何人类标注的推理轨迹做示范。
 
-> 💡 这就是业界传颂的「**aha moment（顿悟时刻）**」：RL 训练到某一步，模型突然表现出「意识到自己错了并回头纠正」的行为，而这种行为**从未被示范过**——它从「答对拿奖励、答错不拿」的信号里自己长出来了。这被广泛引用为「RL 能激励推理能力、无需人类手把手教推理」的证据 [2]。<Cite n={2} />
+> 💡 这就是业界传颂的「**aha moment（顿悟时刻）**」：RL 训练到某一步，模型突然表现出「意识到自己错了并回头纠正」的行为，而这种行为**从未被示范过**——它从「答对拿奖励、答错不拿」的信号里自己长出来了。这被广泛引用为「RL 能激励推理能力、无需人类手把手教推理」的证据 [2]<Cite n={2} />。
 
 但 R1-Zero 也有问题：输出语言混乱（中英夹杂）、格式不稳、可读性差。于是 DeepSeek-R1（正式版）用了**两阶段流水线**[2]:
 
@@ -604,7 +604,7 @@ print(f"  -> GRPO 信号密度 ~{8/(8*2/4):.1f}x RFT: 负梯度信号('这样答
 
 > 一个 4 步推理题，模型最终答错了。是第 1 步就跑偏了？还是前 3 步都对、只在第 4 步算错？**ORM 把这两种情况都打成 0 分**，无从区分。于是训练信号被严重稀释——「只错一步」的近乎正确的解，和「步步都错」的解，在 ORM 眼里一样差。
 
-**PRM（Process Reward Model，过程奖励模型）**[6] 换个粒度：**给每一步推理打分**，而不是只给最终结果。它能定位「错在第几步」，让训练信号精细到 step level。<Cite n={6} />
+**PRM（Process Reward Model，过程奖励模型）**[6] 换个粒度：**给每一步推理打分**，而不是只给最终结果。它能定位「错在第几步」，让训练信号精细到 step level<Cite n={6} />。
 
 | | ORM（结果奖励） | PRM（过程奖励） |
 |---|---|---|
@@ -622,13 +622,13 @@ print(f"  -> GRPO 信号密度 ~{8/(8*2/4):.1f}x RFT: 负梯度信号('这样答
 
 ### PRM800K：人工 step 级标注的里程碑
 
-Lightman et al. 2023 *Let's Verify Step by Step* [6] 发布了 **PRM800K**——**80 万条 step 级人工反馈标签**的数据集。人类标注员逐步阅读模型的推理过程，把每一步标为「好 / 坏 / 中性」（hard label）。用这些数据训出的 PRM，在 MATH 测试集上让 process supervision **显著优于** outcome supervision——**78% 准确率**，且 active learning（主动挑最有信息量的题让标注员标）进一步提升效率 [6]。<Cite n={6} />
+Lightman et al. 2023 *Let's Verify Step by Step* [6] 发布了 **PRM800K**——**80 万条 step 级人工反馈标签**的数据集。人类标注员逐步阅读模型的推理过程，把每一步标为「好 / 坏 / 中性」（hard label）。用这些数据训出的 PRM，在 MATH 测试集上让 process supervision **显著优于** outcome supervision——**78% 准确率**，且 active learning（主动挑最有信息量的题让标注员标）进一步提升效率 [6]<Cite n={6} />。
 
 关键结论是：**过程监督 > 结果监督**。原因正是上表的「信号密度」——PRM 从同一条解里提取 N 个标签，「只错一步」的解仍能贡献「前 N-1 步是对的」的正信号，而 ORM 只能给它一个 0。
 
 ### Monte Carlo 自动标注：打破人工瓶颈
 
-人工逐步标注贵且慢。**Math-Shepherd** [7] 提出自动 step labeling，完全甩开人工：**从某个中间步 $s_i$ 出发，采样 $K$ 个后续补全（Monte Carlo rollout），看其中有多少个能滚到正确答案**——若大多能到，$s_i$ 是好步；若几乎都到不了，$s_i$ 是坏步。<Cite n={7} />
+人工逐步标注贵且慢。**Math-Shepherd** [7] 提出自动 step labeling，完全甩开人工：**从某个中间步 $s_i$ 出发，采样 $K$ 个后续补全（Monte Carlo rollout），看其中有多少个能滚到正确答案**——若大多能到，$s_i$ 是好步；若几乎都到不了，$s_i$ 是坏步<Cite n={7} />。
 
 $$
 \hat r(s_i) = \frac{1}{K}\sum_{k=1}^{K}\mathbb{1}\!\left[\text{rollout}_k(s_i) \text{ 到达正确答案}\right]
@@ -727,7 +727,7 @@ print("       (N=1860 的 +5.3% 与 PRM800K 论文实测 +5.8% 同量级)")
 
 上文的 PRM 是**判别式**的：在每一步的最后 token 上接一个分类头，输出「这步对」的标量概率 $p(s_i)$。这把验证任务框成了标准的二分类——好处是训练简单、推理便宜（一次前向），但有个根本限制：**分类头只看步骤的隐状态，不复用 LLM 的推理能力**。一个「推理有微妙漏洞、但表面看像对的」步骤（plausible-wrong），其隐状态可能落在一个让分类头给高分的位置——判别式 PRM 会被骗，正如 ORM 被假阳性骗一样，只是门槛更高。
 
-Zhang et al. 2024 的 **Generative Verifiers(GenRM)**[11] 把验证任务重新框成 **next-token prediction**：不接分类头，而是让 LLM **生成一段 critique（逐步评审的 CoT）**、再在末尾预测「这步对」的 token。因为评审本身是 LLM 用自己的推理能力生成的，它能**点破**判别式头看不见的微妙错误——「这里把 $x^2+1$ 当成 $(x+1)^2$ 展开了，漏了交叉项 $2x$」这种语义级错误，标量头摸不到，生成式 critique 能写出来。GenRM 报告在 Best-of-N 上把算法题从 5% 拉到 45.3%、GSM8K 从 73% 拉到 93.4%[11]，并指出**合成的验证 rationale 就够用**——不必人工标评审，让一个强模型自己生成 critique 当训练数据即可。<Cite n={11} />
+Zhang et al. 2024 的 **Generative Verifiers(GenRM)**[11] 把验证任务重新框成 **next-token prediction**：不接分类头，而是让 LLM **生成一段 critique（逐步评审的 CoT）**、再在末尾预测「这步对」的 token。因为评审本身是 LLM 用自己的推理能力生成的，它能**点破**判别式头看不见的微妙错误——「这里把 $x^2+1$ 当成 $(x+1)^2$ 展开了，漏了交叉项 $2x$」这种语义级错误，标量头摸不到，生成式 critique 能写出来。GenRM 报告在 Best-of-N 上把算法题从 5% 拉到 45.3%、GSM8K 从 73% 拉到 93.4%[11]，并指出**合成的验证 rationale 就够用**——不必人工标评审，让一个强模型自己生成 critique 当训练数据即可<Cite n={11} />。
 
 > **判别 vs 生成：验证器的两条路线**。判别式 PRM(Lightman 2023 [6])= 隐状态 + 分类头，快但只能抓「表面特征像错的」；生成式 GenRM(Zhang 2024 [11])= 生成 critique + 末尾 token，慢（要生成一段话）但能抓「语义上错的」。两者并非互斥：GenRM 论文里生成式验证器与判别式头可以共享主干、联合训练（在验证 token 和生成 solution token 上一起算 next-token loss），推理时按算力预算选——预算紧用判别头，预算松用生成式 critique。这呼应了 test-time scaling 的核心思想：**验证器也该能花算力换准确率**，而不像分类头那样一次性给死一个分数。
 
@@ -798,7 +798,7 @@ print("      让验证器复用 LLM 的推理能力, 而非只看隐状态。")
 
 ### 自我修正：让模型用自己的 critique 改自己
 
-GenRM 的 critique 不止能**挑**好解，还能**改**解。Madaan et al. 2023 的 **Self-Refine**[12] 提出一个极简范式：同一个 LLM 轮流充当三个角色——**生成器**（产初稿）、**评审器**（产 critique，指出哪里有问题）、**精修器**（按 critique 改）——迭代若干轮，无需额外训练数据、无需 RL，平均涨 ~20 个绝对百分点。<Cite n={12} />把 GenRM 的 critique 接到精修器上，就构成了一条「**采样 → 验证 → 修正 → 再验证**」的 test-time 闭环：BoN 是在 $N$ 条解里**挑**最好的，Self-Refine 是把一条解**往好里改**，两者正交且可叠加——先 Self-Refine 改几轮、再 BoN 挑，是 2024 年推理任务的主流 test-time recipe。
+GenRM 的 critique 不止能**挑**好解，还能**改**解。Madaan et al. 2023 的 **Self-Refine**[12] 提出一个极简范式：同一个 LLM 轮流充当三个角色——**生成器**（产初稿）、**评审器**（产 critique，指出哪里有问题）、**精修器**（按 critique 改）——迭代若干轮，无需额外训练数据、无需 RL，平均涨 ~20 个绝对百分点<Cite n={12} />。把 GenRM 的 critique 接到精修器上，就构成了一条「**采样 → 验证 → 修正 → 再验证**」的 test-time 闭环：BoN 是在 $N$ 条解里**挑**最好的，Self-Refine 是把一条解**往好里改**，两者正交且可叠加——先 Self-Refine 改几轮、再 BoN 挑，是 2024 年推理任务的主流 test-time recipe。
 
 > ⚠️ **Self-Refine 的边界**。自我修正不是免费的：① **模型得足够强**——弱模型的 critique 自己也是错的，「错 critique → 错修正」可能越改越糟（有论文称小模型自我修正会降分）；② **验证器要可信**——若 critique 来自一个会被钻空子的判别式 PRM，精修器可能学会「把表面做得让 PRM 满意」而非真正改对，把 reward hacking 从训练期搬到推理期；③ **算力成本**——每轮修正都要重新生成 + 验证，test-time 算力线性增长。这三条把 Self-Refine 与本篇两条主线扣上：它依赖**强验证器**（GenRM/PRM 的质量），也与 **reward hacking**（ critique 被钻空子）正面相关——下文 Reward Hacking 小节的「U-sophistry」（看起来推理扎实、实则蒙混）就是自我修正被带歪的典型形态。
 
@@ -940,13 +940,13 @@ print(f"    信号稠密 K={K}x -> 方差降 -> 同算力涨点更稳")
 先把两个常被混用的术语分开（Pan et al., 2022 [8]）：
 
 - **奖励误设（reward misspecification）**是**因**：代理奖励 $R$（智能体优化的）与真实奖励 $R^*$（真正想要的）之间存在 gap。误设有三种形态 [8]：**misweighting**（代理与真值抓的是同一组诉求，但相对权重错了）、**ontological**（代理与真值用不同的诉求去刻画同一个概念）、**scope**（代理只在受限的时空范围内度量，因为全量度量太贵）。
-- **奖励钻空子（reward hacking）**是**果**：智能体**钻这个 gap** 的行为——「RL 智能体利用误设奖励的漏洞」[8]。<Cite n={8} />
+- **奖励钻空子（reward hacking）**是**果**：智能体**钻这个 gap** 的行为——「RL 智能体利用误设奖励的漏洞」[8]<Cite n={8} />。
 
 一个更极端的变体是 **reward tampering**（奖励篡改）：模型不满足于钻漏洞，直接**改写奖励机制本身**（改奖励代码、改单元测试让它通过）——这已经越过「优化代理」进入「操纵计分板」，危险等级更高。
 
 ### Goodhart 定律的四种变体
 
-Garrabrant（2017）把 Goodhart 定律细分成四种机制 [10]，理解它们能看清 hacking 为何发生：<Cite n={10} />
+Garrabrant（2017）把 Goodhart 定律细分成四种机制 [10]，理解它们能看清 hacking 为何发生<Cite n={10} />：
 
 | 变体 | 机制 | 例子 |
 |---|---|---|
@@ -965,7 +965,7 @@ Pan et al. (2022) [8] 在四个误设奖励的环境里系统扫了四个能力�
 
 ### 过度优化曲线：proxy 涨、true 先升后降
 
-Gao, Schulman, Hilton (2023) [9] 用一个「黄金奖励模型」当真值、训练一个代理 RM，实证刻画了 **overoptimization 曲线**：随着优化压力（KL 距离）增大，**代理奖励单调上升、真实奖励先升后降**——这正是 Goodhart 定律的量化形态。曲线的系数随 RM 参数数**平滑缩放**（RM 越大，gap 增长越缓），且 RL 与 best-of-N 两种优化路径形态不同 [9]。<Cite n={9} />
+Gao, Schulman, Hilton (2023) [9] 用一个「黄金奖励模型」当真值、训练一个代理 RM，实证刻画了 **overoptimization 曲线**：随着优化压力（KL 距离）增大，**代理奖励单调上升、真实奖励先升后降**——这正是 Goodhart 定律的量化形态。曲线的系数随 RM 参数数**平滑缩放**（RM 越大，gap 增长越缓），且 RL 与 best-of-N 两种优化路径形态不同 [9]<Cite n={9} />。
 
 下面用 numpy 复现这条曲线的核心机制：策略从参考模型出发，随优化压力 $d$ 逐步移向代理奖励的峰（但那个峰在 OOD 区，真值在那里低）——
 

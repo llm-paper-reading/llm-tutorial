@@ -7,13 +7,13 @@ export const metadata = paperMetadata(paper);
 
 # Mixtral 8×7B：开源稀疏 MoE 的标志作
 
-2024 年 1 月，Mistral AI 发布 Mixtral 8×7B<Cite n={1} />：基于 Mistral 7B 架构，每层的 FFN 换成 **8 个专家、路由每 token 选 2 个**——总参数 47B、推理激活仅 13B，32K 上下文。结果是当时开源世界的标志性事件：<Cite n={1} />**多数基准上超过 Llama 2 70B 与 GPT-3.5**，数学、代码与多语言优势最大；Apache 2.0 许可证外加向 vLLM 提交 MoE kernel，把稀疏 MoE 从「大厂专利」变成开源标配。站内 [Qwen2](/papers/qwen2) 的细粒度专家设计、[DeepSeek-V3](/papers/deepseek-v3) 的路由演进都以它为对照系。
+2024 年 1 月，Mistral AI 发布 Mixtral 8×7B<Cite n={1} />：基于 Mistral 7B 架构，每层的 FFN 换成 **8 个专家、路由每 token 选 2 个**——总参数 47B、推理激活仅 13B，32K 上下文。结果是当时开源世界的标志性事件<Cite n={1} />：**多数基准上超过 Llama 2 70B 与 GPT-3.5**，数学、代码与多语言优势最大；Apache 2.0 许可证外加向 vLLM 提交 MoE kernel，把稀疏 MoE 从「大厂专利」变成开源标配。站内 [Qwen2](/papers/qwen2) 的细粒度专家设计、[DeepSeek-V3](/papers/deepseek-v3) 的路由演进都以它为对照系。
 
 > 📌 前置：Transformer 基础见 [Attention Is All You Need](/papers/attention-transformer)；MoE 的细粒度对照见 [Qwen2](/papers/qwen2)；推理侧的 MoE kernel 与 [vLLM](/papers/vllm) 直接相关。
 
 ## 一、动机：解耦容量与成本
 
-Dense 模型的全部参数参与每次计算——知识容量与推理成本线性绑定。稀疏 MoE（SMoE）的承诺是解耦：<Cite n={1} />**总参数承载容量，激活参数控制成本**。但此前的开源 MoE 质量一直落后同成本 dense， Mixtral 的贡献是证明一个干净实现可以兑现这个承诺：13B 激活的推理预算，拿到 70B 级的质量。
+Dense 模型的全部参数参与每次计算——知识容量与推理成本线性绑定。稀疏 MoE（SMoE）的承诺是解耦<Cite n={1} />：**总参数承载容量，激活参数控制成本**。但此前的开源 MoE 质量一直落后同成本 dense， Mixtral 的贡献是证明一个干净实现可以兑现这个承诺：13B 激活的推理预算，拿到 70B 级的质量。
 
 ## 二、架构：8×7B 的参数账
 
@@ -61,7 +61,7 @@ Dense 模型的全部参数参与每次计算——知识容量与推理成本�
 
 局限：路由负载均衡依赖训练期的辅助损失、论文未展开细节（DeepSeek-V3 后来证明可以去掉均衡损失）；训练超参与数据披露有限——报告只有 13 页，示范价值大于 recipe 价值。
 
-影响侧一句话总结：<Cite n={1} />Mixtral 之后，「开源旗舰 = 稀疏 MoE」成为默认。Qwen2 的 57B-A14B（2024-07）、DeepSeek-V3 的 671B-A37B（2024-12）、Qwen3 的 235B-A22B 全部沿这条线展开；推理侧 MoE kernel（vLLM 集成、SGLang 等）的生态也由它的开源要求催生。
+影响侧一句话总结<Cite n={1} />：Mixtral 之后，「开源旗舰 = 稀疏 MoE」成为默认。Qwen2 的 57B-A14B（2024-07）、DeepSeek-V3 的 671B-A37B（2024-12）、Qwen3 的 235B-A22B 全部沿这条线展开；推理侧 MoE kernel（vLLM 集成、SGLang 等）的生态也由它的开源要求催生。
 
 ## 小结
 
